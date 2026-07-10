@@ -18,6 +18,7 @@ class AgentState(TypedDict, total=False):
     task_plan: dict[str, Any] | None
     task_execution: dict[str, Any] | None
     quality_check: dict[str, Any] | None
+    render_result: dict[str, Any] | None
     result: dict[str, Any] | None
     status: str
 
