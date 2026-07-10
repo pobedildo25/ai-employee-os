@@ -35,6 +35,10 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    memory_enabled: bool = True
+    redis_memory_ttl: int = 3600
+    qdrant_collection: str = "knowledge"
+
 
 @lru_cache
 def get_settings() -> Settings:

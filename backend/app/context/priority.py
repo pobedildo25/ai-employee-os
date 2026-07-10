@@ -28,8 +28,12 @@ def build_prioritized_context(context: ExecutionContext) -> dict[str, Any]:
     }
     if context.extensions:
         raw["extensions"] = context.extensions
+    if context.memory_context:
+        raw["memory_context"] = context.memory_context
 
-    return {key: raw[key] for key in CONTEXT_PRIORITY if _has_value(raw.get(key))}
+    return {key: raw[key] for key in CONTEXT_PRIORITY if _has_value(raw.get(key))} | (
+        {"memory_context": raw["memory_context"]} if context.memory_context else {}
+    )
 
 
 def sort_context_keys(keys: list[str]) -> list[str]:

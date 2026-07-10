@@ -10,7 +10,9 @@ from app.context.providers.artifact_provider import ArtifactContextProvider
 from app.context.providers.base import ContextProvider
 from app.context.providers.client_provider import ClientContextProvider
 from app.context.providers.history_provider import HistoryProvider, InMemoryHistoryProvider
+from app.context.providers.memory_provider import MemoryContextProvider
 from app.context.providers.project_provider import ProjectContextProvider
+from app.memory.manager import MemoryManager
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.client_repository import ClientRepository
 from app.repositories.project_repository import ProjectRepository
@@ -60,6 +62,7 @@ class ContextBuilder:
             project_context=merged.get("project_context"),
             artifact_context=merged.get("artifact_context", []),
             conversation_history=merged.get("conversation_history", []),
+            memory_context=merged.get("memory_context", []),
             preferences=preferences or merged.get("preferences", {}),
             metadata=metadata or {},
             extensions=merged.get("extensions", {}),
@@ -119,6 +122,7 @@ def create_context_builder(
     project_repository: ProjectRepository | None = None,
     artifact_repository: ArtifactRepository | None = None,
     history_provider: HistoryProvider | None = None,
+    memory_manager: MemoryManager | None = None,
 ) -> ContextBuilder:
     providers: list[ContextProvider] = []
 
@@ -130,6 +134,10 @@ def create_context_builder(
         providers.append(ArtifactContextProvider(artifact_repository))
 
     providers.append(history_provider or InMemoryHistoryProvider())
+
+    if memory_manager is not None:
+        providers.append(MemoryContextProvider(memory_manager))
+
     return ContextBuilder(providers)
 
 
@@ -150,6 +158,7 @@ def _provider_contributed(name: str, merged: dict[str, Any]) -> bool:
         "project": "project_context",
         "artifact": "artifact_context",
         "history": "conversation_history",
+        "memory": "memory_context",
     }
     field = mapping.get(name)
     if field is None:

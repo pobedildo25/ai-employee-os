@@ -29,6 +29,12 @@ from app.storage.storage_interface import StorageInterface
 from app.agent_runtime.checkpoint.manager import CheckpointManager, InMemoryCheckpointManager
 from app.agent_runtime.runtime import AgentRuntime, create_agent_runtime
 from app.context.builder import ContextBuilder, create_context_builder
+from app.database.qdrant import get_qdrant_client
+from app.database.redis import get_redis_client
+from app.memory.long_term.postgres_memory import PostgresLongTermMemory
+from app.memory.manager import MemoryManager, create_memory_manager
+from app.memory.semantic.qdrant_memory import QdrantSemanticMemory
+from app.memory.short_term.redis_memory import RedisShortTermMemory
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -100,15 +106,29 @@ def get_checkpoint_manager() -> CheckpointManager:
     return InMemoryCheckpointManager()
 
 
+def get_memory_manager(
+    session: AsyncSession = Depends(get_session),
+) -> MemoryManager:
+    settings = get_settings()
+    return create_memory_manager(
+        short_term=RedisShortTermMemory(get_redis_client(settings), settings),
+        long_term=PostgresLongTermMemory(session),
+        semantic=QdrantSemanticMemory(get_qdrant_client(settings), settings),
+        settings=settings,
+    )
+
+
 def get_context_builder(
     client_repository: ClientRepository = Depends(get_client_repository),
     project_repository: ProjectRepository = Depends(get_project_repository),
     artifact_repository: ArtifactRepository = Depends(get_artifact_repository),
+    memory_manager: MemoryManager = Depends(get_memory_manager),
 ) -> ContextBuilder:
     return create_context_builder(
         client_repository=client_repository,
         project_repository=project_repository,
         artifact_repository=artifact_repository,
+        memory_manager=memory_manager,
     )
 
 
