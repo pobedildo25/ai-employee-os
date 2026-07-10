@@ -1,20 +1,124 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
+from app.models.enums import ArtifactStatus
 from app.repositories.artifact_repository import ArtifactRepository
-from app.schemas.artifact import ArtifactCreate, ArtifactRead, ArtifactUpdate
+from app.repositories.artifact_version_repository import ArtifactVersionRepository
+from app.schemas.artifact import (
+    ArtifactCreate,
+    ArtifactNewVersionRequest,
+    ArtifactRead,
+    ArtifactUpdate,
+    ArtifactUploadRequest,
+    ArtifactVersionCreate,
+    ArtifactVersionRead,
+)
+from app.storage.storage_interface import StorageInterface
 
 
 class ArtifactService:
-    def __init__(self, repository: ArtifactRepository) -> None:
+    def __init__(
+        self,
+        repository: ArtifactRepository,
+        version_repository: ArtifactVersionRepository,
+        storage: StorageInterface,
+    ) -> None:
         self._repository = repository
+        self._version_repository = version_repository
+        self._storage = storage
 
-    async def create(self, data: ArtifactCreate) -> ArtifactRead:
+    async def create_artifact(self, data: ArtifactCreate) -> ArtifactRead:
         artifact = await self._repository.create(data)
         return ArtifactRead.model_validate(artifact)
+
+    async def upload_artifact(
+        self,
+        request: ArtifactUploadRequest,
+        file_data: bytes,
+        mime_type: str | None = None,
+    ) -> ArtifactRead:
+        storage_path = self._build_storage_path(request.client_id, request.project_id, request.name)
+        await self._storage.upload(storage_path, file_data, mime_type)
+
+        artifact_data = ArtifactCreate(
+            client_id=request.client_id,
+            project_id=request.project_id,
+            name=request.name,
+            artifact_type=request.artifact_type,
+            description=request.description,
+            status=ArtifactStatus.COMPLETED,
+            storage_path=storage_path,
+            mime_type=mime_type,
+            size=len(file_data),
+            metadata=request.metadata,
+            created_by=request.created_by,
+        )
+        artifact = await self._repository.create(artifact_data)
+
+        version_data = ArtifactVersionCreate(
+            storage_path=storage_path,
+            metadata=request.metadata,
+            created_by=request.created_by,
+            change_description="Initial upload",
+        )
+        await self._version_repository.create_version(artifact.id, 1, version_data)
+
+        refreshed = await self._repository.get_by_id(artifact.id)
+        return ArtifactRead.model_validate(refreshed)
+
+    async def create_new_version(
+        self,
+        artifact_id: UUID,
+        request: ArtifactNewVersionRequest,
+        file_data: bytes,
+        mime_type: str | None = None,
+    ) -> ArtifactVersionRead:
+        artifact = await self._repository.get_by_id(artifact_id)
+        if artifact is None:
+            raise ValueError(f"Artifact {artifact_id} not found")
+
+        latest = await self._repository.get_latest_version(artifact_id)
+        next_version = (latest.version_number + 1) if latest else 1
+
+        storage_path = self._build_version_storage_path(
+            artifact.client_id,
+            artifact.project_id,
+            artifact.name,
+            next_version,
+        )
+        await self._storage.upload(storage_path, file_data, mime_type)
+
+        version_data = ArtifactVersionCreate(
+            storage_path=storage_path,
+            metadata=request.metadata,
+            created_by=request.created_by,
+            change_description=request.change_description,
+        )
+        version = await self._version_repository.create_version(artifact_id, next_version, version_data)
+
+        await self._repository.update(
+            artifact_id,
+            ArtifactUpdate(
+                storage_path=storage_path,
+                mime_type=mime_type,
+                size=len(file_data),
+                status=ArtifactStatus.COMPLETED,
+                metadata=request.metadata,
+            ),
+        )
+
+        return ArtifactVersionRead.model_validate(version)
 
     async def get_by_id(self, artifact_id: UUID) -> ArtifactRead | None:
         artifact = await self._repository.get_by_id(artifact_id)
         return ArtifactRead.model_validate(artifact) if artifact else None
+
+    async def get_artifact_history(self, artifact_id: UUID) -> list[ArtifactVersionRead]:
+        history = await self._version_repository.get_history(artifact_id)
+        return [ArtifactVersionRead.model_validate(item) for item in history]
+
+    async def get_latest_version(self, artifact_id: UUID) -> ArtifactVersionRead | None:
+        version = await self._repository.get_latest_version(artifact_id)
+        return ArtifactVersionRead.model_validate(version) if version else None
 
     async def list_by_project(self, project_id: UUID, skip: int = 0, limit: int = 100) -> list[ArtifactRead]:
         artifacts = await self._repository.list_by_project(project_id, skip=skip, limit=limit)
@@ -29,4 +133,28 @@ class ArtifactService:
         return ArtifactRead.model_validate(artifact) if artifact else None
 
     async def delete(self, artifact_id: UUID) -> bool:
+        artifact = await self._repository.get_by_id(artifact_id)
+        if artifact is None:
+            return False
+
+        versions = await self._version_repository.get_history(artifact_id)
+        for version in versions:
+            await self._storage.delete(version.storage_path)
+        if artifact.storage_path:
+            await self._storage.delete(artifact.storage_path)
+
         return await self._repository.delete(artifact_id)
+
+    def _build_storage_path(self, client_id: UUID, project_id: UUID, name: str) -> str:
+        safe_name = name.replace(" ", "_").lower()
+        return f"{client_id}/{project_id}/{safe_name}/{uuid4()}"
+
+    def _build_version_storage_path(
+        self,
+        client_id: UUID,
+        project_id: UUID,
+        name: str,
+        version_number: int,
+    ) -> str:
+        safe_name = name.replace(" ", "_").lower()
+        return f"{client_id}/{project_id}/{safe_name}/v{version_number}/{uuid4()}"

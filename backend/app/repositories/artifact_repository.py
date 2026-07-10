@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from uuid import UUID
 
 from app.models.artifact import Artifact
+from app.models.artifact_version import ArtifactVersion
 from app.schemas.artifact import ArtifactCreate, ArtifactUpdate
 
 
@@ -28,4 +29,12 @@ class ArtifactRepository(ABC):
 
     @abstractmethod
     async def delete(self, artifact_id: UUID) -> bool:
+        ...
+
+    @abstractmethod
+    async def get_versions(self, artifact_id: UUID) -> list[ArtifactVersion]:
+        ...
+
+    @abstractmethod
+    async def get_latest_version(self, artifact_id: UUID) -> ArtifactVersion | None:
         ...
