@@ -10,7 +10,7 @@
 - [x] ROADMAP.md
 - [x] ADR framework
 - [x] README.md, .env.example, .gitignore
-- [x] Git + GitHub
+- [x] Архитектурный аудит: LangGraph, LLM Gateway, Context Builder, Quality Gate, Knowledge Migration, Document AST
 
 ---
 
@@ -39,7 +39,7 @@
 - [ ] Executive Agent node
 - [ ] Capability Planner node
 - [ ] Базовый routing (простая vs сложная задача)
-- [ ] Context Builder
+- [ ] Context Builder (до Executive Agent)
 - [ ] Observability: trace, step history
 
 **Результат:** Запрос обрабатывается графом, Executive Agent определяет цель и маршрут.
@@ -69,7 +69,7 @@
 - [ ] Task Executor (очередь, статусы, retry)
 - [ ] Planner node (декомпозиция сложных задач)
 - [ ] Human Approval Layer
-- [ ] Reviewer Agent
+- [ ] Reviewer Agent (Quality Gate)
 - [ ] Первые skills:
   - [ ] Document Generator (базовый)
   - [ ] Python Analysis
@@ -122,17 +122,20 @@
 
 ---
 
-## Этап 8 — Client Knowledge & Onboarding
+## Этап 8 — Client Knowledge & Knowledge Migration
 
-**Цель:** Загрузка и использование истории агентства.
+**Цель:** Загрузка и миграция истории агентства в систему.
 
+- [ ] Knowledge Migration pipeline (upload → ingest → index)
 - [ ] Upload pipeline (КП, презентации, отчёты, звонки, брендбуки)
+- [ ] Document Reverse Engineering при миграции
+- [ ] Brand Style Engine (Extract) → Brand Profile
 - [ ] Client Profile generation
-- [ ] Knowledge Base indexing
+- [ ] Client Memory (PostgreSQL + vector search)
+- [ ] Knowledge Base indexing (Qdrant)
 - [ ] Semantic Rules extraction
-- [ ] Brand Profile creation
 
-**Результат:** Новый клиент onboarding'ится загрузкой материалов, AI сразу в контексте.
+**Результат:** Новый клиент onboarding'ится загрузкой материалов; Context Builder получает полный Client Memory.
 
 ---
 

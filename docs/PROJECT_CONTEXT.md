@@ -41,20 +41,28 @@
 ```
 User Request
     ↓
+Context Builder          — сбор контекста (клиент, проект, память, документы, стиль)
+    ↓
 Executive Agent          — понимает запрос, определяет цель
     ↓
 Capability Planning      — какие способности нужны
     ↓
 Task Planning            — план выполнения
     ↓
+Human Approval           — подтверждение плана (для сложных задач)
+    ↓
 Skill Selection          — выбор конкретных skills
     ↓
 Execution                — выполнение с очередью и retry
     ↓
-Review                   — проверка качества
+Quality Gate             — Reviewer Agent проверяет результат
     ↓
-Memory Update            — сохранение результата и контекста
+Artifact Versioning      — сохранение версии документа/файла
+    ↓
+Memory Update            — обновление Client Memory и Knowledge Base
 ```
+
+Весь pipeline выполняется в **LangGraph Runtime**. Все вызовы LLM проходят через **LLM Gateway** → OpenRouter (агенты не обращаются к API напрямую).
 
 ## Пользовательские сценарии
 
@@ -76,22 +84,61 @@ Executive Agent определяет: нужен контекст клиента
 6. Reviewer Agent: проверяет качество
 7. Memory Update: сохраняет артефакт и обновляет Client Memory
 
-### Onboarding клиента
+### Onboarding клиента (Knowledge Migration)
 
 > Загрузка истории агентства: КП, презентации, отчёты, звонки, брендбуки
 
+**Knowledge Migration** — процесс переноса существующих материалов агентства в систему. AI не начинает «с нуля»: история клиента мигрирует в память и базу знаний.
+
+Pipeline миграции:
+
+```
+Upload → Ingestion → Document Reverse Engineering → Brand Style Extraction
+    ↓
+Client Profile + Client Memory + Knowledge Base + Semantic Rules + Brand Profile
+```
+
 Система создаёт:
 - **Client Profile** — структурированный профиль
-- **Client Memory** — контекст для будущих задач
-- **Knowledge Base** — семантический поиск по материалам
+- **Client Memory** — контекст для будущих задач (PostgreSQL + vector search)
+- **Knowledge Base** — семантический поиск по материалам (Qdrant)
 - **Semantic Rules** — правила и предпочтения клиента
+- **Brand Profile** — фирменный стиль, извлечённый через Brand Style Engine
+
+### Работа с документами
+
+> «Создай КП для нового клиента по аналогии с прошлым»
+
+1. Context Builder подтягивает Client Memory и Brand Profile
+2. Document Reverse Engineering извлекает структуру эталонного документа → **Document AST**
+3. Template Engine генерирует документ на основе AST
+4. Brand Style Engine применяет фирменный стиль
+5. Quality Gate (Reviewer Agent) проверяет результат
+6. Artifact Versioning сохраняет версию 1
+
+## Архитектурные основы
+
+| Компонент | Роль |
+|-----------|------|
+| **LangGraph Runtime** | Agent runtime: состояние, workflow, выполнение графа, checkpointing |
+| **LLM Gateway** | Единая точка вызова LLM → OpenRouter; агенты не обращаются к API напрямую |
+| **Context Builder** | Сбор контекста **до** Executive Agent: запрос, клиент, проект, память, документы, стиль |
+| **Human Approval Layer** | Plan → Approval → Execution для сложных задач |
+| **Quality Gate** | Reviewer Agent: проверка качества перед доставкой результата |
+| **Artifact Versioning** | Все документы и файлы версионируются в Artifact System |
+| **Observability** | trace_id, логи, история шагов, вызовы моделей и инструментов |
+| **Client Memory** | Профиль, предпочтения, контекст клиента (PostgreSQL + vector search) |
+| **Knowledge Migration** | Перенос истории агентства в Client Memory и Knowledge Base |
+| **Document AST** | Дерево структуры документа для анализа и генерации |
+| **Brand Style Engine** | Извлечение и применение фирменного стиля |
+| **Document Reverse Engineering** | Извлечение структуры и шаблона из существующих документов |
 
 ## Ограничения и границы
 
 - AI Employee **не заменяет** финальное решение человека в критичных задачах
 - Сложные задачи проходят через **Human Approval Layer**
-- Все артефакты **версионируются**
-- Все действия **трассируются** (trace_id, логи, история шагов)
+- Все артефакты **версионируются** (Artifact Versioning)
+- Все действия **трассируются** — каждый запрос получает `trace_id`, логируются шаги графа, вызовы LLM и skills
 
 ## Успех проекта
 
