@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     minio_secure: bool = False
     minio_bucket: str = "artifacts"
 
+    openrouter_api_key: str = "change-me"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    default_llm_model: str = "anthropic/claude-sonnet-4"
+    fallback_llm_model: str = "openai/gpt-4o-mini"
+
     log_level: str = "INFO"
 
 

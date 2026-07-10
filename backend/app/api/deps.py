@@ -22,6 +22,8 @@ from app.services.project_service import ProjectService
 from app.services.file_processing_service import FileProcessingService
 from app.services.task_service import TaskService
 from app.file_processing.processor import FileProcessor
+from app.llm.gateway import create_llm_gateway
+from app.llm.gateway import LLMGateway
 from app.storage.minio_storage import MinioStorage
 from app.storage.storage_interface import StorageInterface
 
@@ -83,3 +85,8 @@ def get_file_processing_service(
     storage: StorageInterface = Depends(get_storage),
 ) -> FileProcessingService:
     return FileProcessingService(repository, storage, FileProcessor())
+
+
+@lru_cache
+def get_llm_gateway() -> LLMGateway:
+    return create_llm_gateway(get_settings())
