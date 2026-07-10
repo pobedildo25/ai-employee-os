@@ -3,6 +3,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+pytest_plugins = ["tests.conftest_file_processing"]
+
 from app.models.artifact import Artifact
 from app.models.artifact_version import ArtifactVersion
 from app.models.enums import ArtifactStatus

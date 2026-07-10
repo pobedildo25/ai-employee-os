@@ -19,7 +19,9 @@ from app.repositories.task_repository import TaskRepository
 from app.services.artifact_service import ArtifactService
 from app.services.client_service import ClientService
 from app.services.project_service import ProjectService
+from app.services.file_processing_service import FileProcessingService
 from app.services.task_service import TaskService
+from app.file_processing.processor import FileProcessor
 from app.storage.minio_storage import MinioStorage
 from app.storage.storage_interface import StorageInterface
 
@@ -74,3 +76,10 @@ def get_artifact_service(
 
 def get_task_service(repository: TaskRepository = Depends(get_task_repository)) -> TaskService:
     return TaskService(repository)
+
+
+def get_file_processing_service(
+    repository: ArtifactRepository = Depends(get_artifact_repository),
+    storage: StorageInterface = Depends(get_storage),
+) -> FileProcessingService:
+    return FileProcessingService(repository, storage, FileProcessor())
