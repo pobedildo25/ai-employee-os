@@ -50,6 +50,7 @@ def registry(settings: Settings) -> CapabilityRegistry:
 
 
 def test_skill_registration(registry: CapabilityRegistry) -> None:
+    assert registry.get_skill("document_analysis_skill") is not None
     assert registry.get_skill("document_skill") is not None
     assert registry.get_skill("analysis_skill") is not None
     assert registry.get_skill("file_skill") is not None

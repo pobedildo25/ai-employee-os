@@ -12,7 +12,6 @@ class DocumentSkill(BaseSkill):
                 name="document_skill",
                 description="Работа с документами",
                 capabilities=[
-                    "document_analysis",
                     "document_generation",
                     "document_modification",
                 ],
@@ -20,11 +19,6 @@ class DocumentSkill(BaseSkill):
                 output_schema={"type": "object", "properties": {"result": {"type": "string"}}},
             ),
             capabilities=[
-                Capability(
-                    name="document_analysis",
-                    description="Анализ содержимого документов",
-                    category="document",
-                ),
                 Capability(
                     name="document_generation",
                     description="Создание документов",

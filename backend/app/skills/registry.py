@@ -111,6 +111,7 @@ class CapabilityRegistry:
 
 def create_capability_registry(settings: Settings | None = None) -> CapabilityRegistry:
     from app.skills.builtin.analysis_skill import AnalysisSkill
+    from app.skills.builtin.document_analysis_skill import DocumentAnalysisSkill
     from app.skills.builtin.document_skill import DocumentSkill
     from app.skills.builtin.file_skill import FileSkill
 
@@ -118,6 +119,7 @@ def create_capability_registry(settings: Settings | None = None) -> CapabilityRe
     registry = CapabilityRegistry(settings)
 
     if settings.skills_enabled:
+        registry.register(DocumentAnalysisSkill())
         registry.register(DocumentSkill())
         registry.register(AnalysisSkill())
         registry.register(FileSkill())
