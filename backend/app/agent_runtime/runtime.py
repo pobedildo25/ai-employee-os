@@ -24,6 +24,9 @@ from app.quality.nodes.quality_gate_node import QualityGateNode
 from app.quality.reviewer import ReviewerAgent
 from app.planning.nodes.planner_node import PlannerNode
 from app.planning.planner import TaskPlanner
+from app.revision.agent import RevisionAgent
+from app.revision.manager import RevisionManager
+from app.revision.nodes.revision_node import RevisionNode
 from app.skills.registry import CapabilityRegistry, create_capability_registry
 from app.skills.resolver import SkillResolverNode
 
@@ -60,6 +63,7 @@ def build_executive_graph(
     builder.add_node(DocumentCreationNode(document_creator, registry))
     builder.add_node(DocumentRenderNode())
     builder.add_node(QualityGateNode(QualityGate(ReviewerAgent(llm_gateway))))
+    builder.add_node(RevisionNode(RevisionManager(RevisionAgent(llm_gateway))))
     wire_executive_workflow(builder)
     return builder.build(checkpoint_manager=checkpoint_manager)
 

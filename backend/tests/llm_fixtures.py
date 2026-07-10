@@ -152,3 +152,46 @@ def review_json(
         "metadata": {},
     }
     return json.dumps(payload, ensure_ascii=False)
+
+
+def revision_json(
+    *,
+    status: str = "ready",
+    summary: str = "Applied quality feedback",
+    changes: list[str] | None = None,
+    title: str = "Revised Document",
+) -> str:
+    payload = {
+        "status": status,
+        "summary": summary,
+        "changes_applied": changes or ["Updated structure based on review feedback"],
+        "update_ast": True,
+        "needs_render": True,
+        "ast": {
+            "node_type": "document",
+            "content": title,
+            "attributes": {},
+            "children": [
+                {
+                    "node_type": "section",
+                    "content": "Revised Section",
+                    "attributes": {},
+                    "children": [
+                        {
+                            "node_type": "heading",
+                            "content": "Improved Overview",
+                            "attributes": {},
+                            "children": [],
+                        },
+                        {
+                            "node_type": "paragraph",
+                            "content": "[Revised content placeholder]",
+                            "attributes": {},
+                            "children": [],
+                        },
+                    ],
+                }
+            ],
+        },
+    }
+    return json.dumps(payload, ensure_ascii=False)

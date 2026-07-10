@@ -21,6 +21,7 @@ class GraphBuilder:
     def __init__(self) -> None:
         self._nodes: dict[str, GraphNode] = {}
         self._edges: list[tuple[Any, Any]] = []
+        self._conditional_edges: list[tuple[Any, Callable[[AgentState], str], dict[str, Any]]] = []
 
     def add_node(self, node: GraphNode) -> "GraphBuilder":
         name = node.name if isinstance(node, BaseNode) else getattr(node, "name", None)
@@ -35,6 +36,15 @@ class GraphBuilder:
         self._edges.append((source, target))
         return self
 
+    def add_conditional_edges(
+        self,
+        source: Any,
+        path: Callable[[AgentState], str],
+        path_map: dict[str, Any],
+    ) -> "GraphBuilder":
+        self._conditional_edges.append((source, path, path_map))
+        return self
+
     def build(self, checkpoint_manager: CheckpointManager | None = None) -> CompiledStateGraph:
         if not self._nodes:
             raise GraphBuildError("Cannot compile graph without nodes")
@@ -44,11 +54,14 @@ class GraphBuilder:
         for name, node in self._nodes.items():
             graph.add_node(name, node)
 
-        if not self._edges:
+        if not self._edges and not self._conditional_edges:
             raise GraphBuildError("Cannot compile graph without edges")
 
         for source, target in self._edges:
             graph.add_edge(source, target)
+
+        for source, path, path_map in self._conditional_edges:
+            graph.add_conditional_edges(source, path, path_map)
 
         checkpointer = checkpoint_manager.get_checkpointer() if checkpoint_manager else None
 
@@ -58,9 +71,10 @@ class GraphBuilder:
             raise GraphBuildError(f"Graph compilation failed: {exc}") from exc
 
         logger.info(
-            "graph compiled | nodes=%s edges=%s checkpointing=%s",
+            "graph compiled | nodes=%s edges=%s conditional_edges=%s checkpointing=%s",
             list(self._nodes.keys()),
             len(self._edges),
+            len(self._conditional_edges),
             checkpointer is not None,
         )
         return compiled

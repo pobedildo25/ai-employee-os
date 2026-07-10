@@ -1,6 +1,5 @@
 import enum
 from typing import Any
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -32,9 +31,3 @@ class ReviewResult(BaseModel):
     issues: list[QualityIssue] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class RevisionRequest(BaseModel):
-    issues: list[QualityIssue] = Field(default_factory=list)
-    suggested_changes: list[str] = Field(default_factory=list)
-    source_artifact: UUID | str | None = None

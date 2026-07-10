@@ -35,6 +35,8 @@ class QualityGateNode:
             "render_result": state.get("render_result"),
             "document_creation_result": state.get("document_creation_result"),
             "response_message": (state.get("decision") or {}).get("response_message"),
+            "revision_count": int(state.get("revision_count") or 0),
+            "user_feedback": (state.get("metadata") or {}).get("user_feedback"),
         }
 
         review_result, revision_request = await self._gate.evaluate(
@@ -60,12 +62,20 @@ class QualityGateNode:
             "status": review_result.status.value,
         }
 
+        from app.revision.policies.revision_policy import can_auto_revise
+
+        revision_count = int(state.get("revision_count") or 0)
+        waiting_user = (
+            review_result.status == ReviewStatus.REVISE and not can_auto_revise(revision_count)
+        )
+
         update = {
             "current_step": self.name,
             "review_result": review_result.model_dump(mode="json"),
             "revision_request": revision_request.model_dump(mode="json") if revision_request else None,
             "quality_check": quality_check,
-            "status": "completed",
+            "revision_count": revision_count,
+            "status": "waiting_user_revision" if waiting_user else "completed",
             "result": {
                 "execution_context": state.get("execution_context"),
                 "understanding": state.get("understanding"),
@@ -78,6 +88,8 @@ class QualityGateNode:
                 "render_result": state.get("render_result"),
                 "review_result": review_result.model_dump(mode="json"),
                 "revision_request": revision_request.model_dump(mode="json") if revision_request else None,
+                "revision_result": state.get("revision_result"),
+                "revision_count": revision_count,
                 "quality_check": quality_check,
                 "memory_candidates": [item.model_dump(mode="json") for item in memory_items],
                 "processed": True,

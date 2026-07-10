@@ -106,6 +106,7 @@ async def test_quality_gate_revise_case(settings: Settings) -> None:
     assert result.status == ReviewStatus.REVISE
     assert revision is not None
     assert revision.suggested_changes
+    assert revision.source_artifact_id == "00000000-0000-0000-0000-000000000001"
 
 
 @pytest.mark.asyncio

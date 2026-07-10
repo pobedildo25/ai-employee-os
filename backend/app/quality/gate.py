@@ -3,8 +3,10 @@ from typing import Any
 from app.quality.checks.content_check import ContentCheck
 from app.quality.checks.structure_check import StructureCheck
 from app.quality.checks.style_check import StyleCheck
-from app.quality.models import IssueSeverity, QualityIssue, ReviewResult, ReviewStatus, RevisionRequest
+from app.quality.models import IssueSeverity, QualityIssue, ReviewResult, ReviewStatus
 from app.quality.reviewer import ReviewerAgent
+from app.revision.models import RevisionRequest
+from app.revision.parsers.feedback_parser import build_revision_request_from_review
 
 
 class QualityGate:
@@ -104,10 +106,13 @@ class QualityGate:
         render_result = context.get("render_result") or {}
         if render_result.get("artifact_id"):
             source_artifact = render_result["artifact_id"]
-        return RevisionRequest(
+        return build_revision_request_from_review(
             issues=review.issues,
             suggested_changes=review.recommendations,
-            source_artifact=source_artifact,
+            source_artifact_id=source_artifact,
+            revision_count=int(context.get("revision_count") or 0),
+            user_feedback=context.get("user_feedback"),
+            metadata={"from_quality_gate": True},
         )
 
     def _is_non_document_flow(self, context: dict[str, Any]) -> bool:

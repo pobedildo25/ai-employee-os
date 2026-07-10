@@ -21,6 +21,8 @@ class AgentState(TypedDict, total=False):
     document_ast: dict[str, Any] | None
     review_result: dict[str, Any] | None
     revision_request: dict[str, Any] | None
+    revision_result: dict[str, Any] | None
+    revision_count: int
     quality_check: dict[str, Any] | None
     render_result: dict[str, Any] | None
     result: dict[str, Any] | None
@@ -43,6 +45,7 @@ def create_initial_state(
         context=context or {},
         metadata=metadata or {},
         current_step=None,
+        revision_count=0,
         result=None,
         status="pending",
     )
