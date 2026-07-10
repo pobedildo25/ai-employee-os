@@ -1,0 +1,5 @@
+# Backend
+
+Python 3.12 backend: FastAPI, LangGraph agents, Skill Registry, LLM Gateway, API.
+
+Будет реализован на **Этапе 1** (см. [docs/ROADMAP.md](../docs/ROADMAP.md)).
