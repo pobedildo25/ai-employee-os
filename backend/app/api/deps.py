@@ -35,6 +35,7 @@ from app.memory.long_term.postgres_memory import PostgresLongTermMemory
 from app.memory.manager import MemoryManager, create_memory_manager
 from app.memory.semantic.qdrant_memory import QdrantSemanticMemory
 from app.memory.short_term.redis_memory import RedisShortTermMemory
+from app.skills.registry import CapabilityRegistry, create_capability_registry
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -106,6 +107,11 @@ def get_checkpoint_manager() -> CheckpointManager:
     return InMemoryCheckpointManager()
 
 
+@lru_cache
+def get_capability_registry() -> CapabilityRegistry:
+    return create_capability_registry(get_settings())
+
+
 def get_memory_manager(
     session: AsyncSession = Depends(get_session),
 ) -> MemoryManager:
@@ -136,9 +142,11 @@ def get_agent_runtime(
     context_builder=Depends(get_context_builder),
     checkpoint_manager: CheckpointManager = Depends(get_checkpoint_manager),
     llm_gateway: LLMGateway = Depends(get_llm_gateway),
+    capability_registry: CapabilityRegistry = Depends(get_capability_registry),
 ) -> AgentRuntime:
     return create_agent_runtime(
         checkpoint_manager=checkpoint_manager,
         llm_gateway=llm_gateway,
         context_builder=context_builder,
+        capability_registry=capability_registry,
     )

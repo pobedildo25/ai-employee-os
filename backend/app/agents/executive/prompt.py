@@ -39,8 +39,16 @@ Return ONLY valid JSON matching this schema:
 }"""
 
 
-def build_user_message(user_input: str, context: dict | None = None) -> str:
+def build_user_message(
+    user_input: str,
+    context: dict | None = None,
+    available_capabilities: list[dict[str, str]] | None = None,
+) -> str:
     parts = [f"User request:\n{user_input}"]
     if context:
         parts.append(f"\nAvailable context:\n{context}")
+    if available_capabilities:
+        parts.append("\nAvailable capabilities:")
+        for capability in available_capabilities:
+            parts.append(f'- {{"name": "{capability["name"]}", "description": "{capability["description"]}"}}')
     return "\n".join(parts)

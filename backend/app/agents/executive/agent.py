@@ -6,6 +6,7 @@ from app.agents.executive.prompt import EXECUTIVE_SYSTEM_PROMPT, build_user_mess
 from app.agents.parsers.response_parser import ResponseParseError, parse_executive_response
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMMessage
+from app.skills.registry import CapabilityRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,14 @@ class ExecutiveAgent:
 
     DEFAULT_MAX_RETRIES = 3
 
-    def __init__(self, llm_gateway: LLMGateway, max_retries: int = DEFAULT_MAX_RETRIES) -> None:
+    def __init__(
+        self,
+        llm_gateway: LLMGateway,
+        capability_registry: CapabilityRegistry | None = None,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+    ) -> None:
         self._gateway = llm_gateway
+        self._capability_registry = capability_registry
         self._max_retries = max_retries
 
     async def analyze(self, state: AgentState) -> ExecutiveAgentResult:
@@ -29,9 +36,16 @@ class ExecutiveAgent:
         context = state.get("context") or execution_context or {}
         trace_id = state.get("trace_id", "-")
 
+        available_capabilities = None
+        if self._capability_registry is not None and self._capability_registry.enabled:
+            available_capabilities = self._capability_registry.list_available_for_prompt()
+
         messages: list[LLMMessage] = [
             LLMMessage(role="system", content=EXECUTIVE_SYSTEM_PROMPT),
-            LLMMessage(role="user", content=build_user_message(user_input, context)),
+            LLMMessage(
+                role="user",
+                content=build_user_message(user_input, context, available_capabilities),
+            ),
         ]
 
         last_error: Exception | None = None

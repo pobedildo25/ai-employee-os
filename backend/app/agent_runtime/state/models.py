@@ -14,6 +14,7 @@ class AgentState(TypedDict, total=False):
     current_step: str | None
     understanding: dict[str, Any]
     decision: dict[str, Any]
+    required_capabilities: dict[str, Any]
     result: dict[str, Any] | None
     status: str
 

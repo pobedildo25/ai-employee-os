@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     redis_memory_ttl: int = 3600
     qdrant_collection: str = "knowledge"
 
+    skills_enabled: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -61,6 +61,7 @@ class FinishNode(BaseNode):
                 "execution_context": state.get("execution_context"),
                 "understanding": state.get("understanding"),
                 "decision": state.get("decision"),
+                "required_capabilities": state.get("required_capabilities"),
                 "processed": True,
             },
         }
