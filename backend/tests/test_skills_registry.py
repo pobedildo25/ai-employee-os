@@ -14,7 +14,9 @@ from app.skills.builtin.document_skill import DocumentSkill
 from app.skills.models import Capability, SkillMetadata
 from app.skills.registry import CapabilityRegistry, SkillAlreadyRegisteredError, create_capability_registry
 from app.skills.resolver import SkillResolverNode
-from tests.test_executive_agent import _executive_json, _mock_gateway
+from tests.llm_fixtures import executive_json as _executive_json
+from tests.llm_fixtures import mock_gateway as _mock_gateway
+from tests.llm_fixtures import plan_json as _plan_json
 
 
 class DisabledSkill(BaseSkill):
@@ -179,14 +181,23 @@ async def test_registry_integration_in_graph(settings: Settings) -> None:
             required_capabilities=["data_analysis"],
             next_action="execute",
         ),
+        _plan_json(
+            goal="анализ данных",
+            steps=[
+                {"description": "Analyze data", "capability": "data_analysis", "dependencies": []},
+            ],
+        ),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway, capability_registry=registry),
         checkpoint_manager=InMemoryCheckpointManager(),
     )
 
-    result = await runtime.execute("Проанализируй данные")
+    result = await runtime.execute(
+        "Проанализируй данные",
+        metadata={"auto_approve": True},
+    )
 
     required = result["required_capabilities"]
     assert required["resolved"][0]["name"] == "data_analysis"
-    assert result["result"]["required_capabilities"]["resolved"][0]["name"] == "data_analysis"
+    assert result["task_execution"]["status"] == "COMPLETED"

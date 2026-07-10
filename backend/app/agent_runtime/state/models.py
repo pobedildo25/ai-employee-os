@@ -15,6 +15,9 @@ class AgentState(TypedDict, total=False):
     understanding: dict[str, Any]
     decision: dict[str, Any]
     required_capabilities: dict[str, Any]
+    task_plan: dict[str, Any] | None
+    task_execution: dict[str, Any] | None
+    quality_check: dict[str, Any] | None
     result: dict[str, Any] | None
     status: str
 

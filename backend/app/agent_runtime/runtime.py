@@ -12,9 +12,13 @@ from app.agent_runtime.graph.edges import wire_default_workflow, wire_executive_
 from app.agent_runtime.graph.nodes import FinishNode, InputNode
 from app.agent_runtime.state.models import AgentState, create_initial_state
 from app.agents.executive.agent import ExecutiveAgent
-from app.agents.executive.node import DecisionNode, ExecutiveAgentNode
+from app.agents.executive.node import ExecutiveAgentNode
 from app.context.builder import ContextBuilder, ContextBuilderNode, create_context_builder
 from app.llm.gateway import LLMGateway, create_llm_gateway
+from app.planning.executor import TaskExecutor
+from app.planning.nodes.executor_node import ExecutorNode, QualityCheckNode
+from app.planning.nodes.planner_node import PlannerNode
+from app.planning.planner import TaskPlanner
 from app.skills.registry import CapabilityRegistry, create_capability_registry
 from app.skills.resolver import SkillResolverNode
 
@@ -39,14 +43,17 @@ def build_executive_graph(
     """Build executive workflow with context, skills, and decision nodes."""
     registry = capability_registry or create_capability_registry()
     agent = ExecutiveAgent(llm_gateway, capability_registry=registry)
+    planner = TaskPlanner(llm_gateway)
+    executor = TaskExecutor()
     builder_instance = context_builder or create_context_builder()
     builder = GraphBuilder()
     builder.add_node(InputNode())
     builder.add_node(ContextBuilderNode(builder_instance))
     builder.add_node(ExecutiveAgentNode(agent))
     builder.add_node(SkillResolverNode(registry))
-    builder.add_node(DecisionNode())
-    builder.add_node(FinishNode())
+    builder.add_node(PlannerNode(planner, registry))
+    builder.add_node(ExecutorNode(executor, registry))
+    builder.add_node(QualityCheckNode())
     wire_executive_workflow(builder)
     return builder.build(checkpoint_manager=checkpoint_manager)
 

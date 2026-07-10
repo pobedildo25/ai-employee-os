@@ -18,7 +18,9 @@ from app.models.project import Project
 from app.core.config import Settings
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMResponse
-from tests.test_executive_agent import _executive_json, _mock_gateway
+from tests.llm_fixtures import executive_json as _executive_json
+from tests.llm_fixtures import mock_gateway as _mock_gateway
+from tests.llm_fixtures import plan_json as _plan_json
 
 
 @pytest.fixture
@@ -241,6 +243,10 @@ async def test_executive_agent_receives_built_context(settings: Settings, projec
             required_capabilities=["document_generation"],
             next_action="create_plan",
         ),
+        _plan_json(
+            goal="создать коммерческое предложение",
+            summary="Нужно КП для проекта",
+        ),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway, create_context_builder()),
@@ -253,7 +259,7 @@ async def test_executive_agent_receives_built_context(settings: Settings, projec
             "project_id": str(project_id),
             "current_task": {"title": "Commercial proposal"},
         },
-        metadata={"session_id": "sess-1"},
+        metadata={"session_id": "sess-1", "auto_approve": True},
     )
 
     assert result["execution_context"]["user_input"] == "Сделай коммерческое предложение"

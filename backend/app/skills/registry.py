@@ -85,6 +85,12 @@ class CapabilityRegistry:
 
         return results
 
+    def get_skill_for_capability(self, capability_name: str) -> Skill | None:
+        skill_id = self._capability_to_skill.get(capability_name)
+        if skill_id is None:
+            return None
+        return self._skills.get(skill_id)
+
     def list_available(self) -> list[Capability]:
         if not self.enabled:
             return []

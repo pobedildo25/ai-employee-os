@@ -1,5 +1,3 @@
-import json
-
 import pytest
 
 from app.agent_runtime.checkpoint.manager import InMemoryCheckpointManager
@@ -8,10 +6,10 @@ from app.agents.decision.models import DecisionType
 from app.agents.executive.agent import ExecutiveAgent, ExecutiveAgentError
 from app.agents.parsers.response_parser import ResponseParseError, parse_executive_response
 from app.core.config import Settings
-from app.llm.gateway import LLMGateway
-from app.llm.models import LLMRequest, LLMResponse
 from app.agent_runtime.state.models import create_initial_state
-from tests.test_llm_gateway import MockProvider
+from tests.llm_fixtures import executive_json as _executive_json
+from tests.llm_fixtures import mock_gateway as _mock_gateway
+from tests.llm_fixtures import plan_json as _plan_json
 
 
 @pytest.fixture
@@ -22,41 +20,6 @@ def settings() -> Settings:
         default_llm_model="mock-model",
         fallback_llm_model="fallback-model",
     )
-
-
-def _executive_json(
-    *,
-    goal: str,
-    summary: str,
-    action: str,
-    required_capabilities: list[str] | None = None,
-    missing_information: list[str] | None = None,
-    next_action: str = "respond",
-    response_message: str | None = None,
-    clarification_question: str | None = None,
-    reasoning: str = "test reasoning",
-) -> str:
-    payload = {
-        "understanding": {
-            "goal": goal,
-            "summary": summary,
-            "required_capabilities": required_capabilities or [],
-            "missing_information": missing_information or [],
-            "next_action": next_action,
-        },
-        "decision": {
-            "action": action,
-            "reasoning": reasoning,
-            "response_message": response_message,
-            "clarification_question": clarification_question,
-        },
-    }
-    return json.dumps(payload, ensure_ascii=False)
-
-
-def _mock_gateway(settings: Settings, *responses: str) -> tuple[LLMGateway, MockProvider]:
-    provider = MockProvider(responses=[LLMResponse(content=r, model="mock-model") for r in responses])
-    return LLMGateway(provider, settings), provider
 
 
 @pytest.mark.asyncio
@@ -95,6 +58,7 @@ async def test_proposal_request_understands_goal_and_capabilities(settings: Sett
             missing_information=["данные клиента", "услуги и цены"],
             next_action="request_information",
         ),
+        _plan_json(goal="создать коммерческое предложение"),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway),
@@ -209,16 +173,26 @@ async def test_executive_graph_full_workflow(settings: Settings) -> None:
             required_capabilities=["data_analysis"],
             next_action="execute",
         ),
+        _plan_json(
+            goal="анализ данных",
+            steps=[
+                {"description": "Analyze report", "capability": "data_analysis", "dependencies": []},
+            ],
+        ),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway),
         checkpoint_manager=InMemoryCheckpointManager(),
     )
 
-    result = await runtime.execute("Проанализируй отчёт", trace_id="trace-exec")
+    result = await runtime.execute(
+        "Проанализируй отчёт",
+        trace_id="trace-exec",
+        metadata={"auto_approve": True},
+    )
 
     assert result["status"] == "completed"
     assert result["trace_id"] == "trace-exec"
-    assert result["current_step"] == "finish"
+    assert result["current_step"] == "quality_check"
     assert result["result"]["understanding"]["goal"] == "анализ данных"
     assert result["result"]["decision"]["action"] == "EXECUTE"
