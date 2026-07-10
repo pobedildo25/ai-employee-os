@@ -26,6 +26,8 @@ from app.llm.gateway import create_llm_gateway
 from app.llm.gateway import LLMGateway
 from app.storage.minio_storage import MinioStorage
 from app.storage.storage_interface import StorageInterface
+from app.agent_runtime.checkpoint.manager import CheckpointManager, InMemoryCheckpointManager
+from app.agent_runtime.runtime import AgentRuntime, create_agent_runtime
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -90,3 +92,13 @@ def get_file_processing_service(
 @lru_cache
 def get_llm_gateway() -> LLMGateway:
     return create_llm_gateway(get_settings())
+
+
+@lru_cache
+def get_checkpoint_manager() -> CheckpointManager:
+    return InMemoryCheckpointManager()
+
+
+@lru_cache
+def get_agent_runtime() -> AgentRuntime:
+    return create_agent_runtime(get_checkpoint_manager())
