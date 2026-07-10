@@ -4,6 +4,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 
 from app.api.health import router as health_router
+from app.api.clients import router as clients_router
+from app.api.projects import router as projects_router
+from app.api.artifacts import router as artifacts_router
+from app.api.tasks import router as tasks_router
 from app.core.config import get_settings
 from app.core.logging import new_trace_id, setup_logging
 from app.database.postgres import close_postgres
@@ -44,6 +48,10 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(health_router)
+    app.include_router(clients_router)
+    app.include_router(projects_router)
+    app.include_router(artifacts_router)
+    app.include_router(tasks_router)
     return app
 
 
