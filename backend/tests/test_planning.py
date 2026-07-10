@@ -17,17 +17,21 @@ from app.planning.models import (
     TaskExecutionStatus,
     TaskPlan,
 )
-from app.planning.nodes.executor_node import ExecutorNode, QualityCheckNode
+from app.quality.gate import QualityGate
+from app.quality.nodes.quality_gate_node import QualityGateNode
+from app.quality.reviewer import ReviewerAgent
+from app.planning.nodes.executor_node import ExecutorNode
 from app.planning.nodes.planner_node import PlannerNode
 from app.planning.parsers.plan_parser import parse_task_plan
 from app.planning.planner import TaskPlanner
 from app.planning.policies.execution_policy import requires_approval, should_plan, should_retry_step
 from app.skills.models import Capability
 from app.skills.registry import create_capability_registry
+from tests.llm_fixtures import creation_ast_json as _creation_ast_json
 from tests.llm_fixtures import executive_json as _executive_json
 from tests.llm_fixtures import mock_gateway as _mock_gateway
 from tests.llm_fixtures import plan_json as _plan_json
-from tests.llm_fixtures import creation_ast_json as _creation_ast_json
+from tests.llm_fixtures import review_json as _review_json
 
 
 @pytest.fixture
@@ -184,26 +188,34 @@ async def test_planner_node_skips_for_respond(settings: Settings) -> None:
 
 
 @pytest.mark.asyncio
-async def test_quality_check_node_stub() -> None:
-    node = QualityCheckNode()
+async def test_quality_gate_node(settings: Settings) -> None:
+    gateway, _ = _mock_gateway(settings, _review_json())
+    node = QualityGateNode(QualityGate(ReviewerAgent(gateway)))
     state = create_initial_state(
         execution_id="exec-1",
         trace_id="trace-1",
         user_input="test",
     )
-    state["task_execution"] = {
-        "task_id": str(uuid4()),
-        "plan_id": str(uuid4()),
-        "current_step": None,
-        "status": TaskExecutionStatus.COMPLETED.value,
-        "approval": {"status": ApprovalStatus.NOT_REQUIRED.value},
-        "logs": [],
-        "results": {"steps_completed": 2},
+    state["decision"] = {"action": "EXECUTE"}
+    state["understanding"] = {"goal": "test document"}
+    state["document_ast"] = {
+        "root": {
+            "node_type": "document",
+            "children": [
+                {
+                    "node_type": "section",
+                    "children": [{"node_type": "heading", "content": "Title", "children": []}],
+                }
+            ],
+        },
+        "node_count": 3,
     }
+    state["render_result"] = {"metadata": {"format": "docx"}, "status": "COMPLETED"}
 
     update = await node(state)
     assert update["quality_check"]["passed"] is True
-    assert update["result"]["quality_check"]["passed"] is True
+    assert update["review_result"]["status"] == "PASS"
+    assert update["result"]["review_result"]["status"] == "PASS"
 
 
 @pytest.mark.asyncio
@@ -220,6 +232,7 @@ async def test_langgraph_planning_integration(settings: Settings) -> None:
         ),
         _plan_json(goal="Подготовить КП для клиента"),
         _creation_ast_json(title="Коммерческое предложение"),
+        _review_json(summary="Document structure and output meet the goal"),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway, capability_registry=registry),
@@ -236,4 +249,5 @@ async def test_langgraph_planning_integration(settings: Settings) -> None:
     assert result["document_ast"] is not None
     assert result["document_creation_result"]["missing_information"] == []
     assert result["quality_check"]["passed"] is True
+    assert result["review_result"]["status"] == "PASS"
     assert result["result"]["task_plan"]["goal"] == "Подготовить КП для клиента"

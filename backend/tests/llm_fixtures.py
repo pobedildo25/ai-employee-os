@@ -133,3 +133,22 @@ def creation_ast_json(
         },
     }
     return json.dumps(payload, ensure_ascii=False)
+
+
+def review_json(
+    *,
+    status: str = "PASS",
+    score: float = 0.9,
+    summary: str = "Result meets the user goal",
+    issues: list[dict] | None = None,
+    recommendations: list[str] | None = None,
+) -> str:
+    payload = {
+        "status": status,
+        "score": score,
+        "summary": summary,
+        "issues": issues or [],
+        "recommendations": recommendations or [],
+        "metadata": {},
+    }
+    return json.dumps(payload, ensure_ascii=False)

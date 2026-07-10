@@ -7,10 +7,11 @@ from app.agents.executive.agent import ExecutiveAgent, ExecutiveAgentError
 from app.agents.parsers.response_parser import ResponseParseError, parse_executive_response
 from app.core.config import Settings
 from app.agent_runtime.state.models import create_initial_state
+from tests.llm_fixtures import creation_ast_json as _creation_ast_json
 from tests.llm_fixtures import executive_json as _executive_json
 from tests.llm_fixtures import mock_gateway as _mock_gateway
 from tests.llm_fixtures import plan_json as _plan_json
-from tests.llm_fixtures import creation_ast_json as _creation_ast_json
+from tests.llm_fixtures import review_json as _review_json
 
 
 @pytest.fixture
@@ -61,6 +62,7 @@ async def test_proposal_request_understands_goal_and_capabilities(settings: Sett
         ),
         _plan_json(goal="создать коммерческое предложение"),
         _creation_ast_json(title="Commercial proposal"),
+        _review_json(),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway),
@@ -182,6 +184,7 @@ async def test_executive_graph_full_workflow(settings: Settings) -> None:
             ],
         ),
         _creation_ast_json(title="Data Analysis Report"),
+        _review_json(),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway),
@@ -196,7 +199,7 @@ async def test_executive_graph_full_workflow(settings: Settings) -> None:
 
     assert result["status"] == "completed"
     assert result["trace_id"] == "trace-exec"
-    assert result["current_step"] == "quality_check"
+    assert result["current_step"] == "quality_gate"
     assert result["result"]["understanding"]["goal"] == "анализ данных"
     assert result["result"]["decision"]["action"] == "EXECUTE"
     assert result["document_ast"] is not None

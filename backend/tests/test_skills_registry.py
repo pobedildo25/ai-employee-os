@@ -14,10 +14,11 @@ from app.skills.builtin.document_skill import DocumentSkill
 from app.skills.models import Capability, SkillMetadata
 from app.skills.registry import CapabilityRegistry, SkillAlreadyRegisteredError, create_capability_registry
 from app.skills.resolver import SkillResolverNode
+from tests.llm_fixtures import creation_ast_json as _creation_ast_json
 from tests.llm_fixtures import executive_json as _executive_json
 from tests.llm_fixtures import mock_gateway as _mock_gateway
 from tests.llm_fixtures import plan_json as _plan_json
-from tests.llm_fixtures import creation_ast_json as _creation_ast_json
+from tests.llm_fixtures import review_json as _review_json
 
 
 class DisabledSkill(BaseSkill):
@@ -55,6 +56,7 @@ def test_skill_registration(registry: CapabilityRegistry) -> None:
     assert registry.get_skill("brand_style_analysis_skill") is not None
     assert registry.get_skill("document_creation_skill") is not None
     assert registry.get_skill("document_render_skill") is not None
+    assert registry.get_skill("quality_review_skill") is not None
     assert registry.get_skill("document_skill") is not None
     assert registry.get_skill("analysis_skill") is not None
     assert registry.get_skill("file_skill") is not None
@@ -193,6 +195,7 @@ async def test_registry_integration_in_graph(settings: Settings) -> None:
             ],
         ),
         _creation_ast_json(title="Analysis Document"),
+        _review_json(),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway, capability_registry=registry),

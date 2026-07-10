@@ -1,0 +1,105 @@
+import logging
+from typing import Any
+from uuid import UUID
+
+from app.agent_runtime.state.models import AgentState
+from app.quality.gate import QualityGate
+from app.quality.memory_preparer import prepare_quality_memory_items
+from app.quality.models import ReviewStatus
+
+logger = logging.getLogger(__name__)
+
+QUALITY_GATE_NODE = "quality_gate"
+
+
+class QualityGateNode:
+    name = QUALITY_GATE_NODE
+
+    def __init__(self, gate: QualityGate) -> None:
+        self._gate = gate
+
+    async def __call__(self, state: AgentState) -> dict[str, Any]:
+        _log_node(state, self.name, "started")
+
+        execution_context = state.get("execution_context") or {}
+        understanding = state.get("understanding") or {}
+        brand_profile = execution_context.get("brand_profile") or state.get("context", {}).get("brand_profile")
+
+        review_context = {
+            "user_goal": understanding.get("goal") or state.get("user_input", ""),
+            "understanding": understanding,
+            "decision": state.get("decision") or {},
+            "execution_context": execution_context,
+            "document_ast": state.get("document_ast"),
+            "brand_profile": brand_profile,
+            "render_result": state.get("render_result"),
+            "document_creation_result": state.get("document_creation_result"),
+            "response_message": (state.get("decision") or {}).get("response_message"),
+        }
+
+        review_result, revision_request = await self._gate.evaluate(
+            review_context,
+            trace_id=state.get("trace_id", "-"),
+        )
+
+        client_id = _to_uuid(execution_context.get("client_id") or state.get("context", {}).get("client_id"))
+        project_id = _to_uuid(execution_context.get("project_id") or state.get("context", {}).get("project_id"))
+        memory_items = prepare_quality_memory_items(
+            review_result,
+            user_goal=str(review_context["user_goal"]),
+            client_id=client_id,
+            project_id=project_id,
+            session_id=state.get("metadata", {}).get("session_id"),
+        )
+
+        quality_check = {
+            "passed": review_result.status == ReviewStatus.PASS,
+            "score": review_result.score,
+            "notes": review_result.summary,
+            "issues": [issue.model_dump() for issue in review_result.issues],
+            "status": review_result.status.value,
+        }
+
+        update = {
+            "current_step": self.name,
+            "review_result": review_result.model_dump(mode="json"),
+            "revision_request": revision_request.model_dump(mode="json") if revision_request else None,
+            "quality_check": quality_check,
+            "status": "completed",
+            "result": {
+                "execution_context": state.get("execution_context"),
+                "understanding": state.get("understanding"),
+                "decision": state.get("decision"),
+                "required_capabilities": state.get("required_capabilities"),
+                "task_plan": state.get("task_plan"),
+                "task_execution": state.get("task_execution"),
+                "document_creation_result": state.get("document_creation_result"),
+                "document_ast": state.get("document_ast"),
+                "render_result": state.get("render_result"),
+                "review_result": review_result.model_dump(mode="json"),
+                "revision_request": revision_request.model_dump(mode="json") if revision_request else None,
+                "quality_check": quality_check,
+                "memory_candidates": [item.model_dump(mode="json") for item in memory_items],
+                "processed": True,
+            },
+        }
+        _log_node({**state, **update}, self.name, "completed")
+        return update
+
+
+def _log_node(state: AgentState, node_name: str, status: str) -> None:
+    logger.info(
+        "graph node execution | execution_id=%s trace_id=%s node_name=%s status=%s",
+        state.get("execution_id", "-"),
+        state.get("trace_id", "-"),
+        node_name,
+        status,
+    )
+
+
+def _to_uuid(value: object | None) -> UUID | None:
+    if value is None:
+        return None
+    if isinstance(value, UUID):
+        return value
+    return UUID(str(value))

@@ -5,7 +5,7 @@ from app.agents.executive.node import EXECUTIVE_AGENT_NODE
 from app.context.builder import CONTEXT_BUILDER_NODE
 from app.document_creation.nodes.document_creation_node import DOCUMENT_CREATION_NODE
 from app.document_creation.nodes.document_render_node import DOCUMENT_RENDER_NODE
-from app.planning.nodes.executor_node import QUALITY_CHECK_NODE
+from app.quality.nodes.quality_gate_node import QUALITY_GATE_NODE
 from app.planning.nodes.planner_node import PLANNER_NODE
 from app.skills.resolver import SKILL_RESOLVER_NODE
 
@@ -30,6 +30,6 @@ def wire_executive_workflow(builder: GraphBuilder) -> GraphBuilder:
     builder.add_edge(SKILL_RESOLVER_NODE, PLANNER_NODE)
     builder.add_edge(PLANNER_NODE, DOCUMENT_CREATION_NODE)
     builder.add_edge(DOCUMENT_CREATION_NODE, DOCUMENT_RENDER_NODE)
-    builder.add_edge(DOCUMENT_RENDER_NODE, QUALITY_CHECK_NODE)
-    builder.add_edge(QUALITY_CHECK_NODE, END)
+    builder.add_edge(DOCUMENT_RENDER_NODE, QUALITY_GATE_NODE)
+    builder.add_edge(QUALITY_GATE_NODE, END)
     return builder

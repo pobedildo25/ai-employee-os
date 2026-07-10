@@ -18,10 +18,11 @@ from app.models.project import Project
 from app.core.config import Settings
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMResponse
+from tests.llm_fixtures import creation_ast_json as _creation_ast_json
 from tests.llm_fixtures import executive_json as _executive_json
 from tests.llm_fixtures import mock_gateway as _mock_gateway
 from tests.llm_fixtures import plan_json as _plan_json
-from tests.llm_fixtures import creation_ast_json as _creation_ast_json
+from tests.llm_fixtures import review_json as _review_json
 
 
 @pytest.fixture
@@ -249,6 +250,7 @@ async def test_executive_agent_receives_built_context(settings: Settings, projec
             summary="Нужно КП для проекта",
         ),
         _creation_ast_json(title="Commercial proposal"),
+        _review_json(),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway, create_context_builder()),
