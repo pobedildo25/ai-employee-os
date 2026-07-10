@@ -54,13 +54,13 @@ class FinishNode(BaseNode):
 
     def __call__(self, state: AgentState) -> dict[str, Any]:
         self._log_node(state, "started")
-        messages = state.get("messages", [])
         update = {
             "current_step": self.name,
             "status": "completed",
             "result": {
+                "understanding": state.get("understanding"),
+                "decision": state.get("decision"),
                 "processed": True,
-                "message_count": len(messages),
             },
         }
         self._log_node({**state, **update}, "completed")

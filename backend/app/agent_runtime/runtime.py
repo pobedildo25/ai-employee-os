@@ -8,9 +8,12 @@ from langgraph.graph.state import CompiledStateGraph
 from app.agent_runtime.checkpoint.manager import CheckpointManager, InMemoryCheckpointManager
 from app.agent_runtime.exceptions import GraphExecutionError
 from app.agent_runtime.graph.builder import GraphBuilder
-from app.agent_runtime.graph.edges import wire_default_workflow
+from app.agent_runtime.graph.edges import wire_default_workflow, wire_executive_workflow
 from app.agent_runtime.graph.nodes import FinishNode, InputNode
 from app.agent_runtime.state.models import AgentState, create_initial_state
+from app.agents.executive.agent import ExecutiveAgent
+from app.agents.executive.node import DecisionNode, ExecutiveAgentNode
+from app.llm.gateway import LLMGateway, create_llm_gateway
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +27,28 @@ def build_default_graph(checkpoint_manager: CheckpointManager | None = None) -> 
     return builder.build(checkpoint_manager=checkpoint_manager)
 
 
+def build_executive_graph(
+    llm_gateway: LLMGateway,
+    checkpoint_manager: CheckpointManager | None = None,
+) -> CompiledStateGraph:
+    """Build executive workflow: START → input → executive → decision → finish → END."""
+    agent = ExecutiveAgent(llm_gateway)
+    builder = GraphBuilder()
+    builder.add_node(InputNode())
+    builder.add_node(ExecutiveAgentNode(agent))
+    builder.add_node(DecisionNode())
+    builder.add_node(FinishNode())
+    wire_executive_workflow(builder)
+    return builder.build(checkpoint_manager=checkpoint_manager)
+
+
 def create_agent_runtime(
     checkpoint_manager: CheckpointManager | None = None,
+    llm_gateway: LLMGateway | None = None,
 ) -> "AgentRuntime":
     manager = checkpoint_manager or InMemoryCheckpointManager()
-    graph = build_default_graph(checkpoint_manager=manager)
+    gateway = llm_gateway or create_llm_gateway()
+    graph = build_executive_graph(checkpoint_manager=manager, llm_gateway=gateway)
     return AgentRuntime(graph=graph, checkpoint_manager=manager)
 
 

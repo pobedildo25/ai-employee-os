@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Callable, Coroutine
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
@@ -11,18 +12,23 @@ from app.agent_runtime.state.models import AgentState
 
 logger = logging.getLogger(__name__)
 
+GraphNode = BaseNode | Callable[..., dict[str, Any] | Coroutine[Any, Any, dict[str, Any]]]
+
 
 class GraphBuilder:
     """Builds and compiles LangGraph workflows from nodes and edges."""
 
     def __init__(self) -> None:
-        self._nodes: dict[str, BaseNode] = {}
+        self._nodes: dict[str, GraphNode] = {}
         self._edges: list[tuple[Any, Any]] = []
 
-    def add_node(self, node: BaseNode) -> "GraphBuilder":
-        if node.name in self._nodes:
-            raise GraphBuildError(f"Node already registered: {node.name}")
-        self._nodes[node.name] = node
+    def add_node(self, node: GraphNode) -> "GraphBuilder":
+        name = node.name if isinstance(node, BaseNode) else getattr(node, "name", None)
+        if not name:
+            raise GraphBuildError("Node must have a name attribute")
+        if name in self._nodes:
+            raise GraphBuildError(f"Node already registered: {name}")
+        self._nodes[name] = node
         return self
 
     def add_edge(self, source: Any, target: Any) -> "GraphBuilder":

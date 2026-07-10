@@ -11,6 +11,8 @@ class AgentState(TypedDict, total=False):
     context: dict[str, Any]
     metadata: dict[str, Any]
     current_step: str | None
+    understanding: dict[str, Any]
+    decision: dict[str, Any]
     result: dict[str, Any] | None
     status: str
 

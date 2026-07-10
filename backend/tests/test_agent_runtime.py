@@ -5,8 +5,15 @@ from app.agent_runtime.exceptions import GraphBuildError, GraphExecutionError
 from app.agent_runtime.graph.builder import GraphBuilder
 from app.agent_runtime.graph.edges import FINISH_NODE, PROCESS_INPUT_NODE, wire_default_workflow
 from app.agent_runtime.graph.nodes import FinishNode, InputNode
-from app.agent_runtime.runtime import AgentRuntime, build_default_graph, create_agent_runtime
+from app.agent_runtime.runtime import AgentRuntime, build_default_graph
 from app.agent_runtime.state.models import create_initial_state
+
+
+def _demo_runtime() -> AgentRuntime:
+    return AgentRuntime(
+        graph=build_default_graph(),
+        checkpoint_manager=InMemoryCheckpointManager(),
+    )
 
 
 def test_graph_builder_creates_default_workflow() -> None:
@@ -41,19 +48,19 @@ def test_graph_builder_rejects_duplicate_nodes() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_execute_workflow() -> None:
-    runtime = create_agent_runtime()
+    runtime = _demo_runtime()
     result = await runtime.execute("hello world", trace_id="trace-abc")
 
     assert result["status"] == "completed"
     assert result["trace_id"] == "trace-abc"
     assert result["current_step"] == FINISH_NODE
-    assert result["result"] == {"processed": True, "message_count": 1}
+    assert result["result"]["processed"] is True
     assert result["messages"] == [{"role": "user", "content": "hello world"}]
 
 
 @pytest.mark.asyncio
 async def test_runtime_execute_updates_state() -> None:
-    runtime = create_agent_runtime()
+    runtime = _demo_runtime()
     result = await runtime.execute(
         "test input",
         context={"project_id": "p-1"},
@@ -68,7 +75,7 @@ async def test_runtime_execute_updates_state() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_stream_workflow() -> None:
-    runtime = create_agent_runtime()
+    runtime = _demo_runtime()
     events: list[dict] = []
 
     async for event in runtime.stream("stream me", trace_id="trace-stream"):
@@ -116,7 +123,7 @@ def test_checkpoint_delete() -> None:
 @pytest.mark.asyncio
 async def test_runtime_saves_checkpoint_after_execute() -> None:
     manager = InMemoryCheckpointManager()
-    runtime = create_agent_runtime(checkpoint_manager=manager)
+    runtime = AgentRuntime(graph=build_default_graph(), checkpoint_manager=manager)
     result = await runtime.execute("persist this")
 
     stored = manager.load(result["execution_id"])
