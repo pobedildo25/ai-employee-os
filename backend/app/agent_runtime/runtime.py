@@ -15,8 +15,11 @@ from app.agents.executive.agent import ExecutiveAgent
 from app.agents.executive.node import ExecutiveAgentNode
 from app.context.builder import ContextBuilder, ContextBuilderNode, create_context_builder
 from app.llm.gateway import LLMGateway, create_llm_gateway
-from app.planning.executor import TaskExecutor
-from app.planning.nodes.executor_node import ExecutorNode, QualityCheckNode
+from app.document_creation.creator import DocumentCreator
+from app.document_creation.generators.ast_generator import DocumentASTGenerator
+from app.document_creation.nodes.document_creation_node import DocumentCreationNode
+from app.document_creation.nodes.document_render_node import DocumentRenderNode
+from app.planning.nodes.executor_node import QualityCheckNode
 from app.planning.nodes.planner_node import PlannerNode
 from app.planning.planner import TaskPlanner
 from app.skills.registry import CapabilityRegistry, create_capability_registry
@@ -44,7 +47,7 @@ def build_executive_graph(
     registry = capability_registry or create_capability_registry()
     agent = ExecutiveAgent(llm_gateway, capability_registry=registry)
     planner = TaskPlanner(llm_gateway)
-    executor = TaskExecutor()
+    document_creator = DocumentCreator(DocumentASTGenerator(llm_gateway))
     builder_instance = context_builder or create_context_builder()
     builder = GraphBuilder()
     builder.add_node(InputNode())
@@ -52,7 +55,8 @@ def build_executive_graph(
     builder.add_node(ExecutiveAgentNode(agent))
     builder.add_node(SkillResolverNode(registry))
     builder.add_node(PlannerNode(planner, registry))
-    builder.add_node(ExecutorNode(executor, registry))
+    builder.add_node(DocumentCreationNode(document_creator, registry))
+    builder.add_node(DocumentRenderNode())
     builder.add_node(QualityCheckNode())
     wire_executive_workflow(builder)
     return builder.build(checkpoint_manager=checkpoint_manager)

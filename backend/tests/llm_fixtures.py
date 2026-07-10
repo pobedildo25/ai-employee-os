@@ -62,3 +62,74 @@ def plan_json(
 def mock_gateway(settings: Settings, *responses: str) -> tuple[LLMGateway, MockProvider]:
     provider = MockProvider(responses=[LLMResponse(content=r, model="mock-model") for r in responses])
     return LLMGateway(provider, settings), provider
+
+
+def creation_ast_json(
+    *,
+    status: str = "ready",
+    document_type: str = "docx",
+    title: str = "Client Document",
+    missing_information: list[str] | None = None,
+) -> str:
+    if status == "incomplete":
+        payload = {
+            "status": "incomplete",
+            "document_type": document_type,
+            "missing_information": missing_information or ["нет данных клиента"],
+            "metadata": {"title": title},
+            "ast": None,
+        }
+        return json.dumps(payload, ensure_ascii=False)
+
+    payload = {
+        "status": "ready",
+        "document_type": document_type,
+        "missing_information": [],
+        "metadata": {"title": title, "summary": "Universal document structure"},
+        "ast": {
+            "node_type": "document",
+            "content": title,
+            "attributes": {},
+            "children": [
+                {
+                    "node_type": "section",
+                    "content": "Introduction",
+                    "attributes": {},
+                    "children": [
+                        {
+                            "node_type": "heading",
+                            "content": "Overview",
+                            "attributes": {},
+                            "children": [],
+                        },
+                        {
+                            "node_type": "paragraph",
+                            "content": "[Client overview section]",
+                            "attributes": {},
+                            "children": [],
+                        },
+                    ],
+                },
+                {
+                    "node_type": "section",
+                    "content": "Details",
+                    "attributes": {},
+                    "children": [
+                        {
+                            "node_type": "heading",
+                            "content": "Services",
+                            "attributes": {},
+                            "children": [],
+                        },
+                        {
+                            "node_type": "paragraph",
+                            "content": "[Services description section]",
+                            "attributes": {},
+                            "children": [],
+                        },
+                    ],
+                },
+            ],
+        },
+    }
+    return json.dumps(payload, ensure_ascii=False)

@@ -27,6 +27,7 @@ from app.skills.registry import create_capability_registry
 from tests.llm_fixtures import executive_json as _executive_json
 from tests.llm_fixtures import mock_gateway as _mock_gateway
 from tests.llm_fixtures import plan_json as _plan_json
+from tests.llm_fixtures import creation_ast_json as _creation_ast_json
 
 
 @pytest.fixture
@@ -218,6 +219,7 @@ async def test_langgraph_planning_integration(settings: Settings) -> None:
             next_action="execute",
         ),
         _plan_json(goal="Подготовить КП для клиента"),
+        _creation_ast_json(title="Коммерческое предложение"),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway, capability_registry=registry),
@@ -231,6 +233,7 @@ async def test_langgraph_planning_integration(settings: Settings) -> None:
 
     assert result["task_plan"] is not None
     assert len(result["task_plan"]["steps"]) == 2
-    assert result["task_execution"]["status"] == TaskExecutionStatus.COMPLETED.value
+    assert result["document_ast"] is not None
+    assert result["document_creation_result"]["missing_information"] == []
     assert result["quality_check"]["passed"] is True
     assert result["result"]["task_plan"]["goal"] == "Подготовить КП для клиента"

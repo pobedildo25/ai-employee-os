@@ -10,6 +10,7 @@ from app.agent_runtime.state.models import create_initial_state
 from tests.llm_fixtures import executive_json as _executive_json
 from tests.llm_fixtures import mock_gateway as _mock_gateway
 from tests.llm_fixtures import plan_json as _plan_json
+from tests.llm_fixtures import creation_ast_json as _creation_ast_json
 
 
 @pytest.fixture
@@ -59,6 +60,7 @@ async def test_proposal_request_understands_goal_and_capabilities(settings: Sett
             next_action="request_information",
         ),
         _plan_json(goal="создать коммерческое предложение"),
+        _creation_ast_json(title="Commercial proposal"),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway),
@@ -179,6 +181,7 @@ async def test_executive_graph_full_workflow(settings: Settings) -> None:
                 {"description": "Analyze report", "capability": "data_analysis", "dependencies": []},
             ],
         ),
+        _creation_ast_json(title="Data Analysis Report"),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway),
@@ -196,3 +199,4 @@ async def test_executive_graph_full_workflow(settings: Settings) -> None:
     assert result["current_step"] == "quality_check"
     assert result["result"]["understanding"]["goal"] == "анализ данных"
     assert result["result"]["decision"]["action"] == "EXECUTE"
+    assert result["document_ast"] is not None

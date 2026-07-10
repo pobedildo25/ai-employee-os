@@ -17,6 +17,7 @@ from app.skills.resolver import SkillResolverNode
 from tests.llm_fixtures import executive_json as _executive_json
 from tests.llm_fixtures import mock_gateway as _mock_gateway
 from tests.llm_fixtures import plan_json as _plan_json
+from tests.llm_fixtures import creation_ast_json as _creation_ast_json
 
 
 class DisabledSkill(BaseSkill):
@@ -52,6 +53,7 @@ def registry(settings: Settings) -> CapabilityRegistry:
 def test_skill_registration(registry: CapabilityRegistry) -> None:
     assert registry.get_skill("document_analysis_skill") is not None
     assert registry.get_skill("brand_style_analysis_skill") is not None
+    assert registry.get_skill("document_creation_skill") is not None
     assert registry.get_skill("document_render_skill") is not None
     assert registry.get_skill("document_skill") is not None
     assert registry.get_skill("analysis_skill") is not None
@@ -190,6 +192,7 @@ async def test_registry_integration_in_graph(settings: Settings) -> None:
                 {"description": "Analyze data", "capability": "data_analysis", "dependencies": []},
             ],
         ),
+        _creation_ast_json(title="Analysis Document"),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway, capability_registry=registry),
@@ -203,4 +206,4 @@ async def test_registry_integration_in_graph(settings: Settings) -> None:
 
     required = result["required_capabilities"]
     assert required["resolved"][0]["name"] == "data_analysis"
-    assert result["task_execution"]["status"] == "COMPLETED"
+    assert result["document_ast"] is not None

@@ -17,6 +17,8 @@ class AgentState(TypedDict, total=False):
     required_capabilities: dict[str, Any]
     task_plan: dict[str, Any] | None
     task_execution: dict[str, Any] | None
+    document_creation_result: dict[str, Any] | None
+    document_ast: dict[str, Any] | None
     quality_check: dict[str, Any] | None
     render_result: dict[str, Any] | None
     result: dict[str, Any] | None
