@@ -14,7 +14,7 @@ User Request → Executive Agent → Capability Planning → Task Planning
 ```
 
 **Runtime:** LangGraph  
-**Backend:** Python 3.12, FastAPI, PostgreSQL, Redis, Qdrant  
+**Backend:** Python 3.12, FastAPI, PostgreSQL, Redis, Qdrant, MinIO  
 **AI:** OpenRouter (через LLM Gateway), Mem0, Whisper  
 **Frontend:** React / Next.js
 
@@ -22,10 +22,96 @@ User Request → Executive Agent → Capability Planning → Task Planning
 
 ```
 ai-employee-os/
-├── backend/          # Python backend, агенты, skills, API
-├── frontend/         # Admin panel и UI (React / Next.js)
-├── infrastructure/   # Docker, CI/CD, deployment
-└── docs/             # Архитектура, контекст, roadmap, ADR
+├── backend/            # FastAPI backend
+├── docker-compose.yml  # Local development stack
+├── frontend/           # Admin panel и UI (React / Next.js)
+├── infrastructure/     # CI/CD, deployment (planned)
+└── docs/               # Архитектура, контекст, roadmap, ADR
+```
+
+## Требования
+
+- [Docker](https://docs.docker.com/get-docker/) 24+
+- [Docker Compose](https://docs.docker.com/compose/) v2+
+- Git
+
+Для локальной разработки без Docker (опционально):
+
+- Python 3.12+
+- PostgreSQL 16, Redis 7, Qdrant, MinIO — или используйте `docker compose` только для инфраструктуры
+
+## Быстрый старт
+
+### 1. Клонировать и настроить окружение
+
+```bash
+git clone https://github.com/pobedildo25/ai-employee-os.git
+cd ai-employee-os
+cp .env.example .env
+```
+
+Отредактируйте `.env` при необходимости. Для локальной разработки значения по умолчанию подходят.
+
+### 2. Запустить все сервисы
+
+```bash
+docker compose up --build
+```
+
+Фоновый режим:
+
+```bash
+docker compose up --build -d
+```
+
+### 3. Проверить health endpoint
+
+```bash
+curl http://localhost:8000/health
+```
+
+Ожидаемый ответ при здоровых сервисах:
+
+```json
+{
+  "status": "ok",
+  "service": "ai-employee-os",
+  "environment": "development",
+  "trace_id": "...",
+  "services": {
+    "postgres": { "status": "up", "detail": "ok" },
+    "redis": { "status": "up", "detail": "ok" },
+    "qdrant": { "status": "up", "detail": "ok" },
+    "minio": { "status": "up", "detail": "ok" }
+  }
+}
+```
+
+### Docker Compose сервисы
+
+| Сервис | Порт | Назначение |
+|--------|------|------------|
+| backend | 8000 | FastAPI API |
+| postgres | 5433 | Project & Client Memory |
+| redis | 6380 | Session Memory, task state |
+| qdrant | 6335 | Vector database (Knowledge Memory) |
+| minio | 9000 | Object storage (документы, артефакты) |
+| minio console | 9001 | Web UI MinIO |
+
+### Полезные команды
+
+```bash
+# Статус контейнеров
+docker compose ps
+
+# Логи backend
+docker compose logs -f backend
+
+# Остановить
+docker compose down
+
+# Остановить и удалить volumes (очистка данных)
+docker compose down -v
 ```
 
 ## Документация
@@ -37,19 +123,6 @@ ai-employee-os/
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Этапы разработки |
 | [docs/ADR/](docs/ADR/) | Architecture Decision Records |
 
-## Быстрый старт (планируется)
-
-```bash
-cp .env.example .env
-# Заполните переменные окружения
-
-# Backend (будет добавлен на следующих этапах)
-cd backend && pip install -r requirements.txt
-
-# Frontend (будет добавлен на следующих этапах)
-cd frontend && npm install
-```
-
 ## Принципы разработки
 
 - **Никаких жёстких сценариев** — агент сам решает, что делать
@@ -60,7 +133,7 @@ cd frontend && npm install
 
 ## Статус
 
-**Этап 0 — Foundation** — структура репозитория и документация.
+**Этап 1 — Local Infrastructure Foundation** — Docker-окружение, FastAPI skeleton, health checks.
 
 ## Лицензия
 
