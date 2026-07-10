@@ -25,7 +25,8 @@ class ExecutiveAgent:
 
     async def analyze(self, state: AgentState) -> ExecutiveAgentResult:
         user_input = state.get("user_input", "")
-        context = state.get("context") or {}
+        execution_context = state.get("execution_context") or {}
+        context = state.get("context") or execution_context or {}
         trace_id = state.get("trace_id", "-")
 
         messages: list[LLMMessage] = [

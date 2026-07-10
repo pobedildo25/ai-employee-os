@@ -28,6 +28,7 @@ from app.storage.minio_storage import MinioStorage
 from app.storage.storage_interface import StorageInterface
 from app.agent_runtime.checkpoint.manager import CheckpointManager, InMemoryCheckpointManager
 from app.agent_runtime.runtime import AgentRuntime, create_agent_runtime
+from app.context.builder import ContextBuilder, create_context_builder
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -99,6 +100,25 @@ def get_checkpoint_manager() -> CheckpointManager:
     return InMemoryCheckpointManager()
 
 
-@lru_cache
-def get_agent_runtime() -> AgentRuntime:
-    return create_agent_runtime(get_checkpoint_manager())
+def get_context_builder(
+    client_repository: ClientRepository = Depends(get_client_repository),
+    project_repository: ProjectRepository = Depends(get_project_repository),
+    artifact_repository: ArtifactRepository = Depends(get_artifact_repository),
+) -> ContextBuilder:
+    return create_context_builder(
+        client_repository=client_repository,
+        project_repository=project_repository,
+        artifact_repository=artifact_repository,
+    )
+
+
+def get_agent_runtime(
+    context_builder=Depends(get_context_builder),
+    checkpoint_manager: CheckpointManager = Depends(get_checkpoint_manager),
+    llm_gateway: LLMGateway = Depends(get_llm_gateway),
+) -> AgentRuntime:
+    return create_agent_runtime(
+        checkpoint_manager=checkpoint_manager,
+        llm_gateway=llm_gateway,
+        context_builder=context_builder,
+    )

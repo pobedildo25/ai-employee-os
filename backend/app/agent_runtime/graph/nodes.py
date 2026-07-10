@@ -58,6 +58,7 @@ class FinishNode(BaseNode):
             "current_step": self.name,
             "status": "completed",
             "result": {
+                "execution_context": state.get("execution_context"),
                 "understanding": state.get("understanding"),
                 "decision": state.get("decision"),
                 "processed": True,

@@ -9,6 +9,7 @@ class AgentState(TypedDict, total=False):
     user_input: str
     messages: list[dict[str, Any]]
     context: dict[str, Any]
+    execution_context: dict[str, Any]
     metadata: dict[str, Any]
     current_step: str | None
     understanding: dict[str, Any]
