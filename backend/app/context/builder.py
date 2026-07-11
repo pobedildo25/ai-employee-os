@@ -18,6 +18,8 @@ from app.memory.manager import MemoryManager
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.client_repository import ClientRepository
 from app.repositories.project_repository import ProjectRepository
+from app.workspace.context import WorkspaceContextProvider
+from app.workspace.service import WorkspaceService
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +68,7 @@ class ContextBuilder:
             conversation_history=merged.get("conversation_history", []),
             memory_context=merged.get("memory_context", []),
             knowledge_context=merged.get("knowledge_context", []),
+            workspace_context=merged.get("workspace_context"),
             preferences=preferences or merged.get("preferences", {}),
             metadata=metadata or {},
             extensions=merged.get("extensions", {}),
@@ -127,6 +130,7 @@ def create_context_builder(
     history_provider: HistoryProvider | None = None,
     memory_manager: MemoryManager | None = None,
     knowledge_manager: KnowledgeManager | None = None,
+    workspace_service: WorkspaceService | None = None,
 ) -> ContextBuilder:
     providers: list[ContextProvider] = []
 
@@ -143,6 +147,8 @@ def create_context_builder(
         providers.append(MemoryContextProvider(memory_manager))
     if knowledge_manager is not None:
         providers.append(KnowledgeContextProvider(knowledge_manager))
+    if workspace_service is not None:
+        providers.append(WorkspaceContextProvider(workspace_service))
 
     return ContextBuilder(providers)
 
@@ -166,6 +172,7 @@ def _provider_contributed(name: str, merged: dict[str, Any]) -> bool:
         "history": "conversation_history",
         "memory": "memory_context",
         "knowledge": "knowledge_context",
+        "workspace": "workspace_context",
     }
     field = mapping.get(name)
     if field is None:

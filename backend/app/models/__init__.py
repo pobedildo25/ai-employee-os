@@ -6,6 +6,7 @@ from app.models.enums import ArtifactStatus
 from app.models.knowledge import KnowledgeRecord
 from app.models.project import Project
 from app.models.task import Task
+from app.models.workspace import ConversationRecord, WorkspaceRecord, WorkspaceSessionRecord
 
 __all__ = [
     "BaseEntity",
@@ -16,4 +17,7 @@ __all__ = [
     "ArtifactStatus",
     "KnowledgeRecord",
     "Task",
+    "WorkspaceRecord",
+    "WorkspaceSessionRecord",
+    "ConversationRecord",
 ]

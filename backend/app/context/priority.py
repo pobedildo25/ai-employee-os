@@ -32,10 +32,14 @@ def build_prioritized_context(context: ExecutionContext) -> dict[str, Any]:
         raw["extensions"] = context.extensions
     if context.memory_context:
         raw["memory_context"] = context.memory_context
+    if context.workspace_context:
+        raw["workspace_context"] = context.workspace_context
 
     prioritized = {key: raw[key] for key in CONTEXT_PRIORITY if _has_value(raw.get(key))}
     if context.memory_context:
         prioritized["memory_context"] = raw["memory_context"]
+    if context.workspace_context:
+        prioritized["workspace_context"] = raw["workspace_context"]
     return prioritized
 
 

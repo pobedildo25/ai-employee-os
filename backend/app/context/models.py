@@ -28,6 +28,7 @@ class ExecutionContext(BaseModel):
     conversation_history: list[dict[str, Any]] = Field(default_factory=list)
     memory_context: list[dict[str, Any]] = Field(default_factory=list)
     knowledge_context: list[dict[str, Any]] = Field(default_factory=list)
+    workspace_context: dict[str, Any] | None = None
     preferences: dict[str, Any] = Field(default_factory=dict)
     metadata: dict[str, Any] = Field(default_factory=dict)
     extensions: dict[str, Any] = Field(default_factory=dict)
