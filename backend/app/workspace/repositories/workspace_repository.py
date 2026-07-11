@@ -73,6 +73,7 @@ class PostgresWorkspaceRepository(WorkspaceRepository):
         record.active_session_id = workspace.active_session_id
         record.active_task_id = workspace.active_task_id
         record.active_artifact_id = workspace.active_artifact_id
+        record.active_background_tasks = [str(task_id) for task_id in workspace.active_background_tasks]
         record.metadata_ = workspace.metadata
         await self._session.flush()
         return workspace
@@ -132,6 +133,13 @@ class PostgresWorkspaceRepository(WorkspaceRepository):
 
 
 def _to_workspace(record: WorkspaceRecord) -> Workspace:
+    raw_tasks = record.active_background_tasks or []
+    task_ids: list[UUID] = []
+    for value in raw_tasks:
+        try:
+            task_ids.append(UUID(str(value)))
+        except ValueError:
+            continue
     return Workspace(
         id=record.id,
         client_id=record.client_id,
@@ -139,6 +147,7 @@ def _to_workspace(record: WorkspaceRecord) -> Workspace:
         active_session_id=record.active_session_id,
         active_task_id=record.active_task_id,
         active_artifact_id=record.active_artifact_id,
+        active_background_tasks=task_ids,
         metadata=record.metadata_ or {},
         created_at=record.created_at,
         updated_at=record.updated_at,

@@ -25,6 +25,7 @@ class AgentState(TypedDict, total=False):
     revision_count: int
     knowledge_migration_result: dict[str, Any] | None
     workspace_context: dict[str, Any] | None
+    background_task: dict[str, Any] | None
     quality_check: dict[str, Any] | None
     render_result: dict[str, Any] | None
     result: dict[str, Any] | None

@@ -44,6 +44,7 @@ class WorkspaceRecord(BaseEntity):
         nullable=True,
         index=True,
     )
+    active_background_tasks: Mapped[list[Any] | None] = mapped_column(JSONB, nullable=True)
     metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB, nullable=True)
 
 

@@ -72,6 +72,7 @@ class WorkspaceService:
             "active_session_id": str(workspace.active_session_id) if workspace.active_session_id else None,
             "active_task_id": str(workspace.active_task_id) if workspace.active_task_id else None,
             "active_artifact_id": str(workspace.active_artifact_id) if workspace.active_artifact_id else None,
+            "active_background_tasks": [str(task_id) for task_id in workspace.active_background_tasks],
             "session": session.model_dump(mode="json") if session else None,
             "conversation": {
                 "id": str(conversation.id),

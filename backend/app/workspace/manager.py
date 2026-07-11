@@ -117,6 +117,22 @@ class WorkspaceManager:
         workspace.active_artifact_id = artifact_id
         return await self._repository.save_workspace(workspace)
 
+    async def track_background_task(self, workspace_id: UUID, task_id: UUID) -> Workspace:
+        workspace = await self._require_workspace(workspace_id)
+        if task_id not in workspace.active_background_tasks:
+            workspace.active_background_tasks.append(task_id)
+        return await self._repository.save_workspace(workspace)
+
+    async def untrack_background_task(self, workspace_id: UUID, task_id: UUID) -> Workspace:
+        workspace = await self._require_workspace(workspace_id)
+        workspace.active_background_tasks = [
+            item for item in workspace.active_background_tasks if item != task_id
+        ]
+        return await self._repository.save_workspace(workspace)
+
+    async def get_active_background_tasks(self, workspace: Workspace) -> list[UUID]:
+        return list(workspace.active_background_tasks)
+
     async def append_message(
         self,
         conversation_id: UUID,

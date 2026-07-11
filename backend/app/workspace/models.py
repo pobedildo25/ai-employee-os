@@ -20,6 +20,7 @@ class Workspace(BaseModel):
     active_session_id: UUID | None = None
     active_task_id: UUID | None = None
     active_artifact_id: UUID | None = None
+    active_background_tasks: list[UUID] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now())
     updated_at: datetime = Field(default_factory=lambda: datetime.now())

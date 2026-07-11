@@ -1,5 +1,6 @@
 from app.models.artifact import Artifact
 from app.models.artifact_version import ArtifactVersion
+from app.models.background_task import BackgroundTaskRecord
 from app.models.base import BaseEntity
 from app.models.client import Client
 from app.models.enums import ArtifactStatus
@@ -15,6 +16,7 @@ __all__ = [
     "Artifact",
     "ArtifactVersion",
     "ArtifactStatus",
+    "BackgroundTaskRecord",
     "KnowledgeRecord",
     "Task",
     "WorkspaceRecord",
