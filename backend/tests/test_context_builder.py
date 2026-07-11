@@ -50,6 +50,10 @@ class FakeProjectRepository:
     async def get_by_id(self, project_id: UUID) -> Project | None:
         return self._projects.get(project_id)
 
+    async def list_by_client(self, client_id: UUID, skip: int = 0, limit: int = 100) -> list[Project]:
+        matched = [p for p in self._projects.values() if p.client_id == client_id]
+        return matched[skip : skip + limit]
+
 
 class FakeArtifactRepository:
     def __init__(self, artifacts: dict[UUID, list[Artifact]] | None = None) -> None:
@@ -143,6 +147,7 @@ def test_priority_ordering() -> None:
         client_context={"name": "Client"},
         artifact_context=[{"name": "doc.pdf"}],
         knowledge_context=[{"title": "Tone", "content": "Formal"}],
+        client_intelligence_context={"summary": "B2B SaaS client", "confidence": 0.8},
         learning_context=[{"category": "presentation", "rule": "less text on slides"}],
         preferences={"lang": "ru"},
         conversation_history=[{"role": "user", "content": "hi"}],

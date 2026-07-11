@@ -36,6 +36,7 @@ class QualityGateNode:
             "document_creation_result": state.get("document_creation_result"),
             "presentation_plan": state.get("presentation_plan"),
             "strategy_result": state.get("strategy_result"),
+            "client_intelligence_result": state.get("client_intelligence_result"),
             "response_message": (state.get("decision") or {}).get("response_message"),
             "revision_count": int(state.get("revision_count") or 0),
             "user_feedback": (state.get("metadata") or {}).get("user_feedback"),
@@ -47,6 +48,7 @@ class QualityGateNode:
         )
         review_result = _merge_presentation_quality(review_result, review_context)
         review_result = _merge_strategy_quality(review_result, review_context)
+        review_result = _merge_client_intelligence_quality(review_result, review_context)
 
 
         client_id = _to_uuid(execution_context.get("client_id") or state.get("context", {}).get("client_id"))
@@ -164,6 +166,37 @@ def _merge_strategy_quality(review_result, review_context: dict[str, Any]):
         result=result,
         document_ast=review_context.get("document_ast") or result.document_ast,
     )
+    if not extra:
+        return review_result
+
+    merged_issues = list(review_result.issues) + extra
+    status = review_result.status
+    if any(issue.severity == IssueSeverity.CRITICAL for issue in extra):
+        status = ReviewStatus.ESCALATE
+    elif any(issue.severity == IssueSeverity.MAJOR for issue in extra) and status == ReviewStatus.PASS:
+        status = ReviewStatus.REVISE
+    return review_result.model_copy(update={"issues": merged_issues, "status": status})
+
+
+def _merge_client_intelligence_quality(review_result, review_context: dict[str, Any]):
+    """Attach client intelligence checks without changing QualityGate core."""
+    result_data = review_context.get("client_intelligence_result")
+    profile_data = None
+    if isinstance(result_data, dict):
+        profile_data = result_data.get("profile")
+    if profile_data is None:
+        profile_data = (review_context.get("execution_context") or {}).get(
+            "client_intelligence_context"
+        )
+    if not profile_data:
+        return review_result
+
+    from app.client_intelligence.models import ClientProfile
+    from app.client_intelligence.validators.profile_validator import ProfileValidator
+    from app.quality.models import IssueSeverity, ReviewStatus
+
+    profile = ClientProfile.model_validate(profile_data)
+    extra = ProfileValidator().quality_issues(profile)
     if not extra:
         return review_result
 

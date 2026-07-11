@@ -149,6 +149,8 @@ async def test_openapi_and_router(api_client: AsyncClient) -> None:
     assert "/api/v1/tasks/background" in paths
     assert "/api/v1/documents/{artifact_id}/process" in paths
     assert "/api/v1/clients" in paths
+    assert "/api/v1/clients/{client_id}/intelligence" in paths
+    assert "/api/v1/clients/{client_id}/intelligence/analyze" in paths
 
 
 @pytest.mark.asyncio

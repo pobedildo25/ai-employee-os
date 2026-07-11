@@ -29,6 +29,7 @@ class AgentState(TypedDict, total=False):
     observability_trace: dict[str, Any] | None
     presentation_plan: dict[str, Any] | None
     strategy_result: dict[str, Any] | None
+    client_intelligence_result: dict[str, Any] | None
     learning_result: dict[str, Any] | None
     quality_check: dict[str, Any] | None
 

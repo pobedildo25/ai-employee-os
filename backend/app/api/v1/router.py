@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     artifacts,
+    client_intelligence,
     clients,
     documents,
     execution,
@@ -17,6 +18,7 @@ from app.api.v1 import (
 api_router = APIRouter()
 api_router.include_router(health.router)
 api_router.include_router(clients.router)
+api_router.include_router(client_intelligence.router)
 api_router.include_router(projects.router)
 api_router.include_router(artifacts.router)
 api_router.include_router(tasks.router)

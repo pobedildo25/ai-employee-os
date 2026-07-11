@@ -48,6 +48,7 @@ from app.task_queue.repositories.task_queue_repository import PostgresTaskQueueR
 from app.workspace.manager import WorkspaceManager
 from app.workspace.repositories.workspace_repository import PostgresWorkspaceRepository
 from app.workspace.service import WorkspaceService
+from app.client_intelligence.manager import ClientIntelligenceManager
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -167,6 +168,33 @@ def get_task_queue_manager(
     return TaskQueueManager(PostgresTaskQueueRepository(session))
 
 
+def get_client_intelligence_manager(
+    client_repository: ClientRepository = Depends(get_client_repository),
+    project_repository: ProjectRepository = Depends(get_project_repository),
+    artifact_repository: ArtifactRepository = Depends(get_artifact_repository),
+    memory_manager: MemoryManager = Depends(get_memory_manager),
+    knowledge_manager: KnowledgeManager = Depends(get_knowledge_manager),
+    learning_manager: LearningManager = Depends(get_learning_manager),
+    workspace_service: WorkspaceService = Depends(get_workspace_service),
+    llm_gateway: LLMGateway = Depends(get_llm_gateway),
+) -> ClientIntelligenceManager:
+    from app.client_intelligence.analyzer import ClientIntelligenceAnalyzer
+    from app.client_intelligence.builder import ClientIntelligenceBuilder
+
+    analyzer = ClientIntelligenceAnalyzer(llm_gateway)
+    return ClientIntelligenceManager(
+        analyzer=analyzer,
+        builder=ClientIntelligenceBuilder(analyzer),
+        client_repository=client_repository,
+        project_repository=project_repository,
+        artifact_repository=artifact_repository,
+        memory_manager=memory_manager,
+        knowledge_manager=knowledge_manager,
+        learning_manager=learning_manager,
+        workspace_service=workspace_service,
+    )
+
+
 def get_context_builder(
     client_repository: ClientRepository = Depends(get_client_repository),
     project_repository: ProjectRepository = Depends(get_project_repository),
@@ -175,6 +203,7 @@ def get_context_builder(
     knowledge_manager: KnowledgeManager = Depends(get_knowledge_manager),
     learning_manager: LearningManager = Depends(get_learning_manager),
     workspace_service: WorkspaceService = Depends(get_workspace_service),
+    client_intelligence_manager: ClientIntelligenceManager = Depends(get_client_intelligence_manager),
 ) -> ContextBuilder:
     return create_context_builder(
         client_repository=client_repository,
@@ -184,6 +213,7 @@ def get_context_builder(
         knowledge_manager=knowledge_manager,
         learning_manager=learning_manager,
         workspace_service=workspace_service,
+        client_intelligence_manager=client_intelligence_manager,
     )
 
 

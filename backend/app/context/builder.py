@@ -12,6 +12,8 @@ from app.context.providers.client_provider import ClientContextProvider
 from app.context.providers.history_provider import HistoryProvider, InMemoryHistoryProvider
 from app.context.providers.memory_provider import MemoryContextProvider
 from app.context.providers.project_provider import ProjectContextProvider
+from app.client_intelligence.manager import ClientIntelligenceManager
+from app.client_intelligence.providers.intelligence_provider import ClientIntelligenceContextProvider
 from app.knowledge.manager import KnowledgeManager
 from app.knowledge.providers.knowledge_provider import KnowledgeContextProvider
 from app.learning.manager import LearningManager
@@ -70,6 +72,7 @@ class ContextBuilder:
             conversation_history=merged.get("conversation_history", []),
             memory_context=merged.get("memory_context", []),
             knowledge_context=merged.get("knowledge_context", []),
+            client_intelligence_context=merged.get("client_intelligence_context"),
             learning_context=merged.get("learning_context")
             or merged.get("learning_rules")
             or [],
@@ -144,6 +147,7 @@ def create_context_builder(
     knowledge_manager: KnowledgeManager | None = None,
     learning_manager: LearningManager | None = None,
     workspace_service: WorkspaceService | None = None,
+    client_intelligence_manager: ClientIntelligenceManager | None = None,
 ) -> ContextBuilder:
     providers: list[ContextProvider] = []
 
@@ -160,6 +164,32 @@ def create_context_builder(
         providers.append(MemoryContextProvider(memory_manager))
     if knowledge_manager is not None:
         providers.append(KnowledgeContextProvider(knowledge_manager))
+
+    intelligence_manager = client_intelligence_manager
+    if intelligence_manager is None and any(
+        item is not None
+        for item in (
+            client_repository,
+            project_repository,
+            artifact_repository,
+            memory_manager,
+            knowledge_manager,
+            learning_manager,
+            workspace_service,
+        )
+    ):
+        intelligence_manager = ClientIntelligenceManager(
+            client_repository=client_repository,
+            project_repository=project_repository,
+            artifact_repository=artifact_repository,
+            memory_manager=memory_manager,
+            knowledge_manager=knowledge_manager,
+            learning_manager=learning_manager,
+            workspace_service=workspace_service,
+        )
+    if intelligence_manager is not None:
+        providers.append(ClientIntelligenceContextProvider(intelligence_manager))
+
     if learning_manager is not None:
         providers.append(LearningContextProvider(learning_manager))
     if workspace_service is not None:
@@ -187,6 +217,7 @@ def _provider_contributed(name: str, merged: dict[str, Any]) -> bool:
         "history": "conversation_history",
         "memory": "memory_context",
         "knowledge": "knowledge_context",
+        "client_intelligence": "client_intelligence_context",
         "learning": "learning_context",
         "workspace": "workspace_context",
     }
