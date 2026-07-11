@@ -14,7 +14,7 @@ from app.agent_runtime.graph.edges import wire_default_workflow, wire_executive_
 from app.agent_runtime.graph.nodes import FinishNode, InputNode
 from app.agent_runtime.state.models import AgentState, create_initial_state
 from app.agents.executive.agent import ExecutiveAgent
-from app.agents.executive.node import ExecutiveAgentNode
+from app.agents.executive.node import ChatResponseNode, ExecutiveAgentNode
 from app.context.builder import ContextBuilder, ContextBuilderNode, create_context_builder
 from app.llm.gateway import LLMGateway, create_llm_gateway
 from app.document_creation.creator import DocumentCreator
@@ -71,6 +71,7 @@ def build_executive_graph(
     builder.add_node(InputNode())
     builder.add_node(ContextBuilderNode(builder_instance))
     builder.add_node(ExecutiveAgentNode(agent))
+    builder.add_node(ChatResponseNode())
     builder.add_node(SkillResolverNode(registry))
     builder.add_node(PlannerNode(planner, registry))
     builder.add_node(OrchestrationNode())

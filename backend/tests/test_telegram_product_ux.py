@@ -15,6 +15,8 @@ from app.adapters.telegram.revision import is_contextual_revision_message
 from app.adapters.telegram.sender import InMemoryTelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.exceptions import GraphExecutionError
+from app.agents.decision.models import AgentDecision, DecisionType
+from app.agents.executive.models import AgentUnderstanding, ExecutiveAgentResult
 from app.orchestration.orchestrator import Orchestrator
 from app.orchestration.store import ExecutionStore
 from app.workspace.manager import WorkspaceManager
@@ -118,8 +120,9 @@ def build_flow(
     *,
     continuation: FakeContinuation | None = None,
     orchestrator: Orchestrator | None = None,
+    executive_agent: Any | None = None,
 ) -> TelegramProductFlow:
-    return TelegramProductFlow(
+    flow = TelegramProductFlow(
         runtime=runtime,  # type: ignore[arg-type]
         session_manager=session_manager,
         sender=sender,
@@ -128,7 +131,29 @@ def build_flow(
         continuation=continuation,  # type: ignore[arg-type]
         artifact_delivery=FakeArtifactDelivery(),  # type: ignore[arg-type]
         orchestrator=orchestrator or Orchestrator(store=ExecutionStore()),
+        executive_agent=executive_agent,  # type: ignore[arg-type]
     )
+    if executive_agent is None:
+        flow._executive_agent = _task_executive_agent()  # type: ignore[assignment]
+    return flow
+
+
+def _task_executive_agent() -> Any:
+    class TaskExecutive:
+        async def analyze(self, state):
+            return ExecutiveAgentResult(
+                understanding=AgentUnderstanding(
+                    goal=state.get("user_input", ""),
+                    summary="task",
+                    next_action="execute",
+                ),
+                decision=AgentDecision(
+                    action=DecisionType.EXECUTE,
+                    reasoning="task request",
+                ),
+            )
+
+    return TaskExecutive()
 
 
 @pytest.mark.asyncio

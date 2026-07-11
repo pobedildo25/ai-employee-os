@@ -4,11 +4,13 @@ from typing import Any
 from app.agent_runtime.graph.nodes import BaseNode
 from app.agent_runtime.state.models import AgentState
 from app.agents.executive.agent import ExecutiveAgent
+from app.agents.intent.policy import extract_chat_reply
 
 logger = logging.getLogger(__name__)
 
 EXECUTIVE_AGENT_NODE = "executive_agent"
 DECISION_NODE = "decision"
+CHAT_RESPONSE_NODE = "chat_response"
 
 
 class ExecutiveAgentNode:
@@ -46,6 +48,36 @@ class DecisionNode(BaseNode):
             "metadata": {
                 **(state.get("metadata") or {}),
                 "decision_action": decision.get("action"),
+            },
+        }
+        self._log_node({**state, **update}, "completed")
+        return update
+
+
+class ChatResponseNode(BaseNode):
+    """Completes conversational turns without planner/orchestration."""
+
+    name = CHAT_RESPONSE_NODE
+
+    def __call__(self, state: AgentState) -> dict[str, Any]:
+        self._log_node(state, "started")
+        decision = state.get("decision") or {}
+        message = extract_chat_reply(decision)
+        if not message:
+            message = (state.get("understanding") or {}).get("summary") or "Привет! Чем могу помочь?"
+        update = {
+            "current_step": self.name,
+            "status": "completed",
+            "result": {
+                "message": message,
+                "decision": decision,
+                "understanding": state.get("understanding"),
+            },
+            "quality_check": {
+                "passed": True,
+                "score": 1.0,
+                "notes": "Conversational response",
+                "issues": [],
             },
         }
         self._log_node({**state, **update}, "completed")

@@ -134,7 +134,7 @@ def build_e2e_runtime(
     from app.agent_runtime.graph.edges import wire_executive_workflow
     from app.agent_runtime.graph.nodes import InputNode
     from app.agents.executive.agent import ExecutiveAgent
-    from app.agents.executive.node import ExecutiveAgentNode
+    from app.agents.executive.node import ChatResponseNode, ExecutiveAgentNode
     from app.document_creation.creator import DocumentCreator
     from app.document_creation.generators.ast_generator import DocumentASTGenerator
     from app.document_creation.nodes.document_creation_node import DocumentCreationNode
@@ -162,6 +162,7 @@ def build_e2e_runtime(
     builder.add_node(InputNode())
     builder.add_node(E2EContextBuilderNode(context_builder))
     builder.add_node(ExecutiveAgentNode(agent))
+    builder.add_node(ChatResponseNode())
     builder.add_node(SkillResolverNode(registry))
     builder.add_node(PlannerNode(planner, registry))
     builder.add_node(OrchestrationNode())

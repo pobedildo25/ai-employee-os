@@ -2,7 +2,8 @@ from langgraph.graph import END, START
 
 from app.agent_runtime.graph.builder import GraphBuilder
 from app.agent_runtime.state.models import AgentState
-from app.agents.executive.node import EXECUTIVE_AGENT_NODE
+from app.agents.executive.node import CHAT_RESPONSE_NODE, EXECUTIVE_AGENT_NODE
+from app.agents.intent.policy import is_chat_decision
 from app.context.builder import CONTEXT_BUILDER_NODE
 from app.document_creation.nodes.document_creation_node import DOCUMENT_CREATION_NODE
 from app.document_creation.nodes.document_render_node import DOCUMENT_RENDER_NODE
@@ -21,6 +22,15 @@ FINISH_NODE = "finish"
 ROUTE_PASS = "pass"
 ROUTE_REVISE = "revise"
 ROUTE_END = "end"
+ROUTE_CHAT = "chat"
+ROUTE_TASK = "task"
+
+
+def route_after_executive(state: AgentState) -> str:
+    action = (state.get("decision") or {}).get("action")
+    if is_chat_decision(action):
+        return ROUTE_CHAT
+    return ROUTE_TASK
 
 
 def route_after_quality(state: AgentState) -> str:
@@ -47,7 +57,15 @@ def wire_executive_workflow(builder: GraphBuilder) -> GraphBuilder:
     builder.add_edge(START, PROCESS_INPUT_NODE)
     builder.add_edge(PROCESS_INPUT_NODE, CONTEXT_BUILDER_NODE)
     builder.add_edge(CONTEXT_BUILDER_NODE, EXECUTIVE_AGENT_NODE)
-    builder.add_edge(EXECUTIVE_AGENT_NODE, SKILL_RESOLVER_NODE)
+    builder.add_conditional_edges(
+        EXECUTIVE_AGENT_NODE,
+        route_after_executive,
+        {
+            ROUTE_CHAT: CHAT_RESPONSE_NODE,
+            ROUTE_TASK: SKILL_RESOLVER_NODE,
+        },
+    )
+    builder.add_edge(CHAT_RESPONSE_NODE, END)
     builder.add_edge(SKILL_RESOLVER_NODE, PLANNER_NODE)
     builder.add_edge(PLANNER_NODE, ORCHESTRATION_NODE)
     builder.add_edge(ORCHESTRATION_NODE, EXECUTOR_NODE)

@@ -11,6 +11,7 @@ from app.adapters.telegram.progress import TelegramProgressMessenger
 from app.adapters.telegram.sender import TelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.runtime import AgentRuntime
+from app.agents.executive.agent import ExecutiveAgent
 from app.orchestration.orchestrator import Orchestrator
 from app.quality.gate import QualityGate
 from app.quality.nodes.quality_gate_node import QualityGateNode
@@ -40,6 +41,7 @@ class TelegramAdapter(TelegramAdapterInterface):
         storage: StorageInterface | None = None,
         orchestrator: Orchestrator | None = None,
         capability_registry: CapabilityRegistry | None = None,
+        executive_agent: ExecutiveAgent | None = None,
     ) -> None:
         self.enabled = enabled
         self._mapper = mapper or TelegramMapper()
@@ -52,6 +54,7 @@ class TelegramAdapter(TelegramAdapterInterface):
             storage=storage,
             orchestrator=orchestrator,
             capability_registry=capability_registry,
+            executive_agent=executive_agent,
         )
         self._handler = TelegramMessageHandler(
             runtime=runtime,
@@ -93,6 +96,7 @@ class TelegramAdapter(TelegramAdapterInterface):
         storage: StorageInterface | None,
         orchestrator: Orchestrator | None,
         capability_registry: CapabilityRegistry | None,
+        executive_agent: ExecutiveAgent | None = None,
     ) -> TelegramProductFlow:
         continuation = self._build_continuation(capability_registry)
         return TelegramProductFlow(
@@ -105,6 +109,7 @@ class TelegramAdapter(TelegramAdapterInterface):
             continuation=continuation,
             artifact_delivery=TelegramArtifactDelivery(artifact_service, storage),
             orchestrator=orchestrator,
+            executive_agent=executive_agent,
         )
 
     @staticmethod

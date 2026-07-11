@@ -4,6 +4,7 @@ from app.adapters.telegram.mapper import TelegramMapper
 from app.adapters.telegram.sender import HttpTelegramSender, InMemoryTelegramSender, TelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.runtime import AgentRuntime
+from app.agents.executive.agent import ExecutiveAgent
 from app.core.config import Settings
 from app.orchestration.orchestrator import Orchestrator
 from app.repositories.client_repository import ClientRepository
@@ -25,6 +26,7 @@ def create_telegram_adapter(
     conversation_store: TelegramConversationStore | None = None,
     capability_registry: CapabilityRegistry | None = None,
     client_repository: ClientRepository | None = None,
+    executive_agent: ExecutiveAgent | None = None,
 ) -> TelegramAdapter:
     """Wire Telegram transport to existing runtime/workspace. No new singletons."""
     if sender is None:
@@ -48,6 +50,7 @@ def create_telegram_adapter(
         orchestrator=orchestrator,
         conversation_store=conversation_store,
         capability_registry=capability_registry,
+        executive_agent=executive_agent,
     )
 
 
@@ -61,6 +64,8 @@ def create_telegram_bot(
     storage: StorageInterface | None = None,
     orchestrator: Orchestrator | None = None,
     client_repository: ClientRepository | None = None,
+    executive_agent: ExecutiveAgent | None = None,
+    capability_registry: CapabilityRegistry | None = None,
 ) -> TelegramBot:
     adapter = create_telegram_adapter(
         runtime=runtime,
@@ -71,5 +76,7 @@ def create_telegram_bot(
         storage=storage,
         orchestrator=orchestrator,
         client_repository=client_repository,
+        executive_agent=executive_agent,
+        capability_registry=capability_registry,
     )
     return TelegramBot(adapter, token=settings.telegram_bot_token or None)

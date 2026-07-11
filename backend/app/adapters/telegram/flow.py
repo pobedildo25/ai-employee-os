@@ -1,6 +1,8 @@
 from typing import Any
+import uuid
 
 from app.agent_runtime.exceptions import GraphExecutionError
+from app.agent_runtime.state.models import create_initial_state
 from app.adapters.telegram.conversation_store import TelegramConversationState, TelegramFlowMode
 from app.adapters.telegram.continuation import TelegramArtifactDelivery, TelegramGraphContinuation
 from app.adapters.telegram.keyboard import approval_keyboard, retry_keyboard, revision_keyboard
@@ -19,6 +21,8 @@ from app.adapters.telegram.revision import is_contextual_revision_message
 from app.adapters.telegram.sender import TelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.runtime import AgentRuntime
+from app.agents.executive.agent import ExecutiveAgent
+from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
 from app.orchestration.orchestrator import Orchestrator
 
 
@@ -37,6 +41,7 @@ class TelegramProductFlow:
         continuation: TelegramGraphContinuation | None = None,
         artifact_delivery: TelegramArtifactDelivery | None = None,
         orchestrator: Orchestrator | None = None,
+        executive_agent: ExecutiveAgent | None = None,
     ) -> None:
         self._runtime = runtime
         self._sessions = session_manager
@@ -47,6 +52,7 @@ class TelegramProductFlow:
         self._continuation = continuation
         self._artifacts = artifact_delivery or TelegramArtifactDelivery(None, None)
         self._orchestrator = orchestrator or Orchestrator()
+        self._executive_agent = executive_agent
 
     async def handle_message(self, request: TelegramExecutionRequest) -> dict[str, Any]:
         convo = self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
@@ -60,7 +66,58 @@ class TelegramProductFlow:
         if convo.flow_mode == TelegramFlowMode.COMPLETED and is_contextual_revision_message(request.user_input):
             return await self._handle_revision_feedback(request, convo, snapshot, contextual=True)
 
+        classification = await self._classify_intent(request, snapshot)
+        if classification is not None:
+            if is_chat_decision(classification.decision.action.value):
+                return await self._handle_chat_response(request, convo, classification)
+            if is_task_decision(classification.decision.action.value):
+                return await self._run_execution(request, convo, snapshot)
+
         return await self._run_execution(request, convo, snapshot)
+
+    async def _classify_intent(
+        self,
+        request: TelegramExecutionRequest,
+        snapshot: dict[str, Any],
+    ):
+        if self._executive_agent is None:
+            return None
+        context, metadata = self._build_runtime_payload(request, snapshot)
+        state = create_initial_state(
+            execution_id=uuid.uuid4().hex,
+            trace_id=uuid.uuid4().hex[:16],
+            user_input=request.user_input,
+            context=context,
+            metadata={**metadata, "intent_classification": True},
+        )
+        return await self._executive_agent.analyze(state)
+
+    async def _handle_chat_response(
+        self,
+        request: TelegramExecutionRequest,
+        convo: TelegramConversationState,
+        classification,
+    ) -> dict[str, Any]:
+        convo.flow_mode = TelegramFlowMode.COMPLETED
+        convo.last_user_input = request.user_input
+        convo.last_execution_id = None
+        convo.last_agent_state = None
+        self._store.save(convo)
+
+        text = extract_chat_reply(classification.decision.model_dump()) or "Привет! Я NOVA — AI-сотрудник агентства."
+        send_result = await self._sender.send_message(
+            request.telegram_chat_id,
+            text,
+            reply_to_message_id=request.telegram_message_id,
+        )
+        return {
+            "status": "completed",
+            "intent": "chat",
+            "reply": text,
+            "decision": classification.decision.model_dump(),
+            "workspace_id": convo.workspace_id,
+            "send_result": send_result,
+        }
 
     async def handle_callback(self, request: TelegramCallbackRequest) -> dict[str, Any]:
         convo = self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)

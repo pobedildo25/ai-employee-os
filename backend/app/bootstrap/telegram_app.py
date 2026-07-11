@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.adapters.telegram.bot import TelegramBot
 from app.adapters.telegram.factory import create_telegram_bot
 from app.agent_runtime.runtime import create_agent_runtime
+from app.agents.executive.agent import ExecutiveAgent
 from app.client_intelligence.analyzer import ClientIntelligenceAnalyzer
 from app.client_intelligence.builder import ClientIntelligenceBuilder
 from app.client_intelligence.manager import ClientIntelligenceManager
@@ -88,6 +89,7 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         learning_manager=learning_manager,
     )
     orchestrator = Orchestrator(store=get_execution_store_singleton())
+    executive_agent = ExecutiveAgent(llm_gateway, capability_registry=capability_registry)
     return create_telegram_bot(
         runtime=runtime,
         workspace_service=workspace_service,
@@ -96,4 +98,6 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         storage=storage,
         orchestrator=orchestrator,
         client_repository=client_repository,
+        executive_agent=executive_agent,
+        capability_registry=capability_registry,
     )
