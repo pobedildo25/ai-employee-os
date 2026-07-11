@@ -43,6 +43,7 @@ services:
       start_period: 40s
     volumes:
       - backend_backups:/app/backups
+      - ${AGENCY_ARCHIVE_PATH}:/data/agency_archive:ro
 
   postgres:
     image: postgres:16-alpine

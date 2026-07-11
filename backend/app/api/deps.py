@@ -297,6 +297,10 @@ def get_agent_runtime(
 def get_telegram_adapter(
     runtime: AgentRuntime = Depends(get_agent_runtime),
     workspace_service: WorkspaceService = Depends(get_workspace_service),
+    artifact_service: ArtifactService = Depends(get_artifact_service),
+    storage: StorageInterface = Depends(get_storage),
+    orchestrator=Depends(get_orchestrator),
+    capability_registry: CapabilityRegistry = Depends(get_capability_registry),
 ) -> TelegramAdapter:
     from app.adapters.telegram.bot import TelegramAdapter
     from app.adapters.telegram.factory import create_telegram_adapter
@@ -305,6 +309,10 @@ def get_telegram_adapter(
         runtime=runtime,
         workspace_service=workspace_service,
         settings=get_settings(),
+        artifact_service=artifact_service,
+        storage=storage,
+        orchestrator=orchestrator,
+        capability_registry=capability_registry,
     )
 
 

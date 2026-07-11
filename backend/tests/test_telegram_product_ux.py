@@ -172,7 +172,7 @@ async def test_progress_update_edits_single_message(
     await flow.handle_message(request)
 
     assert len(sender.sent) >= 1
-    assert sender.sent[0]["text"] == "🧠 Анализирую задачу"
+    assert sender.sent[0]["text"] == "🧠 NOVA анализирует задачу"
     assert len(sender.edited) >= 1
     assert "Исследование" in sender.edited[-1]["text"]
 

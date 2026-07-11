@@ -37,7 +37,15 @@ async def lifespan(app: FastAPI):
             secrets=SecretsManager(settings),
         )
     logger.info("Starting AI Employee OS backend (env=%s)", settings.app_env)
+
+    from app.adapters.telegram.polling import get_polling_service
+
+    polling = get_polling_service()
+    await polling.start()
+
     yield
+
+    await polling.stop()
     await close_postgres()
     await close_redis()
     close_qdrant()
