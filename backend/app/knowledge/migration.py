@@ -4,6 +4,7 @@ from uuid import UUID
 
 from app.brand_style.extractor import BrandStyleExtractor
 from app.brand_style.models import BrandProfile
+from app.clients.classification import is_telegram_user_client
 from app.document_intelligence.ast.models import DocumentAST
 from app.document_intelligence.models import DocumentRepresentation
 from app.document_intelligence.pipeline import DocumentPipeline
@@ -11,6 +12,7 @@ from app.knowledge.extractor import KnowledgeExtractor
 from app.knowledge.manager import KnowledgeManager
 from app.knowledge.memory_preparer import prepare_knowledge_memory_items
 from app.knowledge.models import KnowledgeItem, KnowledgeMigrationResult
+from app.repositories.client_repository import ClientRepository
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +26,13 @@ class KnowledgeMigrationService:
         manager: KnowledgeManager,
         document_pipeline: DocumentPipeline | None = None,
         brand_extractor: BrandStyleExtractor | None = None,
+        client_repository: ClientRepository | None = None,
     ) -> None:
         self._extractor = extractor
         self._manager = manager
         self._document_pipeline = document_pipeline or DocumentPipeline()
         self._brand_extractor = brand_extractor or BrandStyleExtractor()
+        self._clients = client_repository
 
     async def migrate(
         self,
@@ -40,6 +44,17 @@ class KnowledgeMigrationService:
         persist: bool = True,
         trace_id: str = "-",
     ) -> KnowledgeMigrationResult:
+        if self._clients is not None:
+            client = await self._clients.get_by_id(client_id)
+            if client is not None and is_telegram_user_client(client):
+                return KnowledgeMigrationResult(
+                    processed_artifacts=[],
+                    extracted_items=[],
+                    brand_profiles=[],
+                    warnings=["Skipped: telegram transport client is not a business client"],
+                    memory_candidates=[],
+                )
+
         processed: list[UUID] = []
         extracted: list[KnowledgeItem] = []
         brand_profiles: list[dict[str, Any]] = []

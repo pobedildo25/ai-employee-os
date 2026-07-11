@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import get_analytics_manager, get_client_service
 from app.analytics.manager import AnalyticsManager
 from app.analytics.models import AnalyticsInsight, AnalyticsRequest, AnalyticsType
+from app.clients.classification import is_telegram_user_client
 from app.services.client_service import ClientService
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -80,6 +81,11 @@ async def get_client_analytics(
     client = await client_service.get_by_id(client_id)
     if client is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    if is_telegram_user_client(client):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Telegram transport clients are excluded from business analytics",
+        )
     result = await manager.run(
         AnalyticsRequest(
             analytics_type=AnalyticsType.CLIENT_PERFORMANCE,

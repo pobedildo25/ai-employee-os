@@ -3,6 +3,7 @@ from uuid import UUID
 
 from app.analytics.interfaces.analytics import AnalyticsDataProvider
 from app.analytics.models import AnalyticsDataset, AnalyticsRequest
+from app.clients.classification import is_telegram_user_client
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.client_repository import ClientRepository
 from app.repositories.project_repository import ProjectRepository
@@ -60,6 +61,9 @@ class CompositeAnalyticsDataProvider(AnalyticsDataProvider):
 
         if client_id and self._clients is not None and not dataset.clients:
             client = await self._clients.get_by_id(client_id)
+            if client is not None and is_telegram_user_client(client):
+                dataset.sources_used = ["skipped_telegram_user"]
+                return dataset
             if client is not None:
                 dataset.clients = [
                     {

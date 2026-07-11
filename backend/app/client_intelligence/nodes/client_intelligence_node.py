@@ -36,6 +36,12 @@ class ClientIntelligenceNode:
             user_input=state.get("user_input", ""),
             trace_id=state.get("trace_id", "-"),
         )
+        if result.metadata.get("status") == "skipped":
+            return {
+                "current_step": self.name,
+                "status": "client_intelligence_skipped",
+                "client_intelligence_result": None,
+            }
         update = {
             "current_step": self.name,
             "status": "client_intelligence_ready",

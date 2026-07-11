@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.api.deps import get_client_intelligence_manager, get_client_service
 from app.client_intelligence.manager import ClientIntelligenceManager
 from app.client_intelligence.models import ClientProfile
+from app.clients.classification import is_telegram_user_client
 from app.services.client_service import ClientService
 
 router = APIRouter(prefix="/clients", tags=["client-intelligence"])
@@ -35,6 +36,11 @@ async def get_client_intelligence(
     client = await client_service.get_by_id(client_id)
     if client is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    if is_telegram_user_client(client):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Telegram transport clients are excluded from client intelligence",
+        )
     result = await manager.build_profile(client_id, use_llm=False)
     return ClientIntelligenceResponse(
         profile=result.profile,
@@ -57,6 +63,11 @@ async def analyze_client_intelligence(
     client = await client_service.get_by_id(client_id)
     if client is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    if is_telegram_user_client(client):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Telegram transport clients are excluded from client intelligence",
+        )
     payload = data or ClientIntelligenceAnalyzeRequest()
     result = await manager.build_profile(
         client_id,

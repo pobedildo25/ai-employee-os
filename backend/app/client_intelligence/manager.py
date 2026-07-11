@@ -9,8 +9,10 @@ from app.client_intelligence.memory_preparer import prepare_client_intelligence_
 from app.client_intelligence.models import (
     ClientIntelligenceResult,
     ClientIntelligenceSources,
+    ClientProfile,
 )
 from app.client_intelligence.validators.profile_validator import ProfileValidator
+from app.clients.classification import is_telegram_user_client
 from app.knowledge.manager import KnowledgeManager
 from app.learning.manager import LearningManager
 from app.learning.rules import format_rules_for_context
@@ -74,6 +76,8 @@ class ClientIntelligenceManager(ClientIntelligenceManagerInterface):
 
         if cid and self._clients is not None and not sources.client_context:
             client = await self._clients.get_by_id(cid)
+            if client is not None and is_telegram_user_client(client):
+                return sources
             if client is not None:
                 sources.client_context = {
                     "id": str(client.id),
@@ -162,6 +166,12 @@ class ClientIntelligenceManager(ClientIntelligenceManagerInterface):
         user_input: str = "",
         trace_id: str = "-",
     ) -> ClientIntelligenceResult:
+        cid = _as_uuid(client_id)
+        if cid and self._clients is not None:
+            client = await self._clients.get_by_id(cid)
+            if client is not None and is_telegram_user_client(client):
+                return _skipped_telegram_intelligence_result(cid)
+
         sources = await self.collect_sources(
             client_id,
             execution_context=execution_context,
@@ -181,6 +191,19 @@ class ClientIntelligenceManager(ClientIntelligenceManagerInterface):
             analysis_warnings=warnings,
             metadata={"status": "ready" if not warnings else "incomplete", "use_llm": use_llm},
         )
+
+
+def _skipped_telegram_intelligence_result(client_id: UUID) -> ClientIntelligenceResult:
+    return ClientIntelligenceResult(
+        profile=ClientProfile(
+            client_id=client_id,
+            summary="",
+            confidence=0.0,
+            metadata={"skipped": "telegram_user"},
+        ),
+        analysis_warnings=["Skipped: telegram transport client is not a business client"],
+        metadata={"status": "skipped", "reason": "telegram_user"},
+    )
 
 
 def _as_uuid(value: UUID | str | None) -> UUID | None:

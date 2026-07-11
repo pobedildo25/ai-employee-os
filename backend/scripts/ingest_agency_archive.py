@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.classification import is_business_client
 from app.core.config import get_settings
 from app.database.session import get_session_factory
 from app.knowledge.extractor import KnowledgeExtractor
@@ -63,7 +64,10 @@ async def _ensure_agency_client(session: AsyncSession, *, name: str) -> tuple[UU
     project_service = ProjectService(project_repo)
 
     existing = await client_service.list_all()
-    agency = next((item for item in existing if item.name == name), None)
+    agency = next(
+        (item for item in existing if item.name == name and is_business_client(item)),
+        None,
+    )
     if agency is None:
         agency = await client_service.create(ClientCreate(name=name, description="Agency knowledge archive"))
     projects = await project_service.list_by_client(agency.id)

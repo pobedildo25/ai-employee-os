@@ -23,6 +23,8 @@ class ClientIntelligenceContextProvider(ContextProvider):
             use_llm=False,
             trace_id=request.trace_id,
         )
+        if result.metadata.get("status") == "skipped":
+            return {}
         profile = result.profile.model_dump(mode="json")
         return {
             "client_intelligence_context": profile,

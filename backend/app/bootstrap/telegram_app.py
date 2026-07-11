@@ -95,4 +95,5 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         artifact_service=artifact_service,
         storage=storage,
         orchestrator=orchestrator,
+        client_repository=client_repository,
     )

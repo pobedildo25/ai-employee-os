@@ -75,6 +75,14 @@ class KnowledgeMigrationSkill(BaseSkill):
             trace_id=str(payload.get("trace_id") or "-"),
         )
 
+        if any("telegram transport client" in warning.lower() for warning in result.warnings):
+            return {
+                "status": "skipped",
+                "skill": self.name(),
+                "message": result.warnings[0],
+                "knowledge_migration_result": None,
+            }
+
         return {
             "status": "completed",
             "skill": self.name(),

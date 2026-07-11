@@ -13,7 +13,11 @@ class SQLAlchemyClientRepository(ClientRepository):
         self._session = session
 
     async def create(self, data: ClientCreate) -> Client:
-        client = Client(name=data.name, description=data.description)
+        client = Client(
+            name=data.name,
+            description=data.description,
+            metadata_=data.metadata,
+        )
         self._session.add(client)
         await self._session.flush()
         await self._session.refresh(client)
@@ -21,6 +25,28 @@ class SQLAlchemyClientRepository(ClientRepository):
 
     async def get_by_id(self, client_id: UUID) -> Client | None:
         return await self._session.get(Client, client_id)
+
+    async def get_or_create_with_id(
+        self,
+        client_id: UUID,
+        *,
+        name: str,
+        description: str | None = None,
+        metadata: dict | None = None,
+    ) -> Client:
+        existing = await self.get_by_id(client_id)
+        if existing is not None:
+            return existing
+        client = Client(
+            id=client_id,
+            name=name,
+            description=description,
+            metadata_=metadata,
+        )
+        self._session.add(client)
+        await self._session.flush()
+        await self._session.refresh(client)
+        return client
 
     async def list_all(self, skip: int = 0, limit: int = 100) -> list[Client]:
         result = await self._session.execute(
@@ -33,8 +59,11 @@ class SQLAlchemyClientRepository(ClientRepository):
         if client is None:
             return None
         update_data = data.model_dump(exclude_unset=True)
+        metadata = update_data.pop("metadata", None)
         for field, value in update_data.items():
             setattr(client, field, value)
+        if metadata is not None:
+            client.metadata_ = metadata
         await self._session.flush()
         await self._session.refresh(client)
         return client

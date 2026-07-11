@@ -49,6 +49,15 @@ class KnowledgeMigrationNode:
             trace_id=state.get("trace_id", "-"),
         )
 
+        if _is_telegram_migration_skip(result):
+            update = {
+                "current_step": self.name,
+                "status": "knowledge_migration_skipped",
+                "knowledge_migration_result": None,
+            }
+            _log_node({**state, **update}, self.name, "skipped")
+            return update
+
         update = {
             "current_step": self.name,
             "status": "knowledge_migrated",
@@ -56,6 +65,10 @@ class KnowledgeMigrationNode:
         }
         _log_node({**state, **update}, self.name, "completed")
         return update
+
+
+def _is_telegram_migration_skip(result) -> bool:
+    return any("telegram transport client" in warning.lower() for warning in result.warnings)
 
 
 def _log_node(state: AgentState, node_name: str, status: str) -> None:

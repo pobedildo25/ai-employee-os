@@ -15,6 +15,17 @@ class ClientRepository(ABC):
         ...
 
     @abstractmethod
+    async def get_or_create_with_id(
+        self,
+        client_id: UUID,
+        *,
+        name: str,
+        description: str | None = None,
+        metadata: dict | None = None,
+    ) -> Client:
+        ...
+
+    @abstractmethod
     async def list_all(self, skip: int = 0, limit: int = 100) -> list[Client]:
         ...
 
