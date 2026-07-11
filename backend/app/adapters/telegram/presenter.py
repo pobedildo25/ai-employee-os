@@ -75,6 +75,22 @@ def format_error_message(reason: str | None = None) -> str:
     return base
 
 
+def format_runtime_error_message(
+    *,
+    trace_id: str | None = None,
+    execution_id: str | None = None,
+    reason: str | None = None,
+) -> str:
+    lines = ["Произошла ошибка при выполнении задачи. Я уже сохранил детали."]
+    if trace_id:
+        lines.append(f"trace_id: {trace_id}")
+    if execution_id:
+        lines.append(f"execution_id: {execution_id}")
+    if reason:
+        lines.append(f"Причина: {reason}")
+    return "\n".join(lines)
+
+
 def extract_failure_reason(state: dict[str, Any]) -> str | None:
     task_execution = state.get("task_execution") or {}
     logs = task_execution.get("logs") or []

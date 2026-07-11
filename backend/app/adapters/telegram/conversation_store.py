@@ -10,9 +10,20 @@ class TelegramFlowMode(str, Enum):
     RUNNING = "running"
     WAITING_APPROVAL = "waiting_approval"
     REVISION_PROMPTED = "revision_prompted"
+    PENDING_CLARIFICATION = "pending_clarification"
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class PendingClarification(BaseModel):
+    pending_task: bool = True
+    original_goal: str
+    original_user_input: str
+    intent: str = "ASK_CLARIFICATION"
+    missing_information: list[str] = Field(default_factory=list)
+    understanding: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now())
 
 
 class TelegramConversationState(BaseModel):
@@ -27,6 +38,7 @@ class TelegramConversationState(BaseModel):
     progress_message_id: int | None = None
     artifact_ids: list[str] = Field(default_factory=list)
     revision_prompted_at: datetime | None = None
+    pending_clarification: PendingClarification | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now())
 
 

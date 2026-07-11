@@ -62,7 +62,9 @@ class ContextBuilder:
             trace_id=trace_id,
         )
 
-        fragments = await asyncio.gather(*(provider.fetch(request) for provider in self._providers))
+        fragments = await asyncio.gather(
+            *(_fetch_provider_safe(provider, request, trace_id) for provider in self._providers)
+        )
         merged = _merge_fragments(fragments)
 
         context = ExecutionContext(
@@ -202,6 +204,23 @@ def create_context_builder(
         providers.append(WorkspaceContextProvider(workspace_service))
 
     return ContextBuilder(providers)
+
+
+async def _fetch_provider_safe(
+    provider: ContextProvider,
+    request: ContextRequest,
+    trace_id: str,
+) -> dict[str, Any]:
+    try:
+        return await provider.fetch(request)
+    except Exception as exc:
+        logger.warning(
+            "context provider failed | trace_id=%s provider=%s error=%s",
+            trace_id,
+            provider.name,
+            exc,
+        )
+        return {}
 
 
 def _merge_fragments(fragments: list[dict[str, Any]]) -> dict[str, Any]:

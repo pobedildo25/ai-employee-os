@@ -58,14 +58,15 @@ class QdrantSemanticMemory(MemoryStore):
             return []
 
         vector = stub_embed(query.query)
-        hits = self._client.search(
+        response = self._client.query_points(
             collection_name=self._collection,
-            query_vector=vector,
+            query=vector,
             limit=query.limit,
             query_filter=_build_filter(query),
+            with_payload=True,
         )
         results: list[MemoryItem] = []
-        for hit in hits:
+        for hit in response.points:
             if hit.payload:
                 item = MemoryItem.model_validate(hit.payload)
                 if query.memory_types is None or item.type in query.memory_types:

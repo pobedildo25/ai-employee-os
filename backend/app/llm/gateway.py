@@ -21,22 +21,35 @@ class LLMGateway:
 
     async def chat(self, request: LLMRequest) -> LLMResponse:
         primary_model = request.model or self._settings.default_llm_model
-        fallback_model = self._settings.fallback_llm_model
+        models = _build_model_chain(
+            primary_model,
+            self._settings.fallback_llm_model,
+            self._settings.secondary_fallback_llm_model,
+        )
 
-        try:
-            return await self._invoke(request, primary_model, used_fallback=False)
-        except LLMProviderError as primary_error:
-            if not fallback_model or fallback_model == primary_model:
-                raise
-
-            logger.warning(
-                "Primary model failed, switching to fallback | model=%s fallback=%s error=%s",
-                primary_model,
-                fallback_model,
-                str(primary_error),
-            )
-            fallback_request = request.model_copy(update={"model": fallback_model})
-            return await self._invoke(fallback_request, fallback_model, used_fallback=True)
+        last_error: LLMProviderError | None = None
+        for index, model in enumerate(models):
+            try:
+                return await self._invoke(
+                    request,
+                    model,
+                    used_fallback=index > 0,
+                    model_failed=models[index - 1] if index > 0 else None,
+                )
+            except LLMProviderError as exc:
+                last_error = exc
+                if index < len(models) - 1:
+                    trace_id = trace_id_var.get()
+                    logger.warning(
+                        "model failed, trying fallback | model_failed=%s fallback_model=%s trace_id=%s error=%s",
+                        model,
+                        models[index + 1],
+                        trace_id,
+                        str(exc),
+                    )
+        if last_error is not None:
+            raise last_error
+        raise LLMProviderError("No LLM models configured")
 
     async def complete(
         self,
@@ -55,16 +68,25 @@ class LLMGateway:
         )
         return await self.chat(request)
 
-    async def _invoke(self, request: LLMRequest, model: str, used_fallback: bool) -> LLMResponse:
+    async def _invoke(
+        self,
+        request: LLMRequest,
+        model: str,
+        *,
+        used_fallback: bool,
+        model_failed: str | None = None,
+    ) -> LLMResponse:
         trace_id = trace_id_var.get()
         started = time.perf_counter()
         log_extra = {
             "trace_id": trace_id,
             "model": model,
             "used_fallback": used_fallback,
+            "model_failed": model_failed,
+            "fallback_model": model if used_fallback else None,
         }
 
-        invocation_request = request if request.model else request.model_copy(update={"model": model})
+        invocation_request = request.model_copy(update={"model": model})
 
         logger.info(
             "LLM request started | trace_id=%s model=%s messages=%d",
@@ -91,9 +113,11 @@ class LLMGateway:
                 **response.metadata,
                 "trace_id": trace_id,
                 "used_fallback": used_fallback,
+                "model_failed": model_failed,
+                "fallback_model": model if used_fallback else None,
             }
             return response
-        except Exception as exc:
+        except LLMProviderError as exc:
             latency_ms = (time.perf_counter() - started) * 1000
             logger.error(
                 "LLM request failed | trace_id=%s model=%s latency_ms=%.2f error=%s",
@@ -104,6 +128,25 @@ class LLMGateway:
                 extra=log_extra,
             )
             raise
+        except Exception as exc:
+            latency_ms = (time.perf_counter() - started) * 1000
+            logger.error(
+                "LLM request failed | trace_id=%s model=%s latency_ms=%.2f error=%s",
+                trace_id,
+                model,
+                latency_ms,
+                str(exc),
+                extra=log_extra,
+            )
+            raise LLMProviderError(str(exc)) from exc
+
+
+def _build_model_chain(primary: str, *fallbacks: str | None) -> list[str]:
+    chain: list[str] = []
+    for model in (primary, *fallbacks):
+        if model and model not in chain:
+            chain.append(model)
+    return chain
 
 
 def create_llm_gateway(settings: Settings | None = None) -> LLMGateway:

@@ -63,6 +63,20 @@ class TelegramProgressMessenger:
             return
         await self.maybe_update(chat_id, message_id, progress, final=True)
 
+    async def dismiss(
+        self,
+        chat_id: int,
+        message_id: int | None,
+        *,
+        text: str = "⚠️ Задача прервана",
+    ) -> None:
+        if message_id is None:
+            return
+        try:
+            await self._sender.edit_message_text(chat_id, message_id, text)
+        except Exception:
+            return
+
 
 def _extract_message_id(result: dict[str, Any]) -> int | None:
     payload = result.get("result")

@@ -3,6 +3,7 @@ import uuid
 
 from app.agent_runtime.exceptions import GraphExecutionError
 from app.agent_runtime.state.models import create_initial_state
+from app.adapters.telegram.clarification import build_pending_clarification, merge_clarification_answer
 from app.adapters.telegram.conversation_store import TelegramConversationState, TelegramFlowMode
 from app.adapters.telegram.continuation import TelegramArtifactDelivery, TelegramGraphContinuation
 from app.adapters.telegram.keyboard import approval_keyboard, retry_keyboard, revision_keyboard
@@ -15,6 +16,7 @@ from app.adapters.telegram.presenter import (
     format_delivery_summary,
     format_error_message,
     format_revision_prompt,
+    format_runtime_error_message,
 )
 from app.adapters.telegram.progress import TelegramProgressMessenger
 from app.adapters.telegram.revision import is_contextual_revision_message
@@ -66,6 +68,9 @@ class TelegramProductFlow:
         if convo.flow_mode == TelegramFlowMode.COMPLETED and is_contextual_revision_message(request.user_input):
             return await self._handle_revision_feedback(request, convo, snapshot, contextual=True)
 
+        if convo.pending_clarification is not None:
+            return await self._resume_pending_clarification(request, convo, snapshot)
+
         classification = await self._classify_intent(request, snapshot)
         if classification is not None:
             if is_chat_decision(classification.decision.action.value):
@@ -98,7 +103,37 @@ class TelegramProductFlow:
         convo: TelegramConversationState,
         classification,
     ) -> dict[str, Any]:
+        action = classification.decision.action.value
+        if action == "ASK_CLARIFICATION":
+            convo.flow_mode = TelegramFlowMode.PENDING_CLARIFICATION
+            convo.pending_clarification = build_pending_clarification(
+                user_input=request.user_input,
+                classification=classification,
+            )
+            convo.last_user_input = request.user_input
+            convo.last_execution_id = None
+            convo.last_agent_state = None
+            self._store.save(convo)
+
+            text = extract_chat_reply(classification.decision.model_dump()) or (
+                "Уточните, пожалуйста, детали задачи."
+            )
+            send_result = await self._sender.send_message(
+                request.telegram_chat_id,
+                text,
+                reply_to_message_id=request.telegram_message_id,
+            )
+            return {
+                "status": "clarification",
+                "intent": "chat",
+                "reply": text,
+                "decision": classification.decision.model_dump(),
+                "workspace_id": convo.workspace_id,
+                "send_result": send_result,
+            }
+
         convo.flow_mode = TelegramFlowMode.COMPLETED
+        convo.pending_clarification = None
         convo.last_user_input = request.user_input
         convo.last_execution_id = None
         convo.last_agent_state = None
@@ -118,6 +153,27 @@ class TelegramProductFlow:
             "workspace_id": convo.workspace_id,
             "send_result": send_result,
         }
+
+    async def _resume_pending_clarification(
+        self,
+        request: TelegramExecutionRequest,
+        convo: TelegramConversationState,
+        snapshot: dict[str, Any],
+    ) -> dict[str, Any]:
+        pending = convo.pending_clarification
+        if pending is None:
+            return await self._run_execution(request, convo, snapshot)
+
+        merged_input = merge_clarification_answer(pending, request.user_input)
+        convo.pending_clarification = None
+        convo.flow_mode = TelegramFlowMode.IDLE
+        self._store.save(convo)
+
+        merged_request = request.model_copy(update={"user_input": merged_input})
+        result = await self._run_execution(merged_request, convo, snapshot)
+        result["resumed_from_clarification"] = True
+        result["merged_input"] = merged_input
+        return result
 
     async def handle_callback(self, request: TelegramCallbackRequest) -> dict[str, Any]:
         convo = self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
@@ -160,24 +216,53 @@ class TelegramProductFlow:
                 context=context,
                 metadata=metadata,
             )
-        except GraphExecutionError:
-            convo.flow_mode = TelegramFlowMode.FAILED
-            self._store.save(convo)
-            await self._progress.finalize(request.telegram_chat_id, progress_message_id, None)
-            text = format_error_message("ошибка при выполнении задачи")
-            send_result = await self._sender.send_message(
-                request.telegram_chat_id,
-                text,
-                reply_markup=retry_keyboard(),
+        except GraphExecutionError as exc:
+            return await self._handle_execution_failure(
+                request,
+                convo,
+                progress_message_id,
+                exc,
             )
-            return {
-                "status": "failed",
-                "error": "execution_failed",
-                "send_result": send_result,
-            }
+        except Exception as exc:
+            return await self._handle_execution_failure(
+                request,
+                convo,
+                progress_message_id,
+                GraphExecutionError(str(exc)),
+            )
 
         state_dict = dict(state) if not isinstance(state, dict) else state
         return await self._deliver_outcome(request, convo, state_dict, progress_message_id)
+
+    async def _handle_execution_failure(
+        self,
+        request: TelegramExecutionRequest,
+        convo: TelegramConversationState,
+        progress_message_id: int | None,
+        exc: GraphExecutionError,
+    ) -> dict[str, Any]:
+        convo.flow_mode = TelegramFlowMode.FAILED
+        self._store.save(convo)
+        await self._progress.dismiss(request.telegram_chat_id, progress_message_id)
+
+        reason = _safe_error_reason(str(exc))
+        text = format_runtime_error_message(
+            trace_id=getattr(exc, "trace_id", None),
+            execution_id=getattr(exc, "execution_id", None),
+            reason=reason,
+        )
+        send_result = await self._sender.send_message(
+            request.telegram_chat_id,
+            text,
+            reply_markup=retry_keyboard(),
+        )
+        return {
+            "status": "failed",
+            "error": "execution_failed",
+            "trace_id": getattr(exc, "trace_id", None),
+            "execution_id": getattr(exc, "execution_id", None),
+            "send_result": send_result,
+        }
 
     async def _execute_with_progress(
         self,
@@ -462,3 +547,15 @@ class TelegramProductFlow:
         merged = dict(current)
         merged.update(update)
         return merged
+
+
+def _safe_error_reason(message: str) -> str | None:
+    if not message:
+        return None
+    lowered = message.lower()
+    if "traceback" in lowered:
+        return None
+    if message.startswith("Workflow "):
+        _, _, tail = message.partition(": ")
+        return tail or message
+    return message

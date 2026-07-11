@@ -40,6 +40,7 @@ def settings() -> Settings:
         openrouter_base_url="https://openrouter.ai/api/v1",
         default_llm_model="primary-model",
         fallback_llm_model="fallback-model",
+        secondary_fallback_llm_model="tertiary-model",
     )
 
 
@@ -108,6 +109,36 @@ async def test_gateway_fallback_on_primary_failure(settings: Settings) -> None:
     assert provider.calls[0].model == "primary-model"
     assert provider.calls[1].model == "fallback-model"
     assert response.metadata.get("used_fallback") is True
+
+
+@pytest.mark.asyncio
+async def test_gateway_fallback_chain_tries_all_models(settings: Settings) -> None:
+    provider = MockProvider(
+        errors=[
+            LLMProviderError("primary failed"),
+            LLMProviderError("fallback failed"),
+        ],
+        responses=[
+            LLMResponse(
+                content="tertiary answer",
+                model="tertiary-model",
+                usage=TokenUsage(total_tokens=12),
+            )
+        ],
+    )
+    gateway = LLMGateway(provider, settings)
+
+    response = await gateway.chat(
+        LLMRequest(messages=[LLMMessage(role="user", content="Hi")])
+    )
+
+    assert response.content == "tertiary answer"
+    assert len(provider.calls) == 3
+    assert provider.calls[0].model == "primary-model"
+    assert provider.calls[1].model == "fallback-model"
+    assert provider.calls[2].model == "tertiary-model"
+    assert response.metadata.get("fallback_model") == "tertiary-model"
+    assert response.metadata.get("model_failed") == "fallback-model"
 
 
 def test_token_counter_estimate() -> None:

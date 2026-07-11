@@ -245,6 +245,25 @@ async def test_mock_provider_integration() -> None:
 
 
 @pytest.mark.asyncio
+async def test_broken_provider_does_not_fail_context_build() -> None:
+    class BrokenProvider(ContextProvider):
+        name = "memory"
+
+        async def fetch(self, request: ContextRequest) -> dict:
+            raise RuntimeError("memory unavailable")
+
+    builder = ContextBuilder(
+        providers=[
+            BrokenProvider(),
+            MockContextProvider({"client_context": {"name": "Still Works"}}),
+        ]
+    )
+    context = await builder.build(user_input="Test task", trace_id="trace-degrade")
+    assert context.client_context == {"name": "Still Works"}
+    assert context.memory_context == []
+
+
+@pytest.mark.asyncio
 async def test_executive_agent_receives_built_context(settings: Settings, project_id: UUID) -> None:
     gateway, provider = _mock_gateway(
         settings,

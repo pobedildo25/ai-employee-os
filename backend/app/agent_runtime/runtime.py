@@ -163,7 +163,11 @@ class AgentRuntime:
                 trace_id,
                 exc,
             )
-            raise GraphExecutionError(f"Workflow execution failed: {exc}") from exc
+            raise GraphExecutionError(
+                f"Workflow execution failed: {exc}",
+                execution_id=execution_id,
+                trace_id=trace_id,
+            ) from exc
 
     async def stream(
         self,
@@ -201,7 +205,11 @@ class AgentRuntime:
                 trace_id,
                 exc,
             )
-            raise GraphExecutionError(f"Workflow stream failed: {exc}") from exc
+            raise GraphExecutionError(
+                f"Workflow stream failed: {exc}",
+                execution_id=execution_id,
+                trace_id=trace_id,
+            ) from exc
 
 
 def _ensure_agent_state(result: Any) -> AgentState:
