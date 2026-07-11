@@ -202,3 +202,10 @@ def get_telegram_bot(
 
     settings = get_settings()
     return TelegramBot(adapter, token=settings.telegram_bot_token or None)
+
+
+@lru_cache
+def get_observability_manager() -> "ObservabilityManager":
+    from app.observability.manager import ObservabilityManager
+
+    return ObservabilityManager()
