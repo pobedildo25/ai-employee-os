@@ -326,6 +326,35 @@ def presentation_plan_json(
     return json.dumps(payload, ensure_ascii=False)
 
 
+def research_interpretation_json(
+    *,
+    summary: str = "AI marketing market is growing with strong SMB demand.",
+) -> str:
+    payload = {
+        "summary": summary,
+        "findings": [
+            {
+                "title": "Market growth",
+                "description": "Adoption of AI marketing tools is accelerating in SMB segments.",
+                "source_urls": ["https://example.com/market"],
+                "confidence": 0.82,
+            }
+        ],
+        "insights": [
+            {
+                "category": "market",
+                "title": "SMB adoption",
+                "description": "Smaller teams prefer integrated AI assistants over point tools.",
+                "importance": 0.8,
+                "confidence": 0.78,
+            }
+        ],
+        "recommendations": ["Focus on SMB workflows", "Pair content with partnerships"],
+        "confidence": 0.8,
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def learning_rule_json(
     *,
     category: str = "writing_style",

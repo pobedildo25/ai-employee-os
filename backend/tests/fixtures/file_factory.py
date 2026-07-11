@@ -62,5 +62,40 @@ def create_png_file(path: Path) -> Path:
     return path
 
 
+def create_large_pdf_file(path: Path, pages: int = 100) -> Path:
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=200, height=200)
+    with path.open("wb") as f:
+        writer.write(f)
+    return path
+
+
+def create_docx_with_table(path: Path) -> Path:
+    document = Document()
+    document.add_heading("Competitor Overview", level=1)
+    table = document.add_table(rows=1, cols=3)
+    headers = table.rows[0].cells
+    headers[0].text = "Company"
+    headers[1].text = "Strength"
+    headers[2].text = "Weakness"
+    for row in [("Alpha", "Brand", "Price"), ("Beta", "Speed", "Scale")]:
+        cells = table.add_row().cells
+        for index, value in enumerate(row):
+            cells[index].text = value
+    document.save(path)
+    return path
+
+
+def create_pptx_with_image(path: Path, image_path: Path) -> Path:
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[5])
+    slide.shapes.add_textbox(Inches(1), Inches(1), Inches(8), Inches(1)).text_frame.text = "Branded deck"
+    if image_path.exists():
+        slide.shapes.add_picture(str(image_path), Inches(1), Inches(2), width=Inches(2))
+    presentation.save(path)
+    return path
+
+
 def read_file_bytes(path: Path) -> bytes:
     return path.read_bytes()

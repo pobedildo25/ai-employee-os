@@ -189,6 +189,7 @@ class Orchestrator(OrchestratorInterface):
             step=step,
             node=node,
             graph=graph,
+            plan=plan,
             registry=registry,
             execution=execution,
             execution_context=execution_context,
@@ -209,6 +210,7 @@ class Orchestrator(OrchestratorInterface):
         step: PlanStep,
         node: ExecutionGraphNode,
         graph: ExecutionGraph,
+        plan: TaskPlan,
         registry: CapabilityRegistry,
         execution: TaskExecution,
         execution_context: dict[str, Any],
@@ -216,7 +218,7 @@ class Orchestrator(OrchestratorInterface):
     ) -> bool:
         for attempt in range(1, MAX_STEP_RETRIES + 1):
             try:
-                result = await self._execute_step(step, registry, execution_context, trace_id)
+                result = await self._execute_step(step, registry, execution_context, trace_id, plan)
                 step.status = StepStatus.COMPLETED
                 step.result = result
                 node.retry_count = attempt
@@ -253,6 +255,7 @@ class Orchestrator(OrchestratorInterface):
         registry: CapabilityRegistry,
         execution_context: dict[str, Any],
         trace_id: str,
+        plan: TaskPlan,
     ) -> dict[str, Any]:
         skill = registry.get_skill_for_capability(step.capability)
         if skill is None:
@@ -268,7 +271,86 @@ class Orchestrator(OrchestratorInterface):
             "trace_id": trace_id,
             **execution_context,
         }
+        payload = self._merge_attachment_fields(execution_context, payload)
+        payload = self._enrich_payload_from_plan(step, plan, payload)
         return await skill.execute(payload)
+
+    def _merge_attachment_fields(
+        self,
+        execution_context: dict[str, Any],
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        attachment_keys = (
+            "extracted_content",
+            "file_bytes",
+            "filename",
+            "brand_profile",
+            "artifact_id",
+            "client_id",
+            "project_id",
+        )
+        sources = (
+            execution_context,
+            execution_context.get("metadata") or {},
+            execution_context.get("extensions") or {},
+        )
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            for key in attachment_keys:
+                if key not in payload and source.get(key) is not None:
+                    payload[key] = source[key]
+        return payload
+
+    def _enrich_payload_from_plan(
+        self,
+        step: PlanStep,
+        plan: TaskPlan,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        completed = {
+            item.id: item
+            for item in plan.steps
+            if item.status == StepStatus.COMPLETED and item.result
+        }
+        merge_keys = (
+            "document_ast",
+            "brand_profile",
+            "extracted_content",
+            "representation",
+            "document_representation",
+            "research_result",
+            "strategy_result",
+            "presentation_plan",
+            "render_result",
+            "file_bytes",
+            "filename",
+            "artifact_id",
+            "source_artifact_id",
+            "knowledge_result",
+            "client_intelligence_result",
+            "analytics_result",
+            "learning_rules",
+        )
+
+        for dep_id in step.dependencies:
+            dep_step = completed.get(dep_id)
+            if dep_step is None or not dep_step.result:
+                continue
+            result = dep_step.result
+            for key in merge_keys:
+                if key in result and result[key] is not None:
+                    payload[key] = result[key]
+            if "representation" in result and payload.get("document_representation") is None:
+                payload["document_representation"] = result["representation"]
+
+        if payload.get("client_id") and payload.get("project_id"):
+            if step.capability == "document_rendering":
+                payload["store_artifact"] = True
+            if step.capability == "presentation_design" and not payload.get("output_format"):
+                payload["output_format"] = "pptx"
+
+        return payload
 
     def pause_execution(self, execution_id: str) -> ExecutionState | None:
         record = self._store.get(execution_id)
