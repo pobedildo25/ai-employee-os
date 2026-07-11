@@ -221,6 +221,59 @@ def revision_json(
     return json.dumps(payload, ensure_ascii=False)
 
 
+def strategy_result_json(
+    *,
+    strategy_type: str = "marketing_strategy",
+    summary: str = "Focus on a clear ICP and channel mix.",
+) -> str:
+    payload = {
+        "type": strategy_type,
+        "strategy_type": strategy_type,
+        "summary": summary,
+        "insights": [
+            {
+                "category": "audience",
+                "title": "Target segment",
+                "description": "SMB decision makers seeking faster go-to-market",
+                "confidence": 0.82,
+            },
+            {
+                "category": "market",
+                "title": "Channel opportunity",
+                "description": "Content + partnerships outperform broad paid alone",
+                "confidence": 0.75,
+            },
+        ],
+        "recommendations": [
+            "Define ICP and messaging pillars",
+            "Pilot two primary channels for 6 weeks",
+            "Measure pipeline contribution weekly",
+        ],
+        "sections": [
+            {"title": "Executive Summary", "paragraphs": [summary]},
+            {"title": "Market Analysis", "paragraphs": ["Growing demand in SMB automation."]},
+            {"title": "Strategy", "paragraphs": ["Prioritize ICP-fit channels and clear offers."]},
+            {
+                "title": "Recommendations",
+                "paragraphs": [
+                    "Define ICP and messaging pillars",
+                    "Pilot two primary channels for 6 weeks",
+                ],
+            },
+            {"title": "Next Steps", "paragraphs": ["Assign owners and launch pilot."]},
+        ],
+        "framework_data": {
+            "goals": ["Increase qualified pipeline"],
+            "channels": ["Content", "Partnerships"],
+            "content": ["Case studies", "Short guides"],
+            "metrics": ["MQLs", "Pipeline $"],
+        },
+        "metadata": {},
+        "missing_information": [],
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def presentation_plan_json(
     *,
     title: str = "Sales Deck",

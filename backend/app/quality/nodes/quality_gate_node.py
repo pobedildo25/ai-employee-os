@@ -35,6 +35,7 @@ class QualityGateNode:
             "render_result": state.get("render_result"),
             "document_creation_result": state.get("document_creation_result"),
             "presentation_plan": state.get("presentation_plan"),
+            "strategy_result": state.get("strategy_result"),
             "response_message": (state.get("decision") or {}).get("response_message"),
             "revision_count": int(state.get("revision_count") or 0),
             "user_feedback": (state.get("metadata") or {}).get("user_feedback"),
@@ -45,6 +46,8 @@ class QualityGateNode:
             trace_id=state.get("trace_id", "-"),
         )
         review_result = _merge_presentation_quality(review_result, review_context)
+        review_result = _merge_strategy_quality(review_result, review_context)
+
 
         client_id = _to_uuid(execution_context.get("client_id") or state.get("context", {}).get("client_id"))
         project_id = _to_uuid(execution_context.get("project_id") or state.get("context", {}).get("project_id"))
@@ -133,6 +136,33 @@ def _merge_presentation_quality(review_result, review_context: dict[str, Any]):
             and hasattr(review_context.get("brand_profile"), "model_dump")
             else None
         ),
+    )
+    if not extra:
+        return review_result
+
+    merged_issues = list(review_result.issues) + extra
+    status = review_result.status
+    if any(issue.severity == IssueSeverity.CRITICAL for issue in extra):
+        status = ReviewStatus.ESCALATE
+    elif any(issue.severity == IssueSeverity.MAJOR for issue in extra) and status == ReviewStatus.PASS:
+        status = ReviewStatus.REVISE
+    return review_result.model_copy(update={"issues": merged_issues, "status": status})
+
+
+def _merge_strategy_quality(review_result, review_context: dict[str, Any]):
+    """Attach strategy checks without changing QualityGate core."""
+    result_data = review_context.get("strategy_result")
+    if not result_data:
+        return review_result
+
+    from app.strategy.models import StrategyResult
+    from app.strategy.validators.strategy_validator import StrategyValidator
+    from app.quality.models import IssueSeverity, ReviewStatus
+
+    result = StrategyResult.model_validate(result_data)
+    extra = StrategyValidator().quality_issues(
+        result=result,
+        document_ast=review_context.get("document_ast") or result.document_ast,
     )
     if not extra:
         return review_result
