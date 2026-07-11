@@ -37,6 +37,7 @@ class QualityGateNode:
             "presentation_plan": state.get("presentation_plan"),
             "strategy_result": state.get("strategy_result"),
             "client_intelligence_result": state.get("client_intelligence_result"),
+            "analytics_result": state.get("analytics_result"),
             "response_message": (state.get("decision") or {}).get("response_message"),
             "revision_count": int(state.get("revision_count") or 0),
             "user_feedback": (state.get("metadata") or {}).get("user_feedback"),
@@ -49,6 +50,7 @@ class QualityGateNode:
         review_result = _merge_presentation_quality(review_result, review_context)
         review_result = _merge_strategy_quality(review_result, review_context)
         review_result = _merge_client_intelligence_quality(review_result, review_context)
+        review_result = _merge_analytics_quality(review_result, review_context)
 
 
         client_id = _to_uuid(execution_context.get("client_id") or state.get("context", {}).get("client_id"))
@@ -197,6 +199,30 @@ def _merge_client_intelligence_quality(review_result, review_context: dict[str, 
 
     profile = ClientProfile.model_validate(profile_data)
     extra = ProfileValidator().quality_issues(profile)
+    if not extra:
+        return review_result
+
+    merged_issues = list(review_result.issues) + extra
+    status = review_result.status
+    if any(issue.severity == IssueSeverity.CRITICAL for issue in extra):
+        status = ReviewStatus.ESCALATE
+    elif any(issue.severity == IssueSeverity.MAJOR for issue in extra) and status == ReviewStatus.PASS:
+        status = ReviewStatus.REVISE
+    return review_result.model_copy(update={"issues": merged_issues, "status": status})
+
+
+def _merge_analytics_quality(review_result, review_context: dict[str, Any]):
+    """Attach analytics checks without changing QualityGate core."""
+    result_data = review_context.get("analytics_result")
+    if not result_data:
+        return review_result
+
+    from app.analytics.models import AnalyticsResult
+    from app.analytics.validators.analytics_validator import AnalyticsValidator
+    from app.quality.models import IssueSeverity, ReviewStatus
+
+    result = AnalyticsResult.model_validate(result_data)
+    extra = AnalyticsValidator().quality_issues(result)
     if not extra:
         return review_result
 

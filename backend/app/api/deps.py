@@ -49,6 +49,7 @@ from app.workspace.manager import WorkspaceManager
 from app.workspace.repositories.workspace_repository import PostgresWorkspaceRepository
 from app.workspace.service import WorkspaceService
 from app.client_intelligence.manager import ClientIntelligenceManager
+from app.analytics.manager import AnalyticsManager
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -192,6 +193,29 @@ def get_client_intelligence_manager(
         knowledge_manager=knowledge_manager,
         learning_manager=learning_manager,
         workspace_service=workspace_service,
+    )
+
+
+def get_analytics_manager(
+    client_repository: ClientRepository = Depends(get_client_repository),
+    project_repository: ProjectRepository = Depends(get_project_repository),
+    artifact_repository: ArtifactRepository = Depends(get_artifact_repository),
+    task_repository: TaskRepository = Depends(get_task_repository),
+    llm_gateway: LLMGateway = Depends(get_llm_gateway),
+) -> AnalyticsManager:
+    from app.analytics.analyzer import AnalyticsAnalyzer
+    from app.analytics.providers.data_provider import CompositeAnalyticsDataProvider
+    from app.analytics.query_builder import AnalyticsQueryBuilder
+
+    provider = CompositeAnalyticsDataProvider(
+        client_repository=client_repository,
+        project_repository=project_repository,
+        artifact_repository=artifact_repository,
+        task_repository=task_repository,
+    )
+    return AnalyticsManager(
+        query_builder=AnalyticsQueryBuilder(provider),
+        analyzer=AnalyticsAnalyzer(llm_gateway),
     )
 
 

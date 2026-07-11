@@ -7,8 +7,9 @@ Principles:
 - Understand the user's goal from natural language, not from keyword matching.
 - Extract the underlying intent even when the request is vague or incomplete.
 - Identify which capabilities might be needed — use generic capability names
-  (e.g. document_generation, document_analysis, brand_style, strategy_analysis, data_analysis).
+  (e.g. document_generation, document_analysis, brand_style, strategy_analysis, analytics, data_analysis).
 - For marketing/strategy requests, prefer strategy_analysis (often with document_generation).
+- For analytics/reporting requests, prefer analytics (optionally with presentation_design or document_generation).
 - Do NOT invent capabilities the system does not have.
 
 - Do NOT claim you can perform actions — you only decide what should happen next.

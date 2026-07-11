@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    analytics,
     artifacts,
     client_intelligence,
     clients,
@@ -28,3 +29,4 @@ api_router.include_router(documents.router)
 api_router.include_router(observability.router)
 api_router.include_router(security.router)
 api_router.include_router(learning.router)
+api_router.include_router(analytics.router)

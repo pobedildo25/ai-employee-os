@@ -58,6 +58,7 @@ def test_skill_registration(registry: CapabilityRegistry) -> None:
     assert registry.get_skill("presentation_design_skill") is not None
     assert registry.get_skill("strategy_skill") is not None
     assert registry.get_skill("client_intelligence_skill") is not None
+    assert registry.get_skill("analytics_skill") is not None
     assert registry.get_skill("document_render_skill") is not None
 
     assert registry.get_skill("quality_review_skill") is not None
@@ -76,12 +77,14 @@ def test_capability_search(registry: CapabilityRegistry) -> None:
             "presentation_design",
             "strategy_analysis",
             "client_intelligence",
+            "analytics",
         ]
     )
     names = {capability.name for capability in found}
     assert "presentation_design" in names
     assert "strategy_analysis" in names
     assert "client_intelligence" in names
+    assert "analytics" in names
     assert "document_generation" in names or "file_processing" in names or "presentation_design" in names
 
 
