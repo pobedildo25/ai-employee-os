@@ -59,6 +59,10 @@ def build_executive_graph(
     agent = ExecutiveAgent(llm_gateway, capability_registry=registry)
     planner = TaskPlanner(llm_gateway)
     document_creator = DocumentCreator(DocumentASTGenerator(llm_gateway))
+    from app.presentation_design.designer import PresentationDesigner
+    from app.presentation_design.planner import PresentationPlanner
+
+    presentation_designer = PresentationDesigner(PresentationPlanner(llm_gateway))
     builder_instance = context_builder or create_context_builder()
     builder = GraphBuilder()
     builder.add_node(InputNode())
@@ -66,7 +70,7 @@ def build_executive_graph(
     builder.add_node(ExecutiveAgentNode(agent))
     builder.add_node(SkillResolverNode(registry))
     builder.add_node(PlannerNode(planner, registry))
-    builder.add_node(DocumentCreationNode(document_creator, registry))
+    builder.add_node(DocumentCreationNode(document_creator, registry, presentation_designer))
     builder.add_node(DocumentRenderNode())
     builder.add_node(QualityGateNode(QualityGate(ReviewerAgent(llm_gateway))))
     builder.add_node(

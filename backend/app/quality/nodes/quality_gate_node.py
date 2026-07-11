@@ -34,6 +34,7 @@ class QualityGateNode:
             "brand_profile": brand_profile,
             "render_result": state.get("render_result"),
             "document_creation_result": state.get("document_creation_result"),
+            "presentation_plan": state.get("presentation_plan"),
             "response_message": (state.get("decision") or {}).get("response_message"),
             "revision_count": int(state.get("revision_count") or 0),
             "user_feedback": (state.get("metadata") or {}).get("user_feedback"),
@@ -43,6 +44,7 @@ class QualityGateNode:
             review_context,
             trace_id=state.get("trace_id", "-"),
         )
+        review_result = _merge_presentation_quality(review_result, review_context)
 
         client_id = _to_uuid(execution_context.get("client_id") or state.get("context", {}).get("client_id"))
         project_id = _to_uuid(execution_context.get("project_id") or state.get("context", {}).get("project_id"))
@@ -107,6 +109,41 @@ def _log_node(state: AgentState, node_name: str, status: str) -> None:
         node_name,
         status,
     )
+
+
+def _merge_presentation_quality(review_result, review_context: dict[str, Any]):
+    """Attach presentation checks without changing QualityGate core."""
+    plan_data = review_context.get("presentation_plan")
+    if not plan_data:
+        return review_result
+
+    from app.presentation_design.models import PresentationPlan
+    from app.presentation_design.validators.presentation_validator import PresentationValidator
+    from app.quality.models import IssueSeverity, ReviewStatus
+
+    plan = PresentationPlan.model_validate(plan_data)
+    extra = PresentationValidator().quality_issues(
+        plan=plan,
+        document_ast=review_context.get("document_ast"),
+        brand_profile=review_context.get("brand_profile")
+        if isinstance(review_context.get("brand_profile"), dict)
+        else (
+            review_context.get("brand_profile").model_dump(mode="json")
+            if review_context.get("brand_profile") is not None
+            and hasattr(review_context.get("brand_profile"), "model_dump")
+            else None
+        ),
+    )
+    if not extra:
+        return review_result
+
+    merged_issues = list(review_result.issues) + extra
+    status = review_result.status
+    if any(issue.severity == IssueSeverity.CRITICAL for issue in extra):
+        status = ReviewStatus.ESCALATE
+    elif any(issue.severity == IssueSeverity.MAJOR for issue in extra) and status == ReviewStatus.PASS:
+        status = ReviewStatus.REVISE
+    return review_result.model_copy(update={"issues": merged_issues, "status": status})
 
 
 def _to_uuid(value: object | None) -> UUID | None:

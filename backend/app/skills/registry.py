@@ -118,6 +118,7 @@ def create_capability_registry(settings: Settings | None = None) -> CapabilityRe
     from app.skills.builtin.quality_review_skill import QualityReviewSkill
     from app.skills.builtin.revision_skill import RevisionSkill
     from app.skills.builtin.knowledge_migration_skill import KnowledgeMigrationSkill
+    from app.skills.builtin.presentation_design_skill import PresentationDesignSkill
     from app.skills.builtin.document_skill import DocumentSkill
     from app.skills.builtin.file_skill import FileSkill
 
@@ -128,6 +129,7 @@ def create_capability_registry(settings: Settings | None = None) -> CapabilityRe
         registry.register(DocumentAnalysisSkill())
         registry.register(BrandStyleAnalysisSkill())
         registry.register(DocumentCreationSkill())
+        registry.register(PresentationDesignSkill())
         registry.register(DocumentRenderSkill())
         registry.register(QualityReviewSkill())
         registry.register(RevisionSkill())

@@ -221,6 +221,58 @@ def revision_json(
     return json.dumps(payload, ensure_ascii=False)
 
 
+def presentation_plan_json(
+    *,
+    title: str = "Sales Deck",
+    goal: str = "Close the deal",
+    presentation_type: str = "sales",
+    audience: str = "Buyers",
+) -> str:
+    payload = {
+        "title": title,
+        "goal": goal,
+        "audience": audience,
+        "presentation_type": presentation_type,
+        "type": presentation_type,
+        "slides": [
+            {
+                "order": 0,
+                "type": "title",
+                "slide_type": "TITLE",
+                "title": "Opening",
+                "purpose": "Set context",
+                "content_blocks": [{"kind": "paragraph", "text": "Welcome"}],
+            },
+            {
+                "order": 1,
+                "type": "problem",
+                "slide_type": "PROBLEM",
+                "title": "Current challenge",
+                "purpose": "Name the pain",
+                "content_blocks": [{"kind": "bullet", "text": "Fragmented process"}],
+            },
+            {
+                "order": 2,
+                "type": "solution",
+                "slide_type": "SOLUTION",
+                "title": "Our approach",
+                "purpose": "Show the fix",
+                "content_blocks": [{"kind": "bullet", "text": "Unified workflow"}],
+            },
+            {
+                "order": 3,
+                "type": "cta",
+                "slide_type": "CTA",
+                "title": "Next step",
+                "purpose": "Ask for commitment",
+                "content_blocks": [{"kind": "paragraph", "text": "Book a pilot"}],
+            },
+        ],
+        "metadata": {},
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def learning_rule_json(
     *,
     category: str = "writing_style",
