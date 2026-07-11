@@ -142,6 +142,7 @@ async def test_openapi_and_router(api_client: AsyncClient) -> None:
     assert response.status_code == 200
     paths = response.json()["paths"]
     assert "/api/v1/health" in paths
+    assert "/api/v1/ready" in paths
     assert "/api/v1/execution/run" in paths
     assert "/api/v1/workspace/open" in paths
     assert "/api/v1/artifacts" in paths
@@ -156,8 +157,8 @@ async def test_health_v1(api_client: AsyncClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["service"] == "ai-employee-os"
-    assert "services" in body
-    assert "status" in body
+    assert body["status"] == "ok"
+    assert "services" not in body
 
 
 @pytest.mark.asyncio

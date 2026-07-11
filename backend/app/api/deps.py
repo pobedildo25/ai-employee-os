@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,6 +51,12 @@ from app.workspace.service import WorkspaceService
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async for session in get_db_session():
         yield session
+
+
+if TYPE_CHECKING:
+    from app.adapters.telegram.bot import TelegramAdapter, TelegramBot
+    from app.observability.manager import ObservabilityManager
+    from app.security.manager import SecurityManager
 
 
 @lru_cache
@@ -184,7 +193,7 @@ def get_agent_runtime(
 def get_telegram_adapter(
     runtime: AgentRuntime = Depends(get_agent_runtime),
     workspace_service: WorkspaceService = Depends(get_workspace_service),
-) -> "TelegramAdapter":
+) -> TelegramAdapter:
     from app.adapters.telegram.bot import TelegramAdapter
     from app.adapters.telegram.factory import create_telegram_adapter
 
@@ -196,8 +205,8 @@ def get_telegram_adapter(
 
 
 def get_telegram_bot(
-    adapter: "TelegramAdapter" = Depends(get_telegram_adapter),
-) -> "TelegramBot":
+    adapter: TelegramAdapter = Depends(get_telegram_adapter),
+) -> TelegramBot:
     from app.adapters.telegram.bot import TelegramBot
 
     settings = get_settings()
@@ -205,13 +214,13 @@ def get_telegram_bot(
 
 
 @lru_cache
-def get_observability_manager() -> "ObservabilityManager":
+def get_observability_manager() -> ObservabilityManager:
     from app.observability.manager import ObservabilityManager
 
     return ObservabilityManager()
 
 
-def get_security_manager(request: Request) -> "SecurityManager":
+def get_security_manager(request: Request) -> SecurityManager:
     manager = getattr(request.app.state, "security_manager", None)
     if manager is None:
         from app.security.manager import SecurityManager

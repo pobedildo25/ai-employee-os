@@ -10,9 +10,12 @@ from app.security.models import SecurityPrincipal
 
 EXEMPT_PREFIXES = (
     "/health",
+    "/ready",
     "/docs",
     "/redoc",
     "/openapi.json",
+    "/api/v1/health",
+    "/api/v1/ready",
 )
 
 

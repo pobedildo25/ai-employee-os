@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     security_rate_limit: int = 120
     security_rate_window_seconds: int = 60
 
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_timeout: int = 30
+    db_pool_recycle: int = 1800
+    run_migrations_on_startup: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

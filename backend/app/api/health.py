@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Response, status
 from minio import Minio
 
 from app.core.config import get_settings
@@ -28,7 +28,7 @@ def check_minio() -> tuple[bool, str]:
         return False, str(exc)
 
 
-async def build_health_payload(request: Request) -> dict:
+async def build_readiness_payload(request: Request) -> dict:
     settings = get_settings()
 
     postgres_ok, postgres_msg = await check_postgres(settings)
@@ -47,7 +47,7 @@ async def build_health_payload(request: Request) -> dict:
     trace_id = getattr(request.state, "trace_id", "-")
 
     return {
-        "status": "ok" if all_up else "degraded",
+        "status": "ready" if all_up else "not_ready",
         "service": "ai-employee-os",
         "environment": settings.app_env,
         "trace_id": trace_id,
@@ -55,6 +55,31 @@ async def build_health_payload(request: Request) -> dict:
     }
 
 
+def build_liveness_payload(request: Request) -> dict:
+    settings = get_settings()
+    return {
+        "status": "ok",
+        "service": "ai-employee-os",
+        "environment": settings.app_env,
+        "trace_id": getattr(request.state, "trace_id", "-"),
+    }
+
+
+# Backward-compatible alias used by older imports/tests.
+async def build_health_payload(request: Request) -> dict:
+    return await build_readiness_payload(request)
+
+
 @router.get("/health")
 async def health(request: Request) -> dict:
-    return await build_health_payload(request)
+    """Liveness probe — process is up."""
+    return build_liveness_payload(request)
+
+
+@router.get("/ready")
+async def ready(request: Request, response: Response) -> dict:
+    """Readiness probe — dependencies are reachable."""
+    payload = await build_readiness_payload(request)
+    if payload["status"] != "ready":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return payload
