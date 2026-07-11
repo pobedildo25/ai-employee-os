@@ -219,3 +219,26 @@ def revision_json(
         },
     }
     return json.dumps(payload, ensure_ascii=False)
+
+
+def learning_rule_json(
+    *,
+    category: str = "writing_style",
+    key: str = "introduction_length",
+    value: str = "short",
+    confidence: float = 0.8,
+    should_learn: bool = True,
+) -> str:
+    payload = {
+        "should_learn": should_learn,
+        "confidence": confidence,
+        "reason": "Durable style preference",
+        "rule": {
+            "category": category,
+            "key": key,
+            "value": value,
+            "confidence": confidence,
+            "scope": "client",
+        },
+    }
+    return json.dumps(payload, ensure_ascii=False)

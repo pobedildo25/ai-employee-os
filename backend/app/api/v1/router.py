@@ -6,6 +6,7 @@ from app.api.v1 import (
     documents,
     execution,
     health,
+    learning,
     observability,
     projects,
     security,
@@ -24,3 +25,4 @@ api_router.include_router(execution.router)
 api_router.include_router(documents.router)
 api_router.include_router(observability.router)
 api_router.include_router(security.router)
+api_router.include_router(learning.router)

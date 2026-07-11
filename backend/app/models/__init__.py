@@ -5,6 +5,7 @@ from app.models.base import BaseEntity
 from app.models.client import Client
 from app.models.enums import ArtifactStatus
 from app.models.knowledge import KnowledgeRecord
+from app.models.learning import LearningRuleRecord
 from app.models.project import Project
 from app.models.task import Task
 from app.models.workspace import ConversationRecord, WorkspaceRecord, WorkspaceSessionRecord
@@ -18,6 +19,7 @@ __all__ = [
     "ArtifactStatus",
     "BackgroundTaskRecord",
     "KnowledgeRecord",
+    "LearningRuleRecord",
     "Task",
     "WorkspaceRecord",
     "WorkspaceSessionRecord",

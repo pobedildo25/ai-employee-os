@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import logging
 import uuid
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langgraph.graph.state import CompiledStateGraph
 
@@ -30,6 +32,9 @@ from app.revision.nodes.revision_node import RevisionNode
 from app.skills.registry import CapabilityRegistry, create_capability_registry
 from app.skills.resolver import SkillResolverNode
 
+if TYPE_CHECKING:
+    from app.learning.manager import LearningManager
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,6 +52,7 @@ def build_executive_graph(
     context_builder: ContextBuilder | None = None,
     capability_registry: CapabilityRegistry | None = None,
     checkpoint_manager: CheckpointManager | None = None,
+    learning_manager: "LearningManager | None" = None,
 ) -> CompiledStateGraph:
     """Build executive workflow with context, skills, and decision nodes."""
     registry = capability_registry or create_capability_registry()
@@ -63,7 +69,12 @@ def build_executive_graph(
     builder.add_node(DocumentCreationNode(document_creator, registry))
     builder.add_node(DocumentRenderNode())
     builder.add_node(QualityGateNode(QualityGate(ReviewerAgent(llm_gateway))))
-    builder.add_node(RevisionNode(RevisionManager(RevisionAgent(llm_gateway))))
+    builder.add_node(
+        RevisionNode(
+            RevisionManager(RevisionAgent(llm_gateway)),
+            learning_manager=learning_manager,
+        )
+    )
     wire_executive_workflow(builder)
     return builder.build(checkpoint_manager=checkpoint_manager)
 
@@ -73,6 +84,7 @@ def create_agent_runtime(
     llm_gateway: LLMGateway | None = None,
     context_builder: ContextBuilder | None = None,
     capability_registry: CapabilityRegistry | None = None,
+    learning_manager: "LearningManager | None" = None,
 ) -> "AgentRuntime":
     manager = checkpoint_manager or InMemoryCheckpointManager()
     gateway = llm_gateway or create_llm_gateway()
@@ -81,6 +93,7 @@ def create_agent_runtime(
         llm_gateway=gateway,
         context_builder=context_builder,
         capability_registry=capability_registry,
+        learning_manager=learning_manager,
     )
     return AgentRuntime(graph=graph, checkpoint_manager=manager)
 

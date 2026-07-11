@@ -14,6 +14,8 @@ from app.context.providers.memory_provider import MemoryContextProvider
 from app.context.providers.project_provider import ProjectContextProvider
 from app.knowledge.manager import KnowledgeManager
 from app.knowledge.providers.knowledge_provider import KnowledgeContextProvider
+from app.learning.manager import LearningManager
+from app.learning.providers.learning_provider import LearningContextProvider
 from app.memory.manager import MemoryManager
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.client_repository import ClientRepository
@@ -68,10 +70,20 @@ class ContextBuilder:
             conversation_history=merged.get("conversation_history", []),
             memory_context=merged.get("memory_context", []),
             knowledge_context=merged.get("knowledge_context", []),
+            learning_context=merged.get("learning_context")
+            or merged.get("learning_rules")
+            or [],
             workspace_context=merged.get("workspace_context"),
             preferences=preferences or merged.get("preferences", {}),
             metadata=metadata or {},
-            extensions=merged.get("extensions", {}),
+            extensions={
+                **(merged.get("extensions") or {}),
+                **(
+                    {"learning_rules": merged["learning_rules"]}
+                    if merged.get("learning_rules")
+                    else {}
+                ),
+            },
         )
 
         elapsed_ms = (time.perf_counter() - started) * 1000
@@ -130,6 +142,7 @@ def create_context_builder(
     history_provider: HistoryProvider | None = None,
     memory_manager: MemoryManager | None = None,
     knowledge_manager: KnowledgeManager | None = None,
+    learning_manager: LearningManager | None = None,
     workspace_service: WorkspaceService | None = None,
 ) -> ContextBuilder:
     providers: list[ContextProvider] = []
@@ -147,6 +160,8 @@ def create_context_builder(
         providers.append(MemoryContextProvider(memory_manager))
     if knowledge_manager is not None:
         providers.append(KnowledgeContextProvider(knowledge_manager))
+    if learning_manager is not None:
+        providers.append(LearningContextProvider(learning_manager))
     if workspace_service is not None:
         providers.append(WorkspaceContextProvider(workspace_service))
 
@@ -172,6 +187,7 @@ def _provider_contributed(name: str, merged: dict[str, Any]) -> bool:
         "history": "conversation_history",
         "memory": "memory_context",
         "knowledge": "knowledge_context",
+        "learning": "learning_context",
         "workspace": "workspace_context",
     }
     field = mapping.get(name)

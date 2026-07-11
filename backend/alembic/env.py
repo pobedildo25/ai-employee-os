@@ -11,6 +11,7 @@ from app.database.base import Base
 from app.models import Artifact, ArtifactVersion, Client, Project, Task  # noqa: F401
 from app.models.background_task import BackgroundTaskRecord  # noqa: F401
 from app.models.knowledge import KnowledgeRecord  # noqa: F401
+from app.models.learning import LearningRuleRecord  # noqa: F401
 from app.models.workspace import ConversationRecord, WorkspaceRecord, WorkspaceSessionRecord  # noqa: F401
 from app.memory.long_term.postgres_memory import MemoryRecord  # noqa: F401
 

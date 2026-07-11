@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from uuid import UUID
 
 from app.agent_runtime.state.models import AgentState
@@ -9,6 +11,9 @@ from app.revision.models import RevisionRequest, RevisionStatus
 from app.revision.parsers.feedback_parser import build_revision_request_from_review
 from app.revision.policies.revision_policy import can_auto_revise, next_revision_count
 
+if TYPE_CHECKING:
+    from app.learning.manager import LearningManager
+
 logger = logging.getLogger(__name__)
 
 REVISION_NODE = "revision"
@@ -17,8 +22,13 @@ REVISION_NODE = "revision"
 class RevisionNode:
     name = REVISION_NODE
 
-    def __init__(self, manager: RevisionManager) -> None:
+    def __init__(
+        self,
+        manager: RevisionManager,
+        learning_manager: "LearningManager | None" = None,
+    ) -> None:
         self._manager = manager
+        self._learning_manager = learning_manager
 
     async def __call__(self, state: AgentState) -> dict[str, Any]:
         _log_node(state, self.name, "started")
@@ -69,9 +79,15 @@ class RevisionNode:
         brand_profile = execution_context.get("brand_profile") or state.get("context", {}).get(
             "brand_profile"
         )
-        client_id = _to_uuid(execution_context.get("client_id") or state.get("context", {}).get("client_id"))
+        client_id = _to_uuid(
+            execution_context.get("client_id")
+            or state.get("context", {}).get("client_id")
+            or metadata.get("client_id")
+        )
         project_id = _to_uuid(
-            execution_context.get("project_id") or state.get("context", {}).get("project_id")
+            execution_context.get("project_id")
+            or state.get("context", {}).get("project_id")
+            or metadata.get("project_id")
         )
         output_format = (
             ((state.get("document_creation_result") or {}).get("metadata") or {}).get("document_type")
@@ -104,6 +120,27 @@ class RevisionNode:
             session_id=metadata.get("session_id"),
         )
 
+        learning_result = None
+        if self._learning_manager is not None and user_feedback:
+            from app.learning.models import LearningSource
+
+            try:
+                learned = await self._learning_manager.learn(
+                    str(user_feedback),
+                    source=LearningSource.REVISION_REQUEST,
+                    client_id=client_id,
+                    project_id=project_id,
+                    context=execution_context,
+                    trace_id=state.get("trace_id", "-"),
+                )
+                learning_result = learned.model_dump(mode="json") if learned else None
+            except Exception as exc:
+                logger.warning(
+                    "learning from revision skipped | trace_id=%s error=%s",
+                    state.get("trace_id", "-"),
+                    exc,
+                )
+
         render_meta = (result.metadata or {}).get("render_result") or {}
         update: dict[str, Any] = {
             "current_step": self.name,
@@ -115,6 +152,7 @@ class RevisionNode:
             "revision_count": new_count,
             "document_ast": result.document_ast or state.get("document_ast"),
             "memory_candidates": [item.model_dump(mode="json") for item in memory_items],
+            "learning_result": learning_result,
         }
         if render_meta:
             update["render_result"] = render_meta

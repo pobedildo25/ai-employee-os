@@ -40,6 +40,8 @@ from app.memory.semantic.qdrant_memory import QdrantSemanticMemory
 from app.memory.short_term.redis_memory import RedisShortTermMemory
 from app.knowledge.manager import KnowledgeManager
 from app.knowledge.stores.postgres_store import PostgresKnowledgeStore
+from app.learning.manager import LearningManager
+from app.learning.providers.postgres_learning_store import PostgresLearningStore
 from app.skills.registry import CapabilityRegistry, create_capability_registry
 from app.task_queue.manager import TaskQueueManager
 from app.task_queue.repositories.task_queue_repository import PostgresTaskQueueRepository
@@ -146,6 +148,13 @@ def get_knowledge_manager(
     return KnowledgeManager(PostgresKnowledgeStore(session))
 
 
+def get_learning_manager(
+    session: AsyncSession = Depends(get_session),
+    llm_gateway: LLMGateway = Depends(get_llm_gateway),
+) -> LearningManager:
+    return LearningManager(PostgresLearningStore(session), llm_gateway=llm_gateway)
+
+
 def get_workspace_service(
     session: AsyncSession = Depends(get_session),
 ) -> WorkspaceService:
@@ -164,6 +173,7 @@ def get_context_builder(
     artifact_repository: ArtifactRepository = Depends(get_artifact_repository),
     memory_manager: MemoryManager = Depends(get_memory_manager),
     knowledge_manager: KnowledgeManager = Depends(get_knowledge_manager),
+    learning_manager: LearningManager = Depends(get_learning_manager),
     workspace_service: WorkspaceService = Depends(get_workspace_service),
 ) -> ContextBuilder:
     return create_context_builder(
@@ -172,6 +182,7 @@ def get_context_builder(
         artifact_repository=artifact_repository,
         memory_manager=memory_manager,
         knowledge_manager=knowledge_manager,
+        learning_manager=learning_manager,
         workspace_service=workspace_service,
     )
 
@@ -181,12 +192,14 @@ def get_agent_runtime(
     checkpoint_manager: CheckpointManager = Depends(get_checkpoint_manager),
     llm_gateway: LLMGateway = Depends(get_llm_gateway),
     capability_registry: CapabilityRegistry = Depends(get_capability_registry),
+    learning_manager: LearningManager = Depends(get_learning_manager),
 ) -> AgentRuntime:
     return create_agent_runtime(
         checkpoint_manager=checkpoint_manager,
         llm_gateway=llm_gateway,
         context_builder=context_builder,
         capability_registry=capability_registry,
+        learning_manager=learning_manager,
     )
 
 

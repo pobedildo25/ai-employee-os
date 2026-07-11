@@ -27,6 +27,7 @@ class AgentState(TypedDict, total=False):
     workspace_context: dict[str, Any] | None
     background_task: dict[str, Any] | None
     observability_trace: dict[str, Any] | None
+    learning_result: dict[str, Any] | None
     quality_check: dict[str, Any] | None
     render_result: dict[str, Any] | None
     result: dict[str, Any] | None
