@@ -38,6 +38,7 @@ class QualityGateNode:
             "strategy_result": state.get("strategy_result"),
             "client_intelligence_result": state.get("client_intelligence_result"),
             "analytics_result": state.get("analytics_result"),
+            "research_result": state.get("research_result"),
             "response_message": (state.get("decision") or {}).get("response_message"),
             "revision_count": int(state.get("revision_count") or 0),
             "user_feedback": (state.get("metadata") or {}).get("user_feedback"),
@@ -51,6 +52,7 @@ class QualityGateNode:
         review_result = _merge_strategy_quality(review_result, review_context)
         review_result = _merge_client_intelligence_quality(review_result, review_context)
         review_result = _merge_analytics_quality(review_result, review_context)
+        review_result = _merge_research_quality(review_result, review_context)
 
 
         client_id = _to_uuid(execution_context.get("client_id") or state.get("context", {}).get("client_id"))
@@ -223,6 +225,30 @@ def _merge_analytics_quality(review_result, review_context: dict[str, Any]):
 
     result = AnalyticsResult.model_validate(result_data)
     extra = AnalyticsValidator().quality_issues(result)
+    if not extra:
+        return review_result
+
+    merged_issues = list(review_result.issues) + extra
+    status = review_result.status
+    if any(issue.severity == IssueSeverity.CRITICAL for issue in extra):
+        status = ReviewStatus.ESCALATE
+    elif any(issue.severity == IssueSeverity.MAJOR for issue in extra) and status == ReviewStatus.PASS:
+        status = ReviewStatus.REVISE
+    return review_result.model_copy(update={"issues": merged_issues, "status": status})
+
+
+def _merge_research_quality(review_result, review_context: dict[str, Any]):
+    """Attach research checks without changing QualityGate core."""
+    result_data = review_context.get("research_result")
+    if not result_data:
+        return review_result
+
+    from app.research.models import ResearchResult
+    from app.research.validators.research_validator import ResearchValidator
+    from app.quality.models import IssueSeverity, ReviewStatus
+
+    result = ResearchResult.model_validate(result_data)
+    extra = ResearchValidator().quality_issues(result)
     if not extra:
         return review_result
 

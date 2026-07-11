@@ -28,6 +28,7 @@ class ExecutionContext(BaseModel):
     conversation_history: list[dict[str, Any]] = Field(default_factory=list)
     memory_context: list[dict[str, Any]] = Field(default_factory=list)
     knowledge_context: list[dict[str, Any]] = Field(default_factory=list)
+    research_context: dict[str, Any] | None = None
     client_intelligence_context: dict[str, Any] | None = None
     learning_context: list[dict[str, Any]] = Field(default_factory=list)
     workspace_context: dict[str, Any] | None = None

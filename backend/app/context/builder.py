@@ -22,6 +22,8 @@ from app.memory.manager import MemoryManager
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.client_repository import ClientRepository
 from app.repositories.project_repository import ProjectRepository
+from app.research.manager import ResearchManager
+from app.research.providers.research_context_provider import ResearchContextProvider
 from app.workspace.context import WorkspaceContextProvider
 from app.workspace.service import WorkspaceService
 
@@ -72,6 +74,7 @@ class ContextBuilder:
             conversation_history=merged.get("conversation_history", []),
             memory_context=merged.get("memory_context", []),
             knowledge_context=merged.get("knowledge_context", []),
+            research_context=merged.get("research_context"),
             client_intelligence_context=merged.get("client_intelligence_context"),
             learning_context=merged.get("learning_context")
             or merged.get("learning_rules")
@@ -148,6 +151,7 @@ def create_context_builder(
     learning_manager: LearningManager | None = None,
     workspace_service: WorkspaceService | None = None,
     client_intelligence_manager: ClientIntelligenceManager | None = None,
+    research_manager: ResearchManager | None = None,
 ) -> ContextBuilder:
     providers: list[ContextProvider] = []
 
@@ -164,6 +168,8 @@ def create_context_builder(
         providers.append(MemoryContextProvider(memory_manager))
     if knowledge_manager is not None:
         providers.append(KnowledgeContextProvider(knowledge_manager))
+    if research_manager is not None:
+        providers.append(ResearchContextProvider(research_manager))
 
     intelligence_manager = client_intelligence_manager
     if intelligence_manager is None and any(
@@ -217,6 +223,7 @@ def _provider_contributed(name: str, merged: dict[str, Any]) -> bool:
         "history": "conversation_history",
         "memory": "memory_context",
         "knowledge": "knowledge_context",
+        "research": "research_context",
         "client_intelligence": "client_intelligence_context",
         "learning": "learning_context",
         "workspace": "workspace_context",

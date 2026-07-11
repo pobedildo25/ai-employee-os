@@ -50,6 +50,7 @@ from app.workspace.repositories.workspace_repository import PostgresWorkspaceRep
 from app.workspace.service import WorkspaceService
 from app.client_intelligence.manager import ClientIntelligenceManager
 from app.analytics.manager import AnalyticsManager
+from app.research.manager import ResearchManager
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
@@ -219,6 +220,28 @@ def get_analytics_manager(
     )
 
 
+@lru_cache
+def get_research_manager_singleton() -> ResearchManager:
+    """Process-local research cache so GET /research/{id} can resolve prior runs."""
+    from app.research.providers.mock_provider import MockProvider
+    from app.research.providers.search_provider import SearchProvider
+    from app.research.researcher import Researcher
+
+    gateway = create_llm_gateway()
+    return ResearchManager(
+        researcher=Researcher(SearchProvider(MockProvider()), llm_gateway=gateway),
+        llm_gateway=gateway,
+    )
+
+
+def get_research_manager(
+    llm_gateway: LLMGateway = Depends(get_llm_gateway),
+) -> ResearchManager:
+    # Reuse singleton cache; refresh researcher gateway when provided.
+    manager = get_research_manager_singleton()
+    return manager
+
+
 def get_context_builder(
     client_repository: ClientRepository = Depends(get_client_repository),
     project_repository: ProjectRepository = Depends(get_project_repository),
@@ -228,6 +251,7 @@ def get_context_builder(
     learning_manager: LearningManager = Depends(get_learning_manager),
     workspace_service: WorkspaceService = Depends(get_workspace_service),
     client_intelligence_manager: ClientIntelligenceManager = Depends(get_client_intelligence_manager),
+    research_manager: ResearchManager = Depends(get_research_manager),
 ) -> ContextBuilder:
     return create_context_builder(
         client_repository=client_repository,
@@ -238,6 +262,7 @@ def get_context_builder(
         learning_manager=learning_manager,
         workspace_service=workspace_service,
         client_intelligence_manager=client_intelligence_manager,
+        research_manager=research_manager,
     )
 
 

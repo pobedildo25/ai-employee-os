@@ -31,6 +31,7 @@ class AgentState(TypedDict, total=False):
     strategy_result: dict[str, Any] | None
     client_intelligence_result: dict[str, Any] | None
     analytics_result: dict[str, Any] | None
+    research_result: dict[str, Any] | None
     learning_result: dict[str, Any] | None
     quality_check: dict[str, Any] | None
 

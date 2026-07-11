@@ -147,6 +147,7 @@ def test_priority_ordering() -> None:
         client_context={"name": "Client"},
         artifact_context=[{"name": "doc.pdf"}],
         knowledge_context=[{"title": "Tone", "content": "Formal"}],
+        research_context={"summary": "External research"},
         client_intelligence_context={"summary": "B2B SaaS client", "confidence": 0.8},
         learning_context=[{"category": "presentation", "rule": "less text on slides"}],
         preferences={"lang": "ru"},

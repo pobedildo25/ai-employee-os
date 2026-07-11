@@ -201,6 +201,9 @@ async def test_context_integration(settings: Settings, client_id) -> None:
         "client_intelligence_context"
     ) + 1
     assert list(CONTEXT_PRIORITY).index("client_intelligence_context") == list(CONTEXT_PRIORITY).index(
+        "research_context"
+    ) + 1
+    assert list(CONTEXT_PRIORITY).index("research_context") == list(CONTEXT_PRIORITY).index(
         "knowledge_context"
     ) + 1
 
@@ -288,10 +291,12 @@ def test_priority_includes_learning_context() -> None:
         ExecutionContext(
             user_input="hello",
             knowledge_context=[{"title": "Tone"}],
+            research_context={"summary": "Research note"},
             client_intelligence_context={"summary": "Client profile"},
             learning_context=[{"category": "presentation", "rule": "less text on slides"}],
         )
     )
     keys = list(context.keys())
-    assert keys.index("knowledge_context") < keys.index("client_intelligence_context")
+    assert keys.index("knowledge_context") < keys.index("research_context")
+    assert keys.index("research_context") < keys.index("client_intelligence_context")
     assert keys.index("client_intelligence_context") < keys.index("learning_context")

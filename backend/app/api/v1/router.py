@@ -11,6 +11,7 @@ from app.api.v1 import (
     learning,
     observability,
     projects,
+    research,
     security,
     tasks,
     workspace,
@@ -30,3 +31,4 @@ api_router.include_router(observability.router)
 api_router.include_router(security.router)
 api_router.include_router(learning.router)
 api_router.include_router(analytics.router)
+api_router.include_router(research.router)
