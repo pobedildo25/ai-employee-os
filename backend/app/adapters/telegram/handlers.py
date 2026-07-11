@@ -1,5 +1,6 @@
 from typing import Any
 
+from app.adapters.telegram.flow import TelegramProductFlow
 from app.adapters.telegram.mapper import TelegramMapper
 from app.adapters.telegram.models import TelegramExecutionRequest
 from app.adapters.telegram.sender import TelegramSender
@@ -8,7 +9,7 @@ from app.agent_runtime.runtime import AgentRuntime
 
 
 class TelegramMessageHandler:
-    """Transport handler: message → ExecutionRequest → AgentRuntime → send reply."""
+    """Legacy transport handler kept for tests and fallback."""
 
     def __init__(
         self,
@@ -17,13 +18,18 @@ class TelegramMessageHandler:
         session_manager: TelegramSessionManager,
         sender: TelegramSender,
         mapper: TelegramMapper | None = None,
+        product_flow: TelegramProductFlow | None = None,
     ) -> None:
         self._runtime = runtime
         self._sessions = session_manager
         self._sender = sender
         self._mapper = mapper or TelegramMapper()
+        self._flow = product_flow
 
     async def handle(self, request: TelegramExecutionRequest) -> dict[str, Any]:
+        if self._flow is not None:
+            return await self._flow.handle_message(request)
+
         snapshot = await self._sessions.resolve(request.telegram_user_id)
 
         context = {

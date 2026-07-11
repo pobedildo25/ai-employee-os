@@ -1,9 +1,14 @@
 from app.adapters.telegram.bot import TelegramAdapter, TelegramBot
+from app.adapters.telegram.conversation_store import TelegramConversationStore
 from app.adapters.telegram.mapper import TelegramMapper
 from app.adapters.telegram.sender import HttpTelegramSender, InMemoryTelegramSender, TelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.runtime import AgentRuntime
 from app.core.config import Settings
+from app.orchestration.orchestrator import Orchestrator
+from app.services.artifact_service import ArtifactService
+from app.skills.registry import CapabilityRegistry
+from app.storage.storage_interface import StorageInterface
 from app.workspace.service import WorkspaceService
 
 
@@ -13,6 +18,11 @@ def create_telegram_adapter(
     workspace_service: WorkspaceService,
     settings: Settings,
     sender: TelegramSender | None = None,
+    artifact_service: ArtifactService | None = None,
+    storage: StorageInterface | None = None,
+    orchestrator: Orchestrator | None = None,
+    conversation_store: TelegramConversationStore | None = None,
+    capability_registry: CapabilityRegistry | None = None,
 ) -> TelegramAdapter:
     """Wire Telegram transport to existing runtime/workspace. No new singletons."""
     if sender is None:
@@ -28,6 +38,11 @@ def create_telegram_adapter(
         sender=sender,
         mapper=TelegramMapper(),
         enabled=settings.telegram_enabled,
+        artifact_service=artifact_service,
+        storage=storage,
+        orchestrator=orchestrator,
+        conversation_store=conversation_store,
+        capability_registry=capability_registry,
     )
 
 
@@ -37,11 +52,17 @@ def create_telegram_bot(
     workspace_service: WorkspaceService,
     settings: Settings,
     sender: TelegramSender | None = None,
+    artifact_service: ArtifactService | None = None,
+    storage: StorageInterface | None = None,
+    orchestrator: Orchestrator | None = None,
 ) -> TelegramBot:
     adapter = create_telegram_adapter(
         runtime=runtime,
         workspace_service=workspace_service,
         settings=settings,
         sender=sender,
+        artifact_service=artifact_service,
+        storage=storage,
+        orchestrator=orchestrator,
     )
     return TelegramBot(adapter, token=settings.telegram_bot_token or None)

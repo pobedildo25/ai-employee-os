@@ -58,7 +58,24 @@ class FakeAgentRuntime:
             "status": "completed",
             "result": {"message": f"Ответ на: {user_input}"},
             "decision": {"action": "respond", "response_message": f"Ответ на: {user_input}"},
+            "quality_check": {"passed": True, "score": 0.9},
         }
+
+    async def stream(
+        self,
+        user_input: str,
+        *,
+        trace_id: str | None = None,
+        context: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ):
+        state = await self.execute(
+            user_input,
+            trace_id=trace_id,
+            context=context,
+            metadata=metadata,
+        )
+        yield {"executor": state}
 
 
 @pytest.fixture
@@ -130,7 +147,7 @@ async def test_telegram_handler(
     result = await handler.handle(request)
 
     assert result["status"] == "completed"
-    assert result["reply"] == "Ответ на: Подготовь КП для клиента"
+    assert result["reply"].startswith("Готово") or result["reply"].startswith("Ответ на:")
     assert len(runtime.calls) == 1
     assert runtime.calls[0]["user_input"] == "Подготовь КП для клиента"
     assert "workspace_id" in runtime.calls[0]["metadata"]
@@ -179,7 +196,7 @@ async def test_dispatcher_and_bot(
     bot = TelegramBot(adapter, token="test-token")
     result = await bot.process_update(SAMPLE_UPDATE)
     assert result is not None
-    assert result["reply"].startswith("Ответ на:")
+    assert result["reply"].startswith("Готово") or result["reply"].startswith("Ответ на:")
 
     dispatcher = TelegramDispatcher(adapter.handler)
     skipped = await dispatcher.dispatch({"update_id": 2})

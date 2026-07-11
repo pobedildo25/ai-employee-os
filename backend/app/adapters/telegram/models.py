@@ -28,9 +28,20 @@ class TelegramMessage(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class TelegramCallbackQuery(BaseModel):
+    id: str
+    from_user: TelegramUser = Field(alias="from")
+    message: TelegramMessage | None = None
+    chat_instance: str | None = None
+    data: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
 class TelegramUpdate(BaseModel):
     update_id: int
     message: TelegramMessage | None = None
+    callback_query: TelegramCallbackQuery | None = None
 
 
 class TelegramExecutionRequest(BaseModel):
@@ -43,3 +54,13 @@ class TelegramExecutionRequest(BaseModel):
     telegram_username: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
+
+
+class TelegramCallbackRequest(BaseModel):
+    action: str
+    telegram_user_id: int
+    telegram_chat_id: int
+    callback_query_id: str
+    callback_data: str
+    telegram_message_id: int | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)

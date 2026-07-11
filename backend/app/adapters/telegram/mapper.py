@@ -1,10 +1,14 @@
 from typing import Any
 
-from app.adapters.telegram.models import TelegramExecutionRequest, TelegramUpdate
+from app.adapters.telegram.models import (
+    TelegramCallbackRequest,
+    TelegramExecutionRequest,
+    TelegramUpdate,
+)
 
 
 class TelegramMapper:
-    """Maps Telegram Update → TelegramExecutionRequest. No business logic."""
+    """Maps Telegram Update → transport requests. No business logic."""
 
     def map_update(self, update: TelegramUpdate | dict[str, Any]) -> TelegramExecutionRequest | None:
         parsed = update if isinstance(update, TelegramUpdate) else TelegramUpdate.model_validate(update)
@@ -37,6 +41,32 @@ class TelegramMapper:
             },
         )
 
+    def map_callback(self, update: TelegramUpdate | dict[str, Any]) -> TelegramCallbackRequest | None:
+        parsed = update if isinstance(update, TelegramUpdate) else TelegramUpdate.model_validate(update)
+        callback = parsed.callback_query
+        if callback is None or not callback.data:
+            return None
+
+        action = _parse_callback_action(callback.data)
+        if action is None:
+            return None
+
+        chat_id = callback.message.chat.id if callback.message is not None else callback.from_user.id
+        return TelegramCallbackRequest(
+            action=action,
+            telegram_user_id=callback.from_user.id,
+            telegram_chat_id=chat_id,
+            callback_query_id=callback.id,
+            callback_data=callback.data,
+            telegram_message_id=callback.message.message_id if callback.message else None,
+            metadata={
+                "source": "telegram",
+                "telegram_user_id": callback.from_user.id,
+                "telegram_chat_id": chat_id,
+                "telegram_callback_id": callback.id,
+            },
+        )
+
     @staticmethod
     def extract_reply_text(state: dict[str, Any]) -> str:
         """Read reply fields from AgentState — does not generate text."""
@@ -60,3 +90,12 @@ class TelegramMapper:
 
         status = state.get("status")
         return str(status) if status else "ok"
+
+
+def _parse_callback_action(data: str) -> str | None:
+    if not data.startswith("tg:"):
+        return None
+    action = data.split(":", 1)[1]
+    if action in {"approve", "cancel", "revise", "retry"}:
+        return action
+    return None
