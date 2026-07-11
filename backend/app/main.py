@@ -14,6 +14,11 @@ from app.core.logging import new_trace_id, setup_logging
 from app.database.postgres import close_postgres
 from app.database.qdrant import close_qdrant
 from app.database.redis import close_redis
+from app.security.manager import SecurityManager
+from app.security.middleware import SecurityMiddleware
+from app.security.providers.in_memory_provider import InMemorySecurityProvider
+from app.security.rate_limit import RateLimiter
+from app.security.secrets import SecretsManager
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +27,15 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     settings = get_settings()
     setup_logging(settings.log_level)
+    if not hasattr(app.state, "security_manager"):
+        app.state.security_manager = SecurityManager(
+            InMemorySecurityProvider(),
+            rate_limiter=RateLimiter(
+                limit=settings.security_rate_limit,
+                window_seconds=settings.security_rate_window_seconds,
+            ),
+            secrets=SecretsManager(settings),
+        )
     logger.info("Starting AI Employee OS backend (env=%s)", settings.app_env)
     yield
     await close_postgres()
@@ -32,6 +46,14 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    security_manager = SecurityManager(
+        InMemorySecurityProvider(),
+        rate_limiter=RateLimiter(
+            limit=settings.security_rate_limit,
+            window_seconds=settings.security_rate_window_seconds,
+        ),
+        secrets=SecretsManager(settings),
+    )
     app = FastAPI(
         title="AI Employee OS",
         description="Agentic AI system for marketing agency",
@@ -39,6 +61,7 @@ def create_app() -> FastAPI:
         debug=settings.app_debug,
         lifespan=lifespan,
     )
+    app.state.security_manager = security_manager
 
     @app.middleware("http")
     async def trace_id_middleware(request: Request, call_next):
@@ -47,6 +70,12 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         response.headers["X-Trace-Id"] = trace_id
         return response
+
+    app.add_middleware(
+        SecurityMiddleware,
+        security_manager=security_manager,
+        enabled=settings.security_enabled,
+    )
 
     app.include_router(health_router)
     app.include_router(clients_router)

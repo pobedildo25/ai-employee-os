@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_enabled: bool = False
 
+    security_enabled: bool = False
+    security_rate_limit: int = 120
+    security_rate_window_seconds: int = 60
+
 
 @lru_cache
 def get_settings() -> Settings:

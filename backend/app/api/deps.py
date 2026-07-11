@@ -1,7 +1,7 @@
 from collections.abc import AsyncGenerator
 from functools import lru_cache
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -209,3 +209,13 @@ def get_observability_manager() -> "ObservabilityManager":
     from app.observability.manager import ObservabilityManager
 
     return ObservabilityManager()
+
+
+def get_security_manager(request: Request) -> "SecurityManager":
+    manager = getattr(request.app.state, "security_manager", None)
+    if manager is None:
+        from app.security.manager import SecurityManager
+
+        manager = SecurityManager()
+        request.app.state.security_manager = manager
+    return manager
