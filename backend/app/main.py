@@ -8,6 +8,7 @@ from app.api.clients import router as clients_router
 from app.api.projects import router as projects_router
 from app.api.artifacts import router as artifacts_router
 from app.api.tasks import router as tasks_router
+from app.api.v1.router import api_router as api_v1_router
 from app.core.config import get_settings
 from app.core.logging import new_trace_id, setup_logging
 from app.database.postgres import close_postgres
@@ -52,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(projects_router)
     app.include_router(artifacts_router)
     app.include_router(tasks_router)
+    app.include_router(api_v1_router, prefix="/api/v1")
     return app
 
 

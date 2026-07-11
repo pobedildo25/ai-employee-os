@@ -28,8 +28,7 @@ def check_minio() -> tuple[bool, str]:
         return False, str(exc)
 
 
-@router.get("/health")
-async def health(request: Request) -> dict:
+async def build_health_payload(request: Request) -> dict:
     settings = get_settings()
 
     postgres_ok, postgres_msg = await check_postgres(settings)
@@ -54,3 +53,8 @@ async def health(request: Request) -> dict:
         "trace_id": trace_id,
         "services": services,
     }
+
+
+@router.get("/health")
+async def health(request: Request) -> dict:
+    return await build_health_payload(request)

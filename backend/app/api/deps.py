@@ -38,6 +38,8 @@ from app.memory.short_term.redis_memory import RedisShortTermMemory
 from app.knowledge.manager import KnowledgeManager
 from app.knowledge.stores.postgres_store import PostgresKnowledgeStore
 from app.skills.registry import CapabilityRegistry, create_capability_registry
+from app.task_queue.manager import TaskQueueManager
+from app.task_queue.repositories.task_queue_repository import PostgresTaskQueueRepository
 from app.workspace.manager import WorkspaceManager
 from app.workspace.repositories.workspace_repository import PostgresWorkspaceRepository
 from app.workspace.service import WorkspaceService
@@ -139,6 +141,12 @@ def get_workspace_service(
     session: AsyncSession = Depends(get_session),
 ) -> WorkspaceService:
     return WorkspaceService(WorkspaceManager(PostgresWorkspaceRepository(session)))
+
+
+def get_task_queue_manager(
+    session: AsyncSession = Depends(get_session),
+) -> TaskQueueManager:
+    return TaskQueueManager(PostgresTaskQueueRepository(session))
 
 
 def get_context_builder(
