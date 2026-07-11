@@ -8,6 +8,10 @@ import asyncio
 import mimetypes
 import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,11 +65,11 @@ async def _ensure_agency_client(session: AsyncSession, *, name: str) -> tuple[UU
     existing = await client_service.list_all()
     agency = next((item for item in existing if item.name == name), None)
     if agency is None:
-        agency = await client_service.create_client(ClientCreate(name=name, description="Agency knowledge archive"))
+        agency = await client_service.create(ClientCreate(name=name, description="Agency knowledge archive"))
     projects = await project_service.list_by_client(agency.id)
     project = next((item for item in projects if item.name == "Agency Archive"), None)
     if project is None:
-        project = await project_service.create_project(
+        project = await project_service.create(
             ProjectCreate(
                 client_id=agency.id,
                 name="Agency Archive",
