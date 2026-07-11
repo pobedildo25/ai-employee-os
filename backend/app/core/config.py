@@ -41,6 +41,9 @@ class Settings(BaseSettings):
 
     skills_enabled: bool = True
 
+    telegram_bot_token: str = ""
+    telegram_enabled: bool = False
+
 
 @lru_cache
 def get_settings() -> Settings:

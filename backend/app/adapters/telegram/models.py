@@ -1,0 +1,45 @@
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class TelegramUser(BaseModel):
+    id: int
+    is_bot: bool = False
+    first_name: str | None = None
+    last_name: str | None = None
+    username: str | None = None
+
+
+class TelegramChat(BaseModel):
+    id: int
+    type: str = "private"
+    title: str | None = None
+    username: str | None = None
+
+
+class TelegramMessage(BaseModel):
+    message_id: int
+    date: int | None = None
+    text: str | None = None
+    chat: TelegramChat
+    from_user: TelegramUser | None = Field(default=None, alias="from")
+
+    model_config = {"populate_by_name": True}
+
+
+class TelegramUpdate(BaseModel):
+    update_id: int
+    message: TelegramMessage | None = None
+
+
+class TelegramExecutionRequest(BaseModel):
+    """Internal request produced by TelegramMapper — no business logic."""
+
+    user_input: str
+    telegram_user_id: int
+    telegram_chat_id: int
+    telegram_message_id: int | None = None
+    telegram_username: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    context: dict[str, Any] = Field(default_factory=dict)

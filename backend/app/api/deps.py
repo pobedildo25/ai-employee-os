@@ -179,3 +179,26 @@ def get_agent_runtime(
         context_builder=context_builder,
         capability_registry=capability_registry,
     )
+
+
+def get_telegram_adapter(
+    runtime: AgentRuntime = Depends(get_agent_runtime),
+    workspace_service: WorkspaceService = Depends(get_workspace_service),
+) -> "TelegramAdapter":
+    from app.adapters.telegram.bot import TelegramAdapter
+    from app.adapters.telegram.factory import create_telegram_adapter
+
+    return create_telegram_adapter(
+        runtime=runtime,
+        workspace_service=workspace_service,
+        settings=get_settings(),
+    )
+
+
+def get_telegram_bot(
+    adapter: "TelegramAdapter" = Depends(get_telegram_adapter),
+) -> "TelegramBot":
+    from app.adapters.telegram.bot import TelegramBot
+
+    settings = get_settings()
+    return TelegramBot(adapter, token=settings.telegram_bot_token or None)

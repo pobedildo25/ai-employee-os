@@ -1,0 +1,186 @@
+from typing import Any
+from uuid import UUID
+
+import pytest
+
+from app.adapters.telegram.bot import TelegramAdapter, TelegramBot
+from app.adapters.telegram.dispatcher import TelegramDispatcher
+from app.adapters.telegram.handlers import TelegramMessageHandler
+from app.adapters.telegram.mapper import TelegramMapper
+from app.adapters.telegram.models import TelegramUpdate
+from app.adapters.telegram.sender import InMemoryTelegramSender
+from app.adapters.telegram.session import TelegramSessionManager, telegram_client_id
+from app.workspace.manager import WorkspaceManager
+from app.workspace.repositories.workspace_repository import InMemoryWorkspaceRepository
+from app.workspace.service import WorkspaceService
+
+
+SAMPLE_UPDATE = {
+    "update_id": 1001,
+    "message": {
+        "message_id": 42,
+        "date": 1710000000,
+        "text": "Подготовь КП для клиента",
+        "chat": {"id": 555, "type": "private"},
+        "from": {
+            "id": 777,
+            "is_bot": False,
+            "first_name": "Ada",
+            "username": "ada",
+        },
+    },
+}
+
+
+class FakeAgentRuntime:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def execute(
+        self,
+        user_input: str,
+        *,
+        trace_id: str | None = None,
+        context: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.calls.append(
+            {
+                "user_input": user_input,
+                "trace_id": trace_id,
+                "context": context or {},
+                "metadata": metadata or {},
+            }
+        )
+        return {
+            "execution_id": "exec-tg-1",
+            "trace_id": trace_id or "trace-tg-1",
+            "status": "completed",
+            "result": {"message": f"Ответ на: {user_input}"},
+            "decision": {"action": "respond", "response_message": f"Ответ на: {user_input}"},
+        }
+
+
+@pytest.fixture
+def workspace_service() -> WorkspaceService:
+    return WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository()))
+
+
+@pytest.fixture
+def session_manager(workspace_service: WorkspaceService) -> TelegramSessionManager:
+    return TelegramSessionManager(workspace_service=workspace_service)
+
+
+@pytest.fixture
+def sender() -> InMemoryTelegramSender:
+    return InMemoryTelegramSender()
+
+
+@pytest.fixture
+def runtime() -> FakeAgentRuntime:
+    return FakeAgentRuntime()
+
+
+def test_telegram_mapper() -> None:
+    mapper = TelegramMapper()
+    request = mapper.map_update(SAMPLE_UPDATE)
+    assert request is not None
+    assert request.user_input == "Подготовь КП для клиента"
+    assert request.telegram_user_id == 777
+    assert request.telegram_chat_id == 555
+    assert request.metadata["source"] == "telegram"
+
+    empty = mapper.map_update({"update_id": 1, "message": {"message_id": 1, "chat": {"id": 1, "type": "private"}}})
+    assert empty is None
+
+
+def test_extract_reply_text() -> None:
+    text = TelegramMapper.extract_reply_text(
+        {"result": {"message": "hello"}, "decision": {"response_message": "other"}}
+    )
+    assert text == "hello"
+
+
+@pytest.mark.asyncio
+async def test_telegram_session_manager(session_manager: TelegramSessionManager) -> None:
+    snapshot = await session_manager.resolve(777)
+    assert snapshot["client_id"] == str(telegram_client_id(777))
+    assert snapshot["active_session_id"] is not None
+    assert session_manager.get_bound_workspace_id(777) == UUID(snapshot["workspace_id"])
+
+    again = await session_manager.resolve(777)
+    assert again["workspace_id"] == snapshot["workspace_id"]
+
+
+@pytest.mark.asyncio
+async def test_telegram_handler(
+    runtime: FakeAgentRuntime,
+    session_manager: TelegramSessionManager,
+    sender: InMemoryTelegramSender,
+) -> None:
+    mapper = TelegramMapper()
+    handler = TelegramMessageHandler(
+        runtime=runtime,  # type: ignore[arg-type]
+        session_manager=session_manager,
+        sender=sender,
+        mapper=mapper,
+    )
+    request = mapper.map_update(SAMPLE_UPDATE)
+    assert request is not None
+    result = await handler.handle(request)
+
+    assert result["status"] == "completed"
+    assert result["reply"] == "Ответ на: Подготовь КП для клиента"
+    assert len(runtime.calls) == 1
+    assert runtime.calls[0]["user_input"] == "Подготовь КП для клиента"
+    assert "workspace_id" in runtime.calls[0]["metadata"]
+    assert len(sender.sent) == 1
+    assert sender.sent[0]["chat_id"] == 555
+    assert sender.sent[0]["text"] == "Ответ на: Подготовь КП для клиента"
+
+
+@pytest.mark.asyncio
+async def test_telegram_adapter(
+    runtime: FakeAgentRuntime,
+    session_manager: TelegramSessionManager,
+    sender: InMemoryTelegramSender,
+) -> None:
+    adapter = TelegramAdapter(
+        runtime=runtime,  # type: ignore[arg-type]
+        session_manager=session_manager,
+        sender=sender,
+        enabled=True,
+    )
+    result = await adapter.handle_update(SAMPLE_UPDATE)
+    assert result is not None
+    assert result["execution_id"] == "exec-tg-1"
+    assert sender.sent[0]["reply_to_message_id"] == 42
+
+    disabled = TelegramAdapter(
+        runtime=runtime,  # type: ignore[arg-type]
+        session_manager=session_manager,
+        sender=sender,
+        enabled=False,
+    )
+    assert await disabled.handle_update(SAMPLE_UPDATE) is None
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_and_bot(
+    runtime: FakeAgentRuntime,
+    session_manager: TelegramSessionManager,
+    sender: InMemoryTelegramSender,
+) -> None:
+    adapter = TelegramAdapter(
+        runtime=runtime,  # type: ignore[arg-type]
+        session_manager=session_manager,
+        sender=sender,
+    )
+    bot = TelegramBot(adapter, token="test-token")
+    result = await bot.process_update(SAMPLE_UPDATE)
+    assert result is not None
+    assert result["reply"].startswith("Ответ на:")
+
+    dispatcher = TelegramDispatcher(adapter.handler)
+    skipped = await dispatcher.dispatch({"update_id": 2})
+    assert skipped is None
