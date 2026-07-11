@@ -217,7 +217,6 @@ async def test_registry_integration_in_graph(settings: Settings) -> None:
                 {"description": "Analyze data", "capability": "data_analysis", "dependencies": []},
             ],
         ),
-        _creation_ast_json(title="Analysis Document"),
         _review_json(),
     )
     runtime = AgentRuntime(
@@ -232,4 +231,5 @@ async def test_registry_integration_in_graph(settings: Settings) -> None:
 
     required = result["required_capabilities"]
     assert required["resolved"][0]["name"] == "data_analysis"
-    assert result["document_ast"] is not None
+    assert result["execution_graph"] is not None
+    assert result["task_execution"]["status"] == "COMPLETED"

@@ -259,7 +259,6 @@ async def test_executive_agent_receives_built_context(settings: Settings, projec
             goal="создать коммерческое предложение",
             summary="Нужно КП для проекта",
         ),
-        _creation_ast_json(title="Commercial proposal"),
         _review_json(),
     )
     runtime = AgentRuntime(

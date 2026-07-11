@@ -17,6 +17,13 @@ class AgentState(TypedDict, total=False):
     required_capabilities: dict[str, Any]
     task_plan: dict[str, Any] | None
     task_execution: dict[str, Any] | None
+    execution_graph: dict[str, Any] | None
+    execution_state: dict[str, Any] | None
+    progress: float | None
+    active_nodes: list[str] | None
+    completed_nodes: list[str] | None
+    failed_nodes: list[str] | None
+    telegram_progress: dict[str, Any] | None
     document_creation_result: dict[str, Any] | None
     document_ast: dict[str, Any] | None
     review_result: dict[str, Any] | None

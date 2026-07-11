@@ -21,11 +21,14 @@ from app.document_creation.creator import DocumentCreator
 from app.document_creation.generators.ast_generator import DocumentASTGenerator
 from app.document_creation.nodes.document_creation_node import DocumentCreationNode
 from app.document_creation.nodes.document_render_node import DocumentRenderNode
+from app.orchestration.nodes.orchestration_node import OrchestrationNode
+from app.planning.executor import TaskExecutor
+from app.planning.nodes.executor_node import ExecutorNode
+from app.planning.nodes.planner_node import PlannerNode
+from app.planning.planner import TaskPlanner
 from app.quality.gate import QualityGate
 from app.quality.nodes.quality_gate_node import QualityGateNode
 from app.quality.reviewer import ReviewerAgent
-from app.planning.nodes.planner_node import PlannerNode
-from app.planning.planner import TaskPlanner
 from app.revision.agent import RevisionAgent
 from app.revision.manager import RevisionManager
 from app.revision.nodes.revision_node import RevisionNode
@@ -70,6 +73,8 @@ def build_executive_graph(
     builder.add_node(ExecutiveAgentNode(agent))
     builder.add_node(SkillResolverNode(registry))
     builder.add_node(PlannerNode(planner, registry))
+    builder.add_node(OrchestrationNode())
+    builder.add_node(ExecutorNode(TaskExecutor(), registry))
     builder.add_node(DocumentCreationNode(document_creator, registry, presentation_designer))
     builder.add_node(DocumentRenderNode())
     builder.add_node(QualityGateNode(QualityGate(ReviewerAgent(llm_gateway))))

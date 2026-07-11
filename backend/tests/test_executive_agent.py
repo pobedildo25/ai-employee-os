@@ -61,7 +61,6 @@ async def test_proposal_request_understands_goal_and_capabilities(settings: Sett
             next_action="request_information",
         ),
         _plan_json(goal="создать коммерческое предложение"),
-        _creation_ast_json(title="Commercial proposal"),
         _review_json(),
     )
     runtime = AgentRuntime(
@@ -183,7 +182,6 @@ async def test_executive_graph_full_workflow(settings: Settings) -> None:
                 {"description": "Analyze report", "capability": "data_analysis", "dependencies": []},
             ],
         ),
-        _creation_ast_json(title="Data Analysis Report"),
         _review_json(),
     )
     runtime = AgentRuntime(
@@ -202,4 +200,5 @@ async def test_executive_graph_full_workflow(settings: Settings) -> None:
     assert result["current_step"] == "quality_gate"
     assert result["result"]["understanding"]["goal"] == "анализ данных"
     assert result["result"]["decision"]["action"] == "EXECUTE"
-    assert result["document_ast"] is not None
+    assert result["execution_graph"] is not None
+    assert result["progress"] == 100.0

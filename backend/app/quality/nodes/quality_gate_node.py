@@ -39,6 +39,8 @@ class QualityGateNode:
             "client_intelligence_result": state.get("client_intelligence_result"),
             "analytics_result": state.get("analytics_result"),
             "research_result": state.get("research_result"),
+            "task_execution": state.get("task_execution"),
+            "task_plan": state.get("task_plan"),
             "response_message": (state.get("decision") or {}).get("response_message"),
             "revision_count": int(state.get("revision_count") or 0),
             "user_feedback": (state.get("metadata") or {}).get("user_feedback"),

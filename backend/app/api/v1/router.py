@@ -7,6 +7,7 @@ from app.api.v1 import (
     clients,
     documents,
     execution,
+    executions,
     health,
     learning,
     observability,
@@ -26,6 +27,7 @@ api_router.include_router(artifacts.router)
 api_router.include_router(tasks.router)
 api_router.include_router(workspace.router)
 api_router.include_router(execution.router)
+api_router.include_router(executions.router)
 api_router.include_router(documents.router)
 api_router.include_router(observability.router)
 api_router.include_router(security.router)

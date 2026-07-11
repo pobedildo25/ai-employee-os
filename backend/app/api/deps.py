@@ -242,6 +242,18 @@ def get_research_manager(
     return manager
 
 
+@lru_cache
+def get_orchestrator_singleton():
+    from app.orchestration.orchestrator import Orchestrator
+    from app.orchestration.store import get_execution_store_singleton
+
+    return Orchestrator(store=get_execution_store_singleton())
+
+
+def get_orchestrator():
+    return get_orchestrator_singleton()
+
+
 def get_context_builder(
     client_repository: ClientRepository = Depends(get_client_repository),
     project_repository: ProjectRepository = Depends(get_project_repository),

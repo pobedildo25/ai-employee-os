@@ -231,8 +231,7 @@ async def test_langgraph_planning_integration(settings: Settings) -> None:
             next_action="execute",
         ),
         _plan_json(goal="Подготовить КП для клиента"),
-        _creation_ast_json(title="Коммерческое предложение"),
-        _review_json(summary="Document structure and output meet the goal"),
+        _review_json(summary="Plan execution meets the goal"),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway, capability_registry=registry),
@@ -246,8 +245,9 @@ async def test_langgraph_planning_integration(settings: Settings) -> None:
 
     assert result["task_plan"] is not None
     assert len(result["task_plan"]["steps"]) == 2
-    assert result["document_ast"] is not None
-    assert result["document_creation_result"]["missing_information"] == []
+    assert result["execution_graph"] is not None
+    assert result["execution_state"] is not None
+    assert result["progress"] == 100.0
     assert result["quality_check"]["passed"] is True
     assert result["review_result"]["status"] == "PASS"
     assert result["result"]["task_plan"]["goal"] == "Подготовить КП для клиента"
