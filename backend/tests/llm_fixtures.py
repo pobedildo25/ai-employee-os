@@ -154,6 +154,30 @@ def review_json(
     return json.dumps(payload, ensure_ascii=False)
 
 
+def knowledge_json(
+    *,
+    items: list[dict] | None = None,
+) -> str:
+    payload = {
+        "items": items
+        or [
+            {
+                "title": "Client tone",
+                "category": "preference",
+                "content": "Client prefers concise formal language",
+                "confidence": 0.8,
+            },
+            {
+                "title": "Service focus",
+                "category": "fact",
+                "content": "Primary offering is digital marketing services",
+                "confidence": 0.75,
+            },
+        ]
+    }
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def revision_json(
     *,
     status: str = "ready",

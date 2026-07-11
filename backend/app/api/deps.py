@@ -35,6 +35,8 @@ from app.memory.long_term.postgres_memory import PostgresLongTermMemory
 from app.memory.manager import MemoryManager, create_memory_manager
 from app.memory.semantic.qdrant_memory import QdrantSemanticMemory
 from app.memory.short_term.redis_memory import RedisShortTermMemory
+from app.knowledge.manager import KnowledgeManager
+from app.knowledge.stores.postgres_store import PostgresKnowledgeStore
 from app.skills.registry import CapabilityRegistry, create_capability_registry
 
 
@@ -124,17 +126,25 @@ def get_memory_manager(
     )
 
 
+def get_knowledge_manager(
+    session: AsyncSession = Depends(get_session),
+) -> KnowledgeManager:
+    return KnowledgeManager(PostgresKnowledgeStore(session))
+
+
 def get_context_builder(
     client_repository: ClientRepository = Depends(get_client_repository),
     project_repository: ProjectRepository = Depends(get_project_repository),
     artifact_repository: ArtifactRepository = Depends(get_artifact_repository),
     memory_manager: MemoryManager = Depends(get_memory_manager),
+    knowledge_manager: KnowledgeManager = Depends(get_knowledge_manager),
 ) -> ContextBuilder:
     return create_context_builder(
         client_repository=client_repository,
         project_repository=project_repository,
         artifact_repository=artifact_repository,
         memory_manager=memory_manager,
+        knowledge_manager=knowledge_manager,
     )
 
 

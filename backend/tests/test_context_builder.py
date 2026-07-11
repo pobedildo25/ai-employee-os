@@ -142,6 +142,7 @@ def test_priority_ordering() -> None:
         project_context={"name": "Project"},
         client_context={"name": "Client"},
         artifact_context=[{"name": "doc.pdf"}],
+        knowledge_context=[{"title": "Tone", "content": "Formal"}],
         preferences={"lang": "ru"},
         conversation_history=[{"role": "user", "content": "hi"}],
     )
@@ -150,6 +151,7 @@ def test_priority_ordering() -> None:
     assert list(ordered.keys()) == list(CONTEXT_PRIORITY)
     assert ordered["user_input"] == "hello"
     assert ordered["project_context"]["name"] == "Project"
+    assert ordered["knowledge_context"][0]["title"] == "Tone"
 
 
 def test_sort_context_keys() -> None:

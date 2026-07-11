@@ -23,6 +23,7 @@ class AgentState(TypedDict, total=False):
     revision_request: dict[str, Any] | None
     revision_result: dict[str, Any] | None
     revision_count: int
+    knowledge_migration_result: dict[str, Any] | None
     quality_check: dict[str, Any] | None
     render_result: dict[str, Any] | None
     result: dict[str, Any] | None

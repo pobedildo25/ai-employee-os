@@ -12,6 +12,8 @@ from app.context.providers.client_provider import ClientContextProvider
 from app.context.providers.history_provider import HistoryProvider, InMemoryHistoryProvider
 from app.context.providers.memory_provider import MemoryContextProvider
 from app.context.providers.project_provider import ProjectContextProvider
+from app.knowledge.manager import KnowledgeManager
+from app.knowledge.providers.knowledge_provider import KnowledgeContextProvider
 from app.memory.manager import MemoryManager
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.client_repository import ClientRepository
@@ -63,6 +65,7 @@ class ContextBuilder:
             artifact_context=merged.get("artifact_context", []),
             conversation_history=merged.get("conversation_history", []),
             memory_context=merged.get("memory_context", []),
+            knowledge_context=merged.get("knowledge_context", []),
             preferences=preferences or merged.get("preferences", {}),
             metadata=metadata or {},
             extensions=merged.get("extensions", {}),
@@ -123,6 +126,7 @@ def create_context_builder(
     artifact_repository: ArtifactRepository | None = None,
     history_provider: HistoryProvider | None = None,
     memory_manager: MemoryManager | None = None,
+    knowledge_manager: KnowledgeManager | None = None,
 ) -> ContextBuilder:
     providers: list[ContextProvider] = []
 
@@ -137,6 +141,8 @@ def create_context_builder(
 
     if memory_manager is not None:
         providers.append(MemoryContextProvider(memory_manager))
+    if knowledge_manager is not None:
+        providers.append(KnowledgeContextProvider(knowledge_manager))
 
     return ContextBuilder(providers)
 
@@ -159,6 +165,7 @@ def _provider_contributed(name: str, merged: dict[str, Any]) -> bool:
         "artifact": "artifact_context",
         "history": "conversation_history",
         "memory": "memory_context",
+        "knowledge": "knowledge_context",
     }
     field = mapping.get(name)
     if field is None:

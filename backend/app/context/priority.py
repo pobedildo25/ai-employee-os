@@ -9,6 +9,7 @@ CONTEXT_PRIORITY: tuple[str, ...] = (
     "project_context",
     "client_context",
     "artifact_context",
+    "knowledge_context",
     "preferences",
     "conversation_history",
 )
@@ -22,6 +23,7 @@ def build_prioritized_context(context: ExecutionContext) -> dict[str, Any]:
         "project_context": context.project_context,
         "client_context": context.client_context,
         "artifact_context": context.artifact_context,
+        "knowledge_context": context.knowledge_context,
         "preferences": context.preferences,
         "conversation_history": context.conversation_history,
         "metadata": context.metadata,
@@ -31,9 +33,10 @@ def build_prioritized_context(context: ExecutionContext) -> dict[str, Any]:
     if context.memory_context:
         raw["memory_context"] = context.memory_context
 
-    return {key: raw[key] for key in CONTEXT_PRIORITY if _has_value(raw.get(key))} | (
-        {"memory_context": raw["memory_context"]} if context.memory_context else {}
-    )
+    prioritized = {key: raw[key] for key in CONTEXT_PRIORITY if _has_value(raw.get(key))}
+    if context.memory_context:
+        prioritized["memory_context"] = raw["memory_context"]
+    return prioritized
 
 
 def sort_context_keys(keys: list[str]) -> list[str]:
