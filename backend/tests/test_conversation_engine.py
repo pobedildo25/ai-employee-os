@@ -71,10 +71,10 @@ async def test_conversation_store_singleton_survives_adapter_rebuild(
         sender=InMemoryTelegramSender(),
         conversation_store=store,
     )
-    convo = adapter_a.conversation_store.get_or_create(777, 555)
+    convo = await adapter_a.conversation_store.get_or_create(777, 555)
     convo.flow_mode = TelegramFlowMode.PENDING_CLARIFICATION
     convo.last_user_input = "Сделай КП"
-    adapter_a.conversation_store.save(convo)
+    await adapter_a.conversation_store.save(convo)
 
     adapter_b = create_telegram_adapter(
         runtime=runtime,  # type: ignore[arg-type]
@@ -83,7 +83,7 @@ async def test_conversation_store_singleton_survives_adapter_rebuild(
         sender=InMemoryTelegramSender(),
         conversation_store=store,
     )
-    restored = adapter_b.conversation_store.get(777)
+    restored = await adapter_b.conversation_store.get(777)
     assert restored is not None
     assert restored.flow_mode == TelegramFlowMode.PENDING_CLARIFICATION
     assert restored.last_user_input == "Сделай КП"
@@ -120,7 +120,7 @@ async def test_chat_respond_keeps_revision_context(
     flow._executive_agent = executive  # type: ignore[assignment]
 
     await flow.handle_message(_request("Сделай КП для Acme по SEO на 150к"))
-    convo = conversation_store.get(777)
+    convo = await conversation_store.get(777)
     assert convo is not None
     assert convo.flow_mode == TelegramFlowMode.COMPLETED
     assert convo.last_agent_state is not None
@@ -129,7 +129,7 @@ async def test_chat_respond_keeps_revision_context(
     flow._executive_agent = chat_executive  # type: ignore[assignment]
     await flow.handle_message(_request("Спасибо"))
 
-    convo = conversation_store.get(777)
+    convo = await conversation_store.get(777)
     assert convo is not None
     assert convo.last_agent_state is not None
     assert convo.flow_mode == TelegramFlowMode.COMPLETED
@@ -165,7 +165,7 @@ async def test_clarification_stays_pending_on_repeated_ask(
     assert result.get("resumed_from_clarification") is not True
     assert result["status"] == "clarification"
     assert runtime.calls == []
-    convo = conversation_store.get(777)
+    convo = await conversation_store.get(777)
     assert convo is not None
     assert convo.pending_clarification is not None
     assert convo.flow_mode == TelegramFlowMode.PENDING_CLARIFICATION
@@ -278,7 +278,7 @@ async def test_topic_switch_from_clarification_to_chat(
 
     assert result["intent"] == "chat"
     assert runtime.calls == []
-    convo = conversation_store.get(777)
+    convo = await conversation_store.get(777)
     assert convo is not None
     assert convo.pending_clarification is None
 
@@ -312,7 +312,7 @@ async def test_revision_uses_prior_artifact_after_chat(
     flow._executive_agent = FakeExecutiveAgent(action="RESPOND", response_message="Ок")  # type: ignore[assignment]
     await flow.handle_message(_request("Спасибо"))
 
-    convo = conversation_store.get(777)
+    convo = await conversation_store.get(777)
     assert convo is not None
     assert convo.last_agent_state is not None
 

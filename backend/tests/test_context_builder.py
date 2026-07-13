@@ -5,7 +5,7 @@ import pytest
 
 from app.agent_runtime.checkpoint.manager import InMemoryCheckpointManager
 from app.agent_runtime.runtime import AgentRuntime, build_executive_graph
-from app.context.builder import ContextBuilder, create_context_builder
+from app.context.builder import ContextBuilder, ContextBuilderNode, create_context_builder
 from app.context.models import ExecutionContext
 from app.context.priority import CONTEXT_PRIORITY, build_prioritized_context, sort_context_keys
 from app.context.providers.base import ContextProvider
@@ -260,6 +260,42 @@ async def test_broken_provider_does_not_fail_context_build() -> None:
     context = await builder.build(user_input="Test task", trace_id="trace-degrade")
     assert context.client_context == {"name": "Still Works"}
     assert context.memory_context == []
+
+
+@pytest.mark.asyncio
+async def test_context_builder_node_preserves_transport_keys() -> None:
+    """Transport hints (clarify / attachments) must survive ContextBuilderNode merge."""
+    builder = create_context_builder()
+    node = ContextBuilderNode(builder)
+    pending = {
+        "pending_task": True,
+        "original_goal": "Сделай КП",
+        "original_user_input": "Сделай КП",
+        "missing_information": ["бюджет"],
+    }
+    state = {
+        "execution_id": "exec-1",
+        "trace_id": "trace-1",
+        "user_input": "До 500к",
+        "context": {
+            "client_id": str(uuid4()),
+            "pending_clarification": pending,
+            "extracted_content": {"text": "файл"},
+            "file_bytes": b"abc",
+            "channel": "telegram",
+        },
+        "metadata": {"session_id": "sess-transport"},
+    }
+
+    update = await node(state)
+
+    assert update["context"]["pending_clarification"] == pending
+    assert update["context"]["extracted_content"] == {"text": "файл"}
+    assert update["context"]["file_bytes"] == b"abc"
+    assert update["context"]["channel"] == "telegram"
+    assert update["context"]["user_input"] == "До 500к"
+    assert update["execution_context"]["pending_clarification"] == pending
+    assert update["execution_context"]["extracted_content"] == {"text": "файл"}
 
 
 @pytest.mark.asyncio

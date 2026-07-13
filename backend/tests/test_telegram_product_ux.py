@@ -351,10 +351,10 @@ async def test_revision_button_prompts_for_feedback(
         conversation_store,
         continuation=FakeContinuation(),
     )
-    convo = conversation_store.get_or_create(777, 555)
+    convo = await conversation_store.get_or_create(777, 555)
     convo.flow_mode = TelegramFlowMode.COMPLETED
     convo.last_agent_state = {"status": "completed", "render_result": {"artifact_id": str(uuid4())}}
-    conversation_store.save(convo)
+    await conversation_store.save(convo)
 
     callback = TelegramCallbackRequest(
         action="revise",
@@ -366,7 +366,7 @@ async def test_revision_button_prompts_for_feedback(
     result = await flow.handle_callback(callback)
     assert result["status"] == "revision_prompted"
     assert format_revision_prompt() in result["reply"]
-    assert conversation_store.get(777).flow_mode == TelegramFlowMode.REVISION_PROMPTED
+    assert (await conversation_store.get(777)).flow_mode == TelegramFlowMode.REVISION_PROMPTED
 
 
 @pytest.mark.asyncio
@@ -382,7 +382,7 @@ async def test_revision_from_text_message(
         conversation_store,
         continuation=FakeContinuation(),
     )
-    convo = conversation_store.get_or_create(777, 555)
+    convo = await conversation_store.get_or_create(777, 555)
     convo.flow_mode = TelegramFlowMode.REVISION_PROMPTED
     convo.last_agent_state = {
         "status": "completed",
@@ -390,7 +390,7 @@ async def test_revision_from_text_message(
         "document_ast": {"node_count": 3},
         "quality_check": {"passed": True, "score": 0.9},
     }
-    conversation_store.save(convo)
+    await conversation_store.save(convo)
 
     request = TelegramExecutionRequest(
         user_input="Сделай короче и добавь больше таблиц",
@@ -418,14 +418,14 @@ async def test_contextual_revision_without_button(
         continuation=FakeContinuation(),
         executive_agent=_revision_executive_agent(),
     )
-    convo = conversation_store.get_or_create(777, 555)
+    convo = await conversation_store.get_or_create(777, 555)
     convo.flow_mode = TelegramFlowMode.COMPLETED
     convo.last_agent_state = {
         "status": "completed",
         "render_result": {"artifact_id": str(uuid4())},
         "quality_check": {"passed": True, "score": 0.88},
     }
-    conversation_store.save(convo)
+    await conversation_store.save(convo)
 
     request = TelegramExecutionRequest(
         user_input="Измени стиль",
@@ -511,7 +511,7 @@ async def test_session_persistence(
     assert request is not None
     await flow.handle_message(request)
     again = await flow.handle_message(request)
-    convo = conversation_store.get(777)
+    convo = await conversation_store.get(777)
     assert convo is not None
     assert convo.workspace_id is not None
     assert convo.session_id is not None

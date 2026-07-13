@@ -145,13 +145,13 @@ async def test_new_task_after_completed_is_not_forced_into_revision() -> None:
     flow = build_flow(runtime, sessions, sender, store, continuation=FakeContinuation())
     flow._executive_agent = SwitchingExecutive()  # type: ignore[assignment]
 
-    convo = store.get_or_create(777, 555)
+    convo = await store.get_or_create(777, 555)
     convo.flow_mode = TelegramFlowMode.COMPLETED
     convo.last_agent_state = {
         "status": "completed",
         "render_result": {"artifact_id": str(uuid4())},
     }
-    store.save(convo)
+    await store.save(convo)
 
     result = await flow.handle_message(
         TelegramExecutionRequest(

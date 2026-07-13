@@ -192,10 +192,10 @@ async def test_revision_button_asks_one_short_question(
         conversation_store,
         continuation=FakeContinuation(),
     )
-    convo = conversation_store.get_or_create(777, 555)
+    convo = await conversation_store.get_or_create(777, 555)
     convo.flow_mode = TelegramFlowMode.COMPLETED
     convo.last_agent_state = {"status": "completed"}
-    conversation_store.save(convo)
+    await conversation_store.save(convo)
 
     result = await flow.handle_callback(
         TelegramCallbackRequest(
@@ -207,4 +207,4 @@ async def test_revision_button_asks_one_short_question(
         )
     )
     assert result["reply"] == "Что изменить?"
-    assert conversation_store.get(777).flow_mode == TelegramFlowMode.REVISION_PROMPTED
+    assert (await conversation_store.get(777)).flow_mode == TelegramFlowMode.REVISION_PROMPTED

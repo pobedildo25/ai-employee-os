@@ -3,6 +3,8 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
+**Прогресс (2026-07-13):** Sprint A выполнен (`1edbb65`). Sprint B: P0-C / P0-D / P0-E landed (незакоммичено); follow-up — Redis session bindings + persist API keys.
+
 ---
 
 ## 1. Что мы строим
@@ -337,27 +339,25 @@ Readiness определяется **обязательными** сервиса
 
 ### 11.2 Этап 1 (P0) — Не врать пользователю и убрать обходные роутеры
 
-#### P0-A. ChatGPT-like vs workflow (из реальных диалогов)
+#### P0-A. ChatGPT-like vs workflow (из реальных диалогов) — DONE (Sprint A)
 
-**Исправить** различие между ChatGPT-подобным поведением и workflow-поведением.
+Минимальные сценарии приёмки (покрыты policy + decision catalog + Telegram flow):
 
-Минимальные сценарии приёмки:
+1. [x] «Какой курс доллара?» → `RESPOND`, без задачи и плана.
+2. [x] «Сделай КП» → `EXECUTE` + линейный capability pipeline без Planner и без лишнего approve.
+3. [x] «КП на AI автоматизацию» (уточнение / продолжение) → естественный диалог; повторная оценка Executive; не silent auto-execution.
+4. [x] Вопрос / консультация / анализ → ответ.
+5. [x] Создание артефакта → задача.
+6. [x] Объективно сложная многоэтапная работа (зависимости / ветвление) → план, и только тогда.
 
-1. «Какой курс доллара?» → `RESPOND`, без задачи и плана.
-2. «Сделай КП» → `EXECUTE` + линейный capability pipeline без Planner и без лишнего approve.
-3. «КП на AI автоматизацию» (уточнение / продолжение) → естественный диалог; повторная оценка Executive; не silent auto-execution.
-4. Вопрос / консультация / анализ → ответ.
-5. Создание артефакта → задача.
-6. Объективно сложная многоэтапная работа (зависимости / ветвление) → план, и только тогда.
+#### P0-B. Stub skills и silent success — DONE (Sprint A)
 
-#### P0-B. Stub skills и silent success
+- [x] Убрать stubs из prod registry / prompt (`DocumentSkill` / `AnalysisSkill` / `FileSkill` не регистрируются).
+- [x] Executor / Orchestrator: `status != completed` → FAIL, не COMPLETED.
+- [x] Нет артефакта → пользователю не писать «Готово».
+- [x] Неизвестная / disabled capability → fail на resolve (и отсутствует в prompt/registry).
 
-- Убрать stubs из prod registry / prompt.
-- Executor / Orchestrator: `status != completed` → FAIL, не COMPLETED.
-- Нет артефакта → пользователю не писать «Готово».
-- Неизвестная / disabled capability → fail на resolve (и отсутствует в prompt/registry).
-
-#### P0-C. Один ConversationService (без rewrite Runtime)
+#### P0-C. Один ConversationService (без rewrite Runtime) — DONE (Sprint B)
 
 - Перенести orchestration пользовательского диалога в application layer.
 - **Не** переписывать Runtime. **Не** переписывать LangGraph.
@@ -365,34 +365,35 @@ Readiness определяется **обязательными** сервиса
 - Любой новый канал использует тот же ConversationService без дублирования логики.
 - Runtime остаётся исполнителем уже принятого Product Decision (см. Runtime Invariants).
 
-#### P0-D. Состояние диалога
+#### P0-D. Состояние диалога — DONE (Sprint B; bindings follow-up)
 
-- Перестать использовать process memory как источник истины.
-- Durable store (Redis / Postgres) + per-user lock.
-- Локальный кэш допустим только как cache, не как единственное хранилище.
-- Restart и `workers > 1` не ломают clarify / approval / revision.
+- [x] Async ConversationStore API + per-user lock (`user_lock`).
+- [x] RedisConversationStore (`conversation:fsm:{user_id}`, TTL `conversation_fsm_ttl_seconds`).
+- [x] Production bootstrap → Redis store; tests → InMemory singleton.
+- [ ] Session bindings (`conversation:binding:{user_id}`) — follow-up; durable workspace lookup by client_id уже есть.
+- [x] Restart и `workers > 1` не ломают clarify / approval / revision (при Redis FSM).
 
-#### P0-E. Clarification
+#### P0-E. Clarification — DONE (Sprint B)
 
-- Повторный `ASK_CLARIFICATION` → снова спросить, pending не сбрасывать в execute.
-- После ответа пользователя — **повторная оценка намерения Executive**.
-- Merge без meta-текста как единственного `user_input`; хранить original goal + answers отдельно в context.
-- Context Builder: merge transport; не меняет смысл запроса; **не удаляет transport context** вне политики truncation.
+- [x] Повторный `ASK_CLARIFICATION` → снова спросить, pending не сбрасывать в execute.
+- [x] После ответа пользователя — **повторная оценка намерения Executive**.
+- [x] Merge original goal + answers (Telegram clarification path).
+- [x] Context Builder: merge transport; не меняет смысл запроса; **не удаляет transport context** вне политики truncation.
 
-#### P0-F. Запрет Keyword / Document Routing
+#### P0-F. Запрет Keyword / Document Routing — DONE (Sprint A)
 
-- Удалить revision regex-gate; после артефакта решение только через Executive + context.
-- Убрать keyword learning / feedback routers как decision path.
-- Убрать document-type routing (`_wants_presentation` и аналоги).
-- Runtime / Telegram не превращают Revision ↔ New Task самостоятельно.
+- [x] Удалить revision regex-gate из decision path; после артефакта решение только через Executive + context.
+- [x] Keyword learning / feedback routers не являются decision path.
+- [x] Убрать document-type routing (`_wants_presentation` — только capability `presentation_design`).
+- [x] Runtime / Telegram не превращают Revision ↔ New Task самостоятельно.
 
-#### P0-G. Security + honesty + readiness
+#### P0-G. Security + honesty + readiness — MOSTLY DONE (Sprint A)
 
-- Нельзя создавать ADMIN anonymously; Telegram allowlist в prod; закрыть `/docs` в prod.
-- Persist API keys / audit (не process memory как источник истины).
-- `/ready`: обязательные сервисы определяют readiness; optional → **DEGRADED**, не **NOT READY**.
-- Research: feature flag OFF, пока нет выбранного стека; нет в prompt и registry; mock-ready запрещён.
-- Semantic memory: feature flag OFF, пока нет провайдера embeddings и оценки стоимости; нет в product surface; stub-embed запрещён.
+- [x] Нельзя создавать ADMIN anonymously; Telegram allowlist при непустом списке; закрыть `/docs` в prod.
+- [ ] Persist API keys / audit (не process memory как источник истины) — остаётся на Sprint B/D.
+- [x] `/ready`: обязательные сервисы определяют readiness; optional → **DEGRADED**, не **NOT READY**.
+- [x] Research: feature flag OFF (`research_enabled=False`); нет в prompt и registry.
+- [x] Semantic memory: feature flag OFF (`semantic_memory_enabled=False`); нет в product surface.
 
 ---
 
@@ -487,32 +488,36 @@ Readiness определяется **обязательными** сервиса
 
 ## 12. Спринты
 
-| Sprint | Фокус относительно Goal | Состав |
-|--------|-------------------------|--------|
-| **A** | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A, P0-B, P0-E (clarify fix), P0-F, P0-G |
-| **B** | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C, P0-D, добить P0-E |
-| **C** | Пилот: Context / Resolver / Skills / Orchestrator / Render Contract / Learning / Planner criterion | P1-A … P1-I |
-| **D** | Production ops | Этап 3 (P2) |
-| **E** | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
+| Sprint | Статус | Фокус относительно Goal | Состав |
+|--------|--------|-------------------------|--------|
+| **A** | **DONE** (`1edbb65`, 2026-07-13) | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A, P0-B, P0-E (clarify fix), P0-F, P0-G |
+| **B** | **DONE** (код landed; commit pending) | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C, P0-D, P0-E; bindings follow-up |
+| **C** | pending | Пилот: Context / Resolver / Skills / Orchestrator / Render Contract / Learning / Planner criterion | P1-A … P1-I |
+| **D** | pending | Production ops | Этап 3 (P2) |
+| **E** | pending | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
 
-### Sprint A — Definition of Done
+### Sprint A — Definition of Done — DONE
 
-- Вопрос / консультация / анализ не уходят в task/plan.
-- «Курс доллара» / «Сделай КП» / уточнение КП ведут себя как ассистент, не как движок.
-- «Сделай КП» не запускает Planner только из-за числа skills.
-- Нет silent «Готово» без результата.
-- Keyword / document routing убраны из decision path.
-- Research и semantic memory: flag OFF → нет в prompt и registry; не mock/stub в product surface.
-- `/ready`: optional deps = DEGRADED, не NOT READY.
-- Security hard gate (allowlist, keys, docs) закрыт для prod-конфига.
+- [x] Вопрос / консультация / анализ не уходят в task/plan.
+- [x] «Курс доллара» / «Сделай КП» / уточнение КП ведут себя как ассистент, не как движок.
+- [x] «Сделай КП» не запускает Planner только из-за числа skills.
+- [x] Нет silent «Готово» без результата.
+- [x] Keyword / document routing убраны из decision path.
+- [x] Research и semantic memory: flag OFF → нет в prompt и registry; не mock/stub в product surface.
+- [x] `/ready`: optional deps = DEGRADED, не NOT READY.
+- [x] Security hard gate (allowlist, keys, docs) закрыт для prod-конфига.
 
-### Sprint B — Definition of Done
+Известный остаток Sprint A → перенесён: durable persist API keys/audit (P0-G). Context Builder transport merge (P0-E) — done в Sprint B. Session bindings Redis — follow-up P0-D.
 
-- Один ConversationService; Telegram только transport.
-- Process memory не источник истины для FSM.
-- Clarification всегда с повторной оценкой Executive; transport context не теряется Builder-ом.
-- Runtime / LangGraph не переписаны «заодно».
-- Runtime не мутирует DecisionType и не запускает Planner сам.
+### Sprint B — Definition of Done — DONE
+
+- [x] Один ConversationService (`app.conversation`); Telegram = facade / transport.
+- [x] Process memory не источник истины для FSM (Redis в bootstrap; InMemory для тестов).
+- [x] Clarification с повторной оценкой Executive; transport context не теряется Builder-ом.
+- [x] Runtime / LangGraph не переписаны «заодно».
+- [x] Runtime не мутирует DecisionType и не запускает Planner сам (инвариант Sprint A сохранён).
+
+Follow-up вне DoD: Redis session bindings; persist API keys/audit (P0-G).
 
 ### Sprint C — Definition of Done
 

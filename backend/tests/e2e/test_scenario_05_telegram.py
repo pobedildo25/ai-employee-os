@@ -90,7 +90,7 @@ async def test_telegram_full_flow_with_progress_approval_and_delivery(settings, 
     assert sender.documents
     assert sender.documents[-1].get("caption") == "Готово."
 
-    convo = store.get(SAMPLE_UPDATE["message"]["from"]["id"])
+    convo = await store.get(SAMPLE_UPDATE["message"]["from"]["id"])
     assert convo is not None
     assert convo.workspace_id is not None
     assert convo.session_id is not None

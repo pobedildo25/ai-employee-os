@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     memory_enabled: bool = True
     redis_memory_ttl: int = 3600
+    conversation_fsm_ttl_seconds: int = 604800
     qdrant_collection: str = "knowledge"
 
     skills_enabled: bool = True

@@ -118,24 +118,37 @@ class ContextBuilderNode:
 
     async def __call__(self, state: AgentState) -> dict[str, Any]:
         _log_node(state, self.name, "started")
-        hints = state.get("context") or {}
+        transport_hints = dict(state.get("context") or {})
         metadata = state.get("metadata") or {}
 
         execution_context = await self._builder.build(
             user_input=state.get("user_input", ""),
-            client_id=hints.get("client_id"),
-            project_id=hints.get("project_id"),
+            client_id=transport_hints.get("client_id"),
+            project_id=transport_hints.get("project_id"),
             session_id=metadata.get("session_id"),
-            current_task=hints.get("current_task"),
-            preferences=hints.get("preferences"),
+            current_task=transport_hints.get("current_task"),
+            preferences=transport_hints.get("preferences"),
             metadata=metadata,
             trace_id=state.get("trace_id", "-"),
         )
 
+        # Start from prioritized built context, then overlay transport (dialogs / attachments).
+        # Never drop transport keys that are not part of an explicit truncation policy.
+        merged_context = execution_context.to_prioritized_dict()
+        for key, value in transport_hints.items():
+            if value is not None:
+                merged_context[key] = value
+
+        exec_dump = execution_context.model_dump()
+        core_fields = set(ExecutionContext.model_fields)
+        for key, value in transport_hints.items():
+            if value is not None and key not in core_fields:
+                exec_dump[key] = value
+
         update = {
             "current_step": self.name,
-            "execution_context": execution_context.model_dump(),
-            "context": execution_context.to_prioritized_dict(),
+            "execution_context": exec_dump,
+            "context": merged_context,
             "status": "context_ready",
         }
         _log_node({**state, **update}, self.name, "completed")

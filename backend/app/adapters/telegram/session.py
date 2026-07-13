@@ -14,7 +14,11 @@ def telegram_client_id(telegram_user_id: int) -> UUID:
 
 @lru_cache
 def get_session_bindings_singleton() -> dict[int, UUID]:
-    """Process-lifetime telegram_user_id → workspace_id bindings."""
+    """Process-lifetime telegram_user_id → workspace_id bindings.
+
+    Follow-up (post P0-D): optionally persist as Redis `conversation:binding:{user_id}`.
+    Durable workspace is already preferred via get_snapshot_for_client(client_id).
+    """
     return {}
 
 

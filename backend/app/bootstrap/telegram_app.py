@@ -5,7 +5,6 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.telegram.bot import TelegramBot
-from app.adapters.telegram.conversation_store import get_conversation_store_singleton
 from app.adapters.telegram.factory import create_telegram_bot
 from app.agent_runtime.runtime import create_agent_runtime
 from app.agents.executive.agent import ExecutiveAgent
@@ -14,6 +13,7 @@ from app.client_intelligence.builder import ClientIntelligenceBuilder
 from app.client_intelligence.manager import ClientIntelligenceManager
 from app.context.builder import create_context_builder
 from app.context.providers.workspace_history_provider import WorkspaceHistoryProvider
+from app.conversation.store import create_conversation_store
 from app.core.config import Settings, get_settings
 from app.database.redis import get_redis_client
 from app.knowledge.manager import KnowledgeManager
@@ -102,5 +102,5 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         client_repository=client_repository,
         executive_agent=executive_agent,
         capability_registry=capability_registry,
-        conversation_store=get_conversation_store_singleton(),
+        conversation_store=create_conversation_store(settings),
     )

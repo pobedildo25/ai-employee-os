@@ -188,7 +188,7 @@ async def test_clarification_then_answer_resumes_task_pipeline(
     assert runtime.calls == []
     assert "детали" in sender.sent[-1]["text"].lower()
 
-    convo = conversation_store.get(777)
+    convo = await conversation_store.get(777)
     assert convo is not None
     assert convo.flow_mode == TelegramFlowMode.PENDING_CLARIFICATION
     assert convo.pending_clarification is not None
@@ -199,7 +199,7 @@ async def test_clarification_then_answer_resumes_task_pipeline(
     assert len(runtime.calls) == 1
     assert "Яндекса" in runtime.calls[0]["user_input"]
     assert "AI автоматизацию" in runtime.calls[0]["user_input"]
-    convo = conversation_store.get(777)
+    convo = await conversation_store.get(777)
     assert convo is not None
     assert convo.pending_clarification is None
 
