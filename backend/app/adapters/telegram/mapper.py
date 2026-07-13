@@ -70,26 +70,9 @@ class TelegramMapper:
     @staticmethod
     def extract_reply_text(state: dict[str, Any]) -> str:
         """Read reply fields from AgentState — does not generate text."""
-        result = state.get("result")
-        if isinstance(result, dict):
-            for key in ("message", "response_message", "text"):
-                value = result.get(key)
-                if value:
-                    return str(value)
+        from app.conversation.messages import extract_reply_text
 
-        decision = state.get("decision")
-        if isinstance(decision, dict):
-            for key in ("response_message", "clarification_question", "message"):
-                value = decision.get(key)
-                if value:
-                    return str(value)
-
-        understanding = state.get("understanding")
-        if isinstance(understanding, dict) and understanding.get("summary"):
-            return str(understanding["summary"])
-
-        status = state.get("status")
-        return str(status) if status else "ok"
+        return extract_reply_text(state)
 
 
 def _parse_callback_action(data: str) -> str | None:

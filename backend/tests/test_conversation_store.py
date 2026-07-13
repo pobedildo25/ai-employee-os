@@ -18,8 +18,8 @@ async def test_inmemory_get_save_get_or_create_clear() -> None:
     assert await store.get(1) is None
 
     state = await store.get_or_create(1, 10)
-    assert state.telegram_user_id == 1
-    assert state.telegram_chat_id == 10
+    assert state.user_id == 1
+    assert state.chat_id == 10
     assert state.flow_mode == FlowMode.IDLE
 
     state.flow_mode = FlowMode.PENDING_CLARIFICATION
@@ -37,7 +37,7 @@ async def test_inmemory_get_save_get_or_create_clear() -> None:
     assert loaded.pending_clarification.original_goal == "КП"
 
     same = await store.get_or_create(1, 99)
-    assert same.telegram_chat_id == 99
+    assert same.chat_id == 99
     assert same.flow_mode == FlowMode.PENDING_CLARIFICATION
 
     await store.clear_flow(1)
@@ -110,14 +110,16 @@ async def test_redis_store_roundtrip(settings: Settings) -> None:
 
     raw = await client.get(FSM_KEY.format(user_id=7))
     assert raw is not None
+    assert "telegram_user_id" in raw
 
     loaded = await store.get(7)
     assert loaded is not None
     assert loaded.flow_mode == FlowMode.WAITING_APPROVAL
     assert loaded.last_user_input == "plan"
+    assert loaded.user_id == 7
 
     created = await store.get_or_create(7, 100)
-    assert created.telegram_chat_id == 100
+    assert created.chat_id == 100
 
     await store.clear_flow(7)
     cleared = await store.get(7)

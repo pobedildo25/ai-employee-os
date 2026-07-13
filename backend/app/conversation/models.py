@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class FlowMode(str, Enum):
@@ -27,9 +27,18 @@ class PendingClarification(BaseModel):
 
 
 class ConversationState(BaseModel):
-    # telegram_* field names kept for this PR to minimize churn; channel-neutral rename later.
-    telegram_user_id: int
-    telegram_chat_id: int
+    """Dialog FSM state. Serialized Redis keys keep telegram_* aliases for compatibility."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    user_id: int = Field(
+        validation_alias=AliasChoices("user_id", "telegram_user_id"),
+        serialization_alias="telegram_user_id",
+    )
+    chat_id: int = Field(
+        validation_alias=AliasChoices("chat_id", "telegram_chat_id"),
+        serialization_alias="telegram_chat_id",
+    )
     workspace_id: str | None = None
     session_id: str | None = None
     flow_mode: FlowMode = FlowMode.IDLE

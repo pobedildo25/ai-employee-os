@@ -23,27 +23,27 @@ class ConversationStore:
         self._locks: dict[int, asyncio.Lock] = {}
         self._locks_guard = asyncio.Lock()
 
-    async def get(self, telegram_user_id: int) -> ConversationState | None:
-        return self._states.get(telegram_user_id)
+    async def get(self, user_id: int) -> ConversationState | None:
+        return self._states.get(user_id)
 
-    async def get_or_create(self, telegram_user_id: int, telegram_chat_id: int) -> ConversationState:
-        existing = self._states.get(telegram_user_id)
+    async def get_or_create(self, user_id: int, chat_id: int) -> ConversationState:
+        existing = self._states.get(user_id)
         if existing is not None:
-            existing.telegram_chat_id = telegram_chat_id
+            existing.chat_id = chat_id
             return existing
         state = ConversationState(
-            telegram_user_id=telegram_user_id,
-            telegram_chat_id=telegram_chat_id,
+            user_id=user_id,
+            chat_id=chat_id,
         )
-        self._states[telegram_user_id] = state
+        self._states[user_id] = state
         return state
 
     async def save(self, state: ConversationState) -> None:
         state.updated_at = datetime.now()
-        self._states[state.telegram_user_id] = state
+        self._states[state.user_id] = state
 
-    async def clear_flow(self, telegram_user_id: int) -> None:
-        state = self._states.get(telegram_user_id)
+    async def clear_flow(self, user_id: int) -> None:
+        state = self._states.get(user_id)
         if state is None:
             return
         state.flow_mode = FlowMode.IDLE

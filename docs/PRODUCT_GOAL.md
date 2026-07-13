@@ -3,7 +3,7 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
-**Прогресс (2026-07-13):** Sprint A — **PARTIAL** (`1edbb65` + leftovers in this PR: P0-G fail-closed Redis/allowlist, P0-B missing `status` → FAIL, Stage 0 contracts). Sprint B — **PARTIAL**: P0-D/P0-E DONE; P0-C PARTIAL (ConversationService still Telegram-coupled; multi-channel ports not done). Sprint C — **PARTIAL** (Resolver validates hints; approval = stored plan re-run; Render Contract / MemorySaver / PDF / history truncate / live eval open). Sprint D — **PARTIAL** (landed: Redis AUTH, Qdrant key, MinIO pin, migration lock, Telegram worker, tenant ACL, Sentry/metrics, readiness; open: TLS / backups schedule / rollback playbook / Celery; Redis security+rate-limit InMemory fallback fixed as Sprint A/P0-G leftover this PR).
+**Прогресс (2026-07-13):** Sprint A — **PARTIAL** (`1edbb65` + leftovers in this PR: P0-G fail-closed Redis/allowlist, P0-B missing `status` → FAIL, Stage 0 contracts). Sprint B — **PARTIAL**: P0-D/P0-E DONE; P0-C DONE (ConversationService channel-neutral via ports; Telegram = adapter; Redis FSM field aliases `telegram_*` retained). Sprint C — **PARTIAL** (Resolver validates hints; approval = stored plan re-run; Render Contract / MemorySaver / PDF / history truncate / live eval open). Sprint D — **PARTIAL** (landed: Redis AUTH, Qdrant key, MinIO pin, migration lock, Telegram worker, tenant ACL, Sentry/metrics, readiness; open: TLS / backups schedule / rollback playbook / Celery; Redis security+rate-limit InMemory fallback fixed as Sprint A/P0-G leftover this PR).
 
 ---
 
@@ -357,13 +357,14 @@ Readiness определяется **обязательными** сервиса
 - [x] Нет артефакта → пользователю не писать «Готово».
 - [x] Неизвестная / disabled capability → fail на resolve (и отсутствует в prompt/registry).
 
-#### P0-C. Один ConversationService (без rewrite Runtime) — PARTIAL (Sprint B)
+#### P0-C. Один ConversationService (без rewrite Runtime) — DONE (Sprint B)
 
 - [x] Перенести orchestration пользовательского диалога в application layer (`app.conversation`).
 - [x] **Не** переписывать Runtime. **Не** переписывать LangGraph.
-- [ ] Telegram (и любой канал) = map / send only — **PARTIAL**: ConversationService ещё Telegram-coupled (DTO/session); multi-channel ports не сделаны.
-- [ ] Любой новый канал использует тот же ConversationService без дублирования логики — blocked on ports.
+- [x] Telegram (и любой канал) = map / send only — ports (`SessionPort` / `ChannelNotifier` / …); `ConversationService` без `app.adapters.telegram` imports.
+- [x] Любой новый канал использует тот же ConversationService без дублирования логики (wire ports).
 - [x] Runtime остаётся исполнителем уже принятого Product Decision (см. Runtime Invariants).
+- Note: `ConversationState.user_id` / `chat_id` keep Redis JSON aliases `telegram_user_id` / `telegram_chat_id`.
 
 #### P0-D. Состояние диалога — DONE (Sprint B)
 
@@ -491,7 +492,7 @@ Readiness определяется **обязательными** сервиса
 | Sprint | Статус | Фокус относительно Goal | Состав |
 |--------|--------|-------------------------|--------|
 | **A** | **PARTIAL** (`1edbb65` + leftovers this PR) | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A/B/F mostly done; P0-G fail-closed this PR; Stage 0 contracts this PR |
-| **B** | **PARTIAL** | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C PARTIAL; P0-D DONE (incl. bindings); P0-E DONE |
+| **B** | **PARTIAL** | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C DONE; P0-D DONE (incl. bindings); P0-E DONE |
 | **C** | **PARTIAL** | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate | P1-A…P1-I; open: Render Contract, MemorySaver, PDF, history truncate, live eval |
 | **D** | **PARTIAL** | Production ops | Landed: secrets, workers, ACL, observability, readiness; open: TLS, backups schedule, rollback playbook, Celery |
 | **E** | pending | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
@@ -510,7 +511,7 @@ Readiness определяется **обязательными** сервиса
 
 ### Sprint B — Definition of Done — PARTIAL
 
-- [x] ConversationService (`app.conversation`); Telegram = facade — **PARTIAL**: ещё Telegram-coupled; ports не done.
+- [x] ConversationService (`app.conversation`); Telegram = ports adapter (map/send only). FSM field aliases `telegram_*` retained for Redis JSON.
 - [x] Process memory не источник истины для FSM (Redis в bootstrap; InMemory для тестов).
 - [x] Clarification с повторной оценкой Executive; transport context не теряется Builder-ом.
 - [x] Session bindings Redis (`conversation:binding:{user_id}`).

@@ -31,31 +31,32 @@ class RedisConversationStore:
         self._client = client
         self._ttl = settings.conversation_fsm_ttl_seconds
 
-    async def get(self, telegram_user_id: int) -> ConversationState | None:
-        raw = await self._client.get(FSM_KEY.format(user_id=telegram_user_id))
+    async def get(self, user_id: int) -> ConversationState | None:
+        raw = await self._client.get(FSM_KEY.format(user_id=user_id))
         if raw is None:
             return None
         return ConversationState.model_validate_json(raw)
 
-    async def get_or_create(self, telegram_user_id: int, telegram_chat_id: int) -> ConversationState:
-        existing = await self.get(telegram_user_id)
+    async def get_or_create(self, user_id: int, chat_id: int) -> ConversationState:
+        existing = await self.get(user_id)
         if existing is not None:
-            existing.telegram_chat_id = telegram_chat_id
+            existing.chat_id = chat_id
             return existing
         state = ConversationState(
-            telegram_user_id=telegram_user_id,
-            telegram_chat_id=telegram_chat_id,
+            user_id=user_id,
+            chat_id=chat_id,
         )
         await self.save(state)
         return state
 
     async def save(self, state: ConversationState) -> None:
         state.updated_at = datetime.now()
-        key = FSM_KEY.format(user_id=state.telegram_user_id)
-        await self._client.set(key, state.model_dump_json(), ex=self._ttl)
+        key = FSM_KEY.format(user_id=state.user_id)
+        # by_alias keeps telegram_* keys for Redis JSON backward compatibility.
+        await self._client.set(key, state.model_dump_json(by_alias=True), ex=self._ttl)
 
-    async def clear_flow(self, telegram_user_id: int) -> None:
-        state = await self.get(telegram_user_id)
+    async def clear_flow(self, user_id: int) -> None:
+        state = await self.get(user_id)
         if state is None:
             return
         state.flow_mode = FlowMode.IDLE

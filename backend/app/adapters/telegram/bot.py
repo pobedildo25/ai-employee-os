@@ -3,7 +3,7 @@ from typing import Any
 from app.adapters.telegram.conversation_store import TelegramConversationStore
 from app.adapters.telegram.continuation import TelegramArtifactDelivery, TelegramGraphContinuation
 from app.adapters.telegram.dispatcher import TelegramDispatcher
-from app.adapters.telegram.flow import TelegramProductFlow
+from app.adapters.telegram.flow import TelegramProductFlow, build_telegram_conversation_service
 from app.adapters.telegram.handlers import TelegramMessageHandler
 from app.adapters.telegram.interfaces.telegram_adapter import TelegramAdapterInterface
 from app.adapters.telegram.mapper import TelegramMapper
@@ -104,12 +104,11 @@ class TelegramAdapter(TelegramAdapterInterface):
         allowed_user_ids: set[int] | None = None,
     ) -> TelegramProductFlow:
         continuation = self._build_continuation(capability_registry)
-        return TelegramProductFlow(
+        service = build_telegram_conversation_service(
             runtime=runtime,
             session_manager=session_manager,
             sender=sender,
             conversation_store=self._conversation_store,
-            mapper=self._mapper,
             progress_messenger=TelegramProgressMessenger(sender),
             continuation=continuation,
             artifact_delivery=TelegramArtifactDelivery(artifact_service, storage),
@@ -117,6 +116,7 @@ class TelegramAdapter(TelegramAdapterInterface):
             executive_agent=executive_agent,
             allowed_user_ids=allowed_user_ids,
         )
+        return TelegramProductFlow(service)
 
     @staticmethod
     def _build_continuation(

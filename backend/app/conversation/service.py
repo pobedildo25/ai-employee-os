@@ -1,15 +1,17 @@
 from typing import Any
 import uuid
-from uuid import UUID
 
 from app.agent_runtime.exceptions import GraphExecutionError
+from app.agent_runtime.runtime import AgentRuntime
 from app.agent_runtime.state.models import create_initial_state
-from app.adapters.telegram.continuation import TelegramArtifactDelivery, TelegramGraphContinuation
-from app.adapters.telegram.keyboard import approval_keyboard, retry_keyboard
-from app.adapters.telegram.mapper import TelegramMapper
-from app.adapters.telegram.models import TelegramCallbackRequest, TelegramExecutionRequest
-from app.adapters.telegram.presenter import (
+from app.agents.decision.policy import is_clarification, is_respond
+from app.agents.executive.agent import ExecutiveAgent
+from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
+from app.conversation.clarification import build_pending_clarification, merge_clarification_answer
+from app.conversation.messages import (
+    INCOMPLETE_REASON,
     extract_failure_reason,
+    extract_reply_text,
     format_approval_message,
     format_completion_message,
     format_delivery_caption,
@@ -19,19 +21,15 @@ from app.adapters.telegram.presenter import (
     format_runtime_error_message,
     has_real_result_message,
 )
-from app.adapters.telegram.progress import TelegramProgressMessenger
-from app.adapters.telegram.sender import TelegramSender
-from app.adapters.telegram.session import TelegramSessionManager
-from app.agent_runtime.runtime import AgentRuntime
-from app.agents.decision.policy import is_clarification, is_respond
-from app.agents.executive.agent import ExecutiveAgent
-from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
-from app.conversation.clarification import build_pending_clarification, merge_clarification_answer
 from app.conversation.models import ConversationState, FlowMode, PendingClarification
+from app.conversation.ports import (
+    ArtifactCollectorPort,
+    ChannelNotifier,
+    RevisionContinuationPort,
+    SessionPort,
+)
+from app.conversation.requests import CallbackRequest, UserMessageRequest
 from app.orchestration.orchestrator import Orchestrator
-
-# Channel DTOs (TelegramExecutionRequest / TelegramCallbackRequest) are temporary until
-# multi-channel ports land; ConversationService is the channel-neutral dialog FSM.
 
 
 class ConversationService:
@@ -41,61 +39,57 @@ class ConversationService:
         self,
         *,
         runtime: AgentRuntime,
-        session_manager: TelegramSessionManager,
-        sender: TelegramSender,
-        conversation_store,
-        mapper: TelegramMapper | None = None,
-        progress_messenger: TelegramProgressMessenger | None = None,
-        continuation: TelegramGraphContinuation | None = None,
-        artifact_delivery: TelegramArtifactDelivery | None = None,
+        store,
+        sessions: SessionPort,
+        notifier: ChannelNotifier,
+        artifacts: ArtifactCollectorPort,
+        continuation: RevisionContinuationPort | None = None,
         orchestrator: Orchestrator | None = None,
         executive_agent: ExecutiveAgent | None = None,
         allowed_user_ids: set[int] | None = None,
     ) -> None:
         self._runtime = runtime
-        self._sessions = session_manager
-        self._sender = sender
-        self._store = conversation_store
-        self._mapper = mapper or TelegramMapper()
-        self._progress = progress_messenger or TelegramProgressMessenger(sender)
+        self._store = store
+        self._sessions = sessions
+        self._notifier = notifier
+        self._artifacts = artifacts
         self._continuation = continuation
-        self._artifacts = artifact_delivery or TelegramArtifactDelivery(None, None)
         self._orchestrator = orchestrator or Orchestrator()
         self._executive_agent = executive_agent
         # None = no filter (dev); empty set = deny all; non-empty = allowlist.
         self._allowed_user_ids = allowed_user_ids
 
-    def _user_allowed(self, telegram_user_id: int) -> bool:
+    def _user_allowed(self, user_id: int) -> bool:
         if self._allowed_user_ids is None:
             return True
-        return telegram_user_id in self._allowed_user_ids
+        return user_id in self._allowed_user_ids
 
-    async def handle_message(self, request: TelegramExecutionRequest) -> dict[str, Any]:
-        if not self._user_allowed(request.telegram_user_id):
+    async def handle_message(self, request: UserMessageRequest) -> dict[str, Any]:
+        if not self._user_allowed(request.user_id):
             text = "Доступ ограничен."
-            send_result = await self._sender.send_message(request.telegram_chat_id, text)
+            send_result = await self._notifier.send_text(request.chat_id, text)
             return {"status": "forbidden", "reply": text, "send_result": send_result}
 
-        async with self._store.user_lock(request.telegram_user_id):
+        async with self._store.user_lock(request.user_id):
             return await self._handle_message_locked(request)
 
-    async def _handle_message_locked(self, request: TelegramExecutionRequest) -> dict[str, Any]:
-        convo = await self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
-        snapshot = await self._sessions.resolve(request.telegram_user_id)
+    async def _handle_message_locked(self, request: UserMessageRequest) -> dict[str, Any]:
+        convo = await self._store.get_or_create(request.user_id, request.chat_id)
+        snapshot = await self._sessions.resolve(request.user_id)
         convo.workspace_id = snapshot.get("workspace_id")
         convo.session_id = snapshot.get("active_session_id")
         await self._store.save(convo)
 
-        await self._append_history(snapshot, role="user", content=request.user_input)
+        await self._sessions.append_history(snapshot, role="user", content=request.text)
         # P1-I: release DB session after short persistence before LLM/classify.
         await self._sessions.release_db()
 
         if convo.flow_mode == FlowMode.RUNNING:
             text = "Ещё работаю над предыдущим запросом. Подождите немного."
-            send_result = await self._sender.send_message(
-                request.telegram_chat_id,
+            send_result = await self._notifier.send_text(
+                request.chat_id,
                 text,
-                reply_to_message_id=request.telegram_message_id,
+                reply_to_message_id=request.message_id,
             )
             return {
                 "status": "busy",
@@ -128,7 +122,7 @@ class ConversationService:
 
     async def _handle_after_completed(
         self,
-        request: TelegramExecutionRequest,
+        request: UserMessageRequest,
         convo: ConversationState,
         snapshot: dict[str, Any],
         classification,
@@ -154,7 +148,7 @@ class ConversationService:
 
     async def _degraded_intent_reply(
         self,
-        request: TelegramExecutionRequest,
+        request: UserMessageRequest,
         snapshot: dict[str, Any],
         convo: ConversationState,
     ) -> dict[str, Any]:
@@ -162,11 +156,11 @@ class ConversationService:
             "Сейчас не удалось определить намерение. "
             "Опишите задачу ещё раз или задайте вопрос текстом."
         )
-        await self._append_history(snapshot, role="assistant", content=text)
-        send_result = await self._sender.send_message(
-            request.telegram_chat_id,
+        await self._sessions.append_history(snapshot, role="assistant", content=text)
+        send_result = await self._notifier.send_text(
+            request.chat_id,
             text,
-            reply_to_message_id=request.telegram_message_id,
+            reply_to_message_id=request.message_id,
         )
         return {
             "status": "completed",
@@ -178,7 +172,7 @@ class ConversationService:
 
     async def _classify_intent(
         self,
-        request: TelegramExecutionRequest,
+        request: UserMessageRequest,
         snapshot: dict[str, Any],
         *,
         pending: PendingClarification | None = None,
@@ -189,7 +183,7 @@ class ConversationService:
         state = create_initial_state(
             execution_id=uuid.uuid4().hex,
             trace_id=uuid.uuid4().hex[:16],
-            user_input=request.user_input,
+            user_input=request.text,
             context=context,
             metadata={**metadata, "intent_classification": True},
         )
@@ -197,7 +191,7 @@ class ConversationService:
 
     async def _handle_chat_response(
         self,
-        request: TelegramExecutionRequest,
+        request: UserMessageRequest,
         convo: ConversationState,
         classification,
         snapshot: dict[str, Any] | None = None,
@@ -206,10 +200,10 @@ class ConversationService:
         if action == "ASK_CLARIFICATION":
             convo.flow_mode = FlowMode.PENDING_CLARIFICATION
             convo.pending_clarification = build_pending_clarification(
-                user_input=request.user_input,
+                user_input=request.text,
                 classification=classification,
             )
-            convo.last_user_input = request.user_input
+            convo.last_user_input = request.text
             # Keep prior artifact/revision context when clarifying a new task.
             await self._store.save(convo)
 
@@ -217,11 +211,11 @@ class ConversationService:
                 "Уточните, пожалуйста, детали задачи."
             )
             if snapshot is not None:
-                await self._append_history(snapshot, role="assistant", content=text)
-            send_result = await self._sender.send_message(
-                request.telegram_chat_id,
+                await self._sessions.append_history(snapshot, role="assistant", content=text)
+            send_result = await self._notifier.send_text(
+                request.chat_id,
                 text,
-                reply_to_message_id=request.telegram_message_id,
+                reply_to_message_id=request.message_id,
             )
             return {
                 "status": "clarification",
@@ -234,7 +228,7 @@ class ConversationService:
 
         # RESPOND: do not wipe last_agent_state / artifacts — keep continuous dialogue + revision.
         convo.pending_clarification = None
-        convo.last_user_input = request.user_input
+        convo.last_user_input = request.text
         if convo.last_agent_state:
             convo.flow_mode = FlowMode.COMPLETED
         else:
@@ -245,11 +239,11 @@ class ConversationService:
             "Не удалось сформулировать ответ. Повторите запрос, пожалуйста."
         )
         if snapshot is not None:
-            await self._append_history(snapshot, role="assistant", content=text)
-        send_result = await self._sender.send_message(
-            request.telegram_chat_id,
+            await self._sessions.append_history(snapshot, role="assistant", content=text)
+        send_result = await self._notifier.send_text(
+            request.chat_id,
             text,
-            reply_to_message_id=request.telegram_message_id,
+            reply_to_message_id=request.message_id,
         )
         return {
             "status": "completed",
@@ -262,7 +256,7 @@ class ConversationService:
 
     async def _resume_pending_clarification(
         self,
-        request: TelegramExecutionRequest,
+        request: UserMessageRequest,
         convo: ConversationState,
         snapshot: dict[str, Any],
     ) -> dict[str, Any]:
@@ -282,11 +276,11 @@ class ConversationService:
             return await self._handle_chat_response(request, convo, classification, snapshot)
 
         if classification is not None and is_task_decision(classification.decision.action.value):
-            merged_input = merge_clarification_answer(pending, request.user_input)
+            merged_input = merge_clarification_answer(pending, request.text)
             convo.pending_clarification = None
             convo.flow_mode = FlowMode.IDLE
             await self._store.save(convo)
-            merged_request = request.model_copy(update={"user_input": merged_input})
+            merged_request = request.model_copy(update={"text": merged_input})
             result = await self._run_execution(
                 merged_request, convo, snapshot, classification=classification
             )
@@ -303,11 +297,11 @@ class ConversationService:
         )
         convo.flow_mode = FlowMode.PENDING_CLARIFICATION
         await self._store.save(convo)
-        await self._append_history(snapshot, role="assistant", content=text)
-        send_result = await self._sender.send_message(
-            request.telegram_chat_id,
+        await self._sessions.append_history(snapshot, role="assistant", content=text)
+        send_result = await self._notifier.send_text(
+            request.chat_id,
             text,
-            reply_to_message_id=request.telegram_message_id,
+            reply_to_message_id=request.message_id,
         )
         return {
             "status": "clarification",
@@ -318,18 +312,18 @@ class ConversationService:
             "pending_kept": True,
         }
 
-    async def handle_callback(self, request: TelegramCallbackRequest) -> dict[str, Any]:
-        if not self._user_allowed(request.telegram_user_id):
+    async def handle_callback(self, request: CallbackRequest) -> dict[str, Any]:
+        if not self._user_allowed(request.user_id):
             text = "Доступ ограничен."
-            send_result = await self._sender.send_message(request.telegram_chat_id, text)
+            send_result = await self._notifier.send_text(request.chat_id, text)
             return {"status": "forbidden", "reply": text, "send_result": send_result}
 
-        async with self._store.user_lock(request.telegram_user_id):
+        async with self._store.user_lock(request.user_id):
             return await self._handle_callback_locked(request)
 
-    async def _handle_callback_locked(self, request: TelegramCallbackRequest) -> dict[str, Any]:
-        convo = await self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
-        snapshot = await self._sessions.resolve(request.telegram_user_id)
+    async def _handle_callback_locked(self, request: CallbackRequest) -> dict[str, Any]:
+        convo = await self._store.get_or_create(request.user_id, request.chat_id)
+        snapshot = await self._sessions.resolve(request.user_id)
         await self._sessions.release_db()
 
         if request.action == "approve":
@@ -345,7 +339,7 @@ class ConversationService:
 
     async def _run_execution(
         self,
-        request: TelegramExecutionRequest,
+        request: UserMessageRequest,
         convo: ConversationState,
         snapshot: dict[str, Any],
         *,
@@ -359,20 +353,20 @@ class ConversationService:
             )
             metadata["skip_executive_llm"] = True
         convo.flow_mode = FlowMode.RUNNING
-        convo.last_user_input = request.user_input
+        convo.last_user_input = request.text
         await self._store.save(convo)
 
-        progress_message_id = await self._progress.start(
-            request.telegram_chat_id,
-            reply_to_message_id=request.telegram_message_id,
+        progress_message_id = await self._notifier.start_progress(
+            request.chat_id,
+            reply_to_message_id=request.message_id,
         )
         convo.progress_message_id = progress_message_id
         await self._store.save(convo)
 
         try:
             state = await self._execute_with_progress(
-                request.user_input,
-                chat_id=request.telegram_chat_id,
+                request.text,
+                chat_id=request.chat_id,
                 progress_message_id=progress_message_id,
                 context=context,
                 metadata=metadata,
@@ -397,7 +391,7 @@ class ConversationService:
 
     async def _handle_execution_failure(
         self,
-        request: TelegramExecutionRequest,
+        request: UserMessageRequest,
         convo: ConversationState,
         progress_message_id: int | None,
         exc: GraphExecutionError,
@@ -411,21 +405,11 @@ class ConversationService:
             execution_id=getattr(exc, "execution_id", None),
             reason=reason,
         )
-        markup = retry_keyboard()
-        replaced = await self._progress.replace(
-            request.telegram_chat_id,
-            progress_message_id,
+        send_result = await self._notifier.send_retry(
+            request.chat_id,
             text,
-            reply_markup=markup,
+            progress_message_id=progress_message_id,
         )
-        if replaced is not None:
-            send_result = replaced
-        else:
-            send_result = await self._sender.send_message(
-                request.telegram_chat_id,
-                text,
-                reply_markup=markup,
-            )
         return {
             "status": "failed",
             "error": "execution_failed",
@@ -458,7 +442,7 @@ class ConversationService:
                     continue
                 if update.get("telegram_progress"):
                     last_progress = update["telegram_progress"]
-                    progress_message_id = await self._progress.maybe_update(
+                    progress_message_id = await self._notifier.update_progress(
                         chat_id,
                         progress_message_id,
                         last_progress,
@@ -466,7 +450,7 @@ class ConversationService:
                 final_state = self._merge_state(final_state, update)
 
         if final_state is not None:
-            await self._progress.finalize(chat_id, progress_message_id, last_progress)
+            await self._notifier.finalize_progress(chat_id, progress_message_id, last_progress)
             return final_state
 
         state = await self._runtime.execute(
@@ -475,12 +459,14 @@ class ConversationService:
             metadata=metadata,
         )
         state_dict = dict(state) if not isinstance(state, dict) else state
-        await self._progress.finalize(chat_id, progress_message_id, state_dict.get("telegram_progress"))
+        await self._notifier.finalize_progress(
+            chat_id, progress_message_id, state_dict.get("telegram_progress")
+        )
         return state_dict
 
     async def _deliver_outcome(
         self,
-        request: TelegramExecutionRequest,
+        request: UserMessageRequest,
         convo: ConversationState,
         state: dict[str, Any],
         progress_message_id: int | None,
@@ -490,15 +476,11 @@ class ConversationService:
         status = str(state.get("status") or "")
 
         if status == "waiting_approval":
-            await self._progress.clear(request.telegram_chat_id, progress_message_id)
+            await self._notifier.clear_progress(request.chat_id, progress_message_id)
             convo.flow_mode = FlowMode.WAITING_APPROVAL
             await self._store.save(convo)
             text = format_approval_message(state.get("task_plan"))
-            send_result = await self._sender.send_message(
-                request.telegram_chat_id,
-                text,
-                reply_markup=approval_keyboard(),
-            )
+            send_result = await self._notifier.send_approval(request.chat_id, text)
             return {
                 "execution_id": state.get("execution_id"),
                 "status": status,
@@ -511,22 +493,11 @@ class ConversationService:
             await self._store.save(convo)
             reason = extract_failure_reason(state)
             text = format_error_message(reason)
-            markup = retry_keyboard()
-            replaced = await self._progress.replace(
-                request.telegram_chat_id,
-                progress_message_id,
+            send_result = await self._notifier.send_retry(
+                request.chat_id,
                 text,
-                reply_markup=markup,
+                progress_message_id=progress_message_id,
             )
-            if replaced is not None:
-                send_result = replaced
-            else:
-                await self._progress.clear(request.telegram_chat_id, progress_message_id)
-                send_result = await self._sender.send_message(
-                    request.telegram_chat_id,
-                    text,
-                    reply_markup=markup,
-                )
             return {
                 "execution_id": state.get("execution_id"),
                 "status": status,
@@ -534,7 +505,7 @@ class ConversationService:
                 "send_result": send_result,
             }
 
-        await self._progress.clear(request.telegram_chat_id, progress_message_id)
+        await self._notifier.clear_progress(request.chat_id, progress_message_id)
 
         artifacts = await self._artifacts.collect_artifacts(state)
         has_result = has_real_result_message(state)
@@ -542,13 +513,8 @@ class ConversationService:
             convo.flow_mode = FlowMode.FAILED
             await self._store.save(convo)
             text = format_error_message(INCOMPLETE_REASON)
-            markup = retry_keyboard()
-            send_result = await self._sender.send_message(
-                request.telegram_chat_id,
-                text,
-                reply_markup=markup,
-            )
-            await self._append_history(
+            send_result = await self._notifier.send_retry(request.chat_id, text)
+            await self._sessions.append_history(
                 {"active_session_id": convo.session_id, "workspace_id": convo.workspace_id},
                 role="assistant",
                 content=text,
@@ -569,22 +535,24 @@ class ConversationService:
 
         if artifacts:
             caption = format_delivery_caption(artifacts)
-            await self._send_artifact_files(request.telegram_chat_id, artifacts, caption=caption)
+            send_result = await self._notifier.send_artifacts(
+                request.chat_id, artifacts, caption=caption
+            )
             reply = format_delivery_summary(artifacts, state)
-            send_result = {"ok": True, "via": "document_caption", "reply": reply}
+            send_result = {**send_result, "reply": reply}
         else:
             completion = format_completion_message(state)
             text = completion if status == "completed" else (
-                self._mapper.extract_reply_text(state) or completion
+                extract_reply_text(state) or completion
             )
-            send_result = await self._sender.send_message(request.telegram_chat_id, text)
+            send_result = await self._notifier.send_text(request.chat_id, text)
             reply = text
 
         snapshot = {
             "active_session_id": convo.session_id,
             "workspace_id": convo.workspace_id,
         }
-        await self._append_history(snapshot, role="assistant", content=str(reply))
+        await self._sessions.append_history(snapshot, role="assistant", content=str(reply))
 
         return {
             "execution_id": state.get("execution_id"),
@@ -603,13 +571,12 @@ class ConversationService:
     ) -> dict[str, Any]:
         if convo.flow_mode != FlowMode.WAITING_APPROVAL or not convo.last_user_input:
             text = "Сейчас нет плана, ожидающего подтверждения."
-            send_result = await self._sender.send_message(convo.telegram_chat_id, text)
+            send_result = await self._notifier.send_text(convo.chat_id, text)
             return {"status": "noop", "reply": text, "send_result": send_result}
 
         prior = convo.last_agent_state or {}
         metadata: dict[str, Any] = {
             "auto_approve": True,
-            "source": "telegram",
             "skip_executive_llm": True,
         }
         # Resume from stored decision/plan — do not re-run Executive classification.
@@ -620,32 +587,33 @@ class ConversationService:
         if isinstance(prior.get("task_plan"), dict):
             metadata["resume_task_plan"] = prior["task_plan"]
 
-        request = TelegramExecutionRequest(
-            user_input=convo.last_user_input,
-            telegram_user_id=convo.telegram_user_id,
-            telegram_chat_id=convo.telegram_chat_id,
-            metadata=metadata,
-            context={"channel": "telegram"},
+        channel = (snapshot.get("metadata") or {}).get("source") or "channel"
+        request = UserMessageRequest(
+            text=convo.last_user_input,
+            user_id=convo.user_id,
+            chat_id=convo.chat_id,
+            metadata={**metadata, "source": channel},
+            context={"channel": channel},
         )
         return await self._run_execution(request, convo, snapshot)
 
     async def _handle_cancel(
         self,
         convo: ConversationState,
-        request: TelegramCallbackRequest,
+        request: CallbackRequest,
     ) -> dict[str, Any]:
         if convo.last_execution_id:
             self._orchestrator.cancel_execution(convo.last_execution_id)
         convo.flow_mode = FlowMode.CANCELLED
         await self._store.save(convo)
         text = "Выполнение отменено."
-        send_result = await self._sender.send_message(convo.telegram_chat_id, text)
+        send_result = await self._notifier.send_text(convo.chat_id, text)
         return {"status": "cancelled", "reply": text, "send_result": send_result}
 
     async def _handle_revise_prompt(
         self,
         convo: ConversationState,
-        request: TelegramCallbackRequest,
+        request: CallbackRequest,
     ) -> dict[str, Any]:
         from datetime import datetime
 
@@ -653,12 +621,12 @@ class ConversationService:
         convo.revision_prompted_at = datetime.now()
         await self._store.save(convo)
         text = format_revision_prompt()
-        send_result = await self._sender.send_message(convo.telegram_chat_id, text)
+        send_result = await self._notifier.send_text(convo.chat_id, text)
         return {"status": "revision_prompted", "reply": text, "send_result": send_result}
 
     async def _handle_revision_feedback(
         self,
-        request: TelegramExecutionRequest,
+        request: UserMessageRequest,
         convo: ConversationState,
         snapshot: dict[str, Any],
         *,
@@ -666,22 +634,18 @@ class ConversationService:
     ) -> dict[str, Any]:
         if not convo.last_agent_state or self._continuation is None:
             text = "Сначала нужно получить результат, прежде чем вносить правки."
-            send_result = await self._sender.send_message(request.telegram_chat_id, text)
+            send_result = await self._notifier.send_text(request.chat_id, text)
             return {"status": "revision_unavailable", "reply": text, "send_result": send_result}
 
         prior_state = self._enrich_prior_state_for_revision(convo)
         try:
             state = await self._continuation.continue_revision(
                 prior_state,
-                request.user_input,
+                request.text,
             )
         except Exception as exc:
             text = format_error_message(str(exc))
-            send_result = await self._sender.send_message(
-                request.telegram_chat_id,
-                text,
-                reply_markup=retry_keyboard(),
-            )
+            send_result = await self._notifier.send_retry(request.chat_id, text)
             return {"status": "revision_failed", "reply": text, "send_result": send_result}
 
         convo.last_agent_state = state
@@ -697,14 +661,16 @@ class ConversationService:
 
         if artifacts:
             caption = format_delivery_caption(artifacts)
-            await self._send_artifact_files(request.telegram_chat_id, artifacts, caption=caption)
+            send_result = await self._notifier.send_artifacts(
+                request.chat_id, artifacts, caption=caption
+            )
             reply = format_delivery_summary(artifacts, state)
-            send_result = {"ok": True, "via": "document_caption", "reply": reply}
+            send_result = {**send_result, "reply": reply}
         else:
             reply = format_completion_message(state)
-            send_result = await self._sender.send_message(request.telegram_chat_id, reply)
+            send_result = await self._notifier.send_text(request.chat_id, reply)
 
-        await self._append_history(snapshot, role="assistant", content=str(reply))
+        await self._sessions.append_history(snapshot, role="assistant", content=str(reply))
         return {
             "status": "revised",
             "contextual": contextual,
@@ -716,61 +682,37 @@ class ConversationService:
         self,
         convo: ConversationState,
         snapshot: dict[str, Any],
-        request: TelegramCallbackRequest,
+        request: CallbackRequest,
     ) -> dict[str, Any]:
         if not convo.last_user_input:
             text = "Нечего повторить. Опишите задачу текстом."
-            send_result = await self._sender.send_message(convo.telegram_chat_id, text)
+            send_result = await self._notifier.send_text(convo.chat_id, text)
             return {"status": "noop", "reply": text, "send_result": send_result}
 
-        exec_request = TelegramExecutionRequest(
-            user_input=convo.last_user_input,
-            telegram_user_id=convo.telegram_user_id,
-            telegram_chat_id=convo.telegram_chat_id,
-            metadata={"source": "telegram", "telegram_retry": True},
-            context={"channel": "telegram"},
+        channel = (request.metadata or {}).get("source") or "channel"
+        exec_request = UserMessageRequest(
+            text=convo.last_user_input,
+            user_id=convo.user_id,
+            chat_id=convo.chat_id,
+            metadata={"source": channel, "retry": True},
+            context={"channel": channel},
         )
         return await self._run_execution(exec_request, convo, snapshot)
 
-    async def _send_artifact_files(
-        self,
-        chat_id: int,
-        artifacts: list[dict[str, Any]],
-        *,
-        caption: str | None = None,
-    ) -> None:
-        last_index = len(artifacts) - 1
-        for index, artifact in enumerate(artifacts):
-            try:
-                data = await self._artifacts.download(artifact)
-            except Exception:
-                data = None
-            if not data:
-                continue
-            try:
-                await self._sender.send_document(
-                    chat_id,
-                    filename=str(artifact.get("name") or "artifact.bin"),
-                    file_data=data,
-                    mime_type=artifact.get("mime_type"),
-                    caption=caption if index == last_index else None,
-                )
-            except Exception:
-                continue
-
     def _build_runtime_payload(
         self,
-        request: TelegramExecutionRequest,
+        request: UserMessageRequest,
         snapshot: dict[str, Any],
         *,
         pending: PendingClarification | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
+        channel = request.context.get("channel") or request.metadata.get("source") or "channel"
         context = {
             **request.context,
             "client_id": snapshot["client_id"],
             "workspace_id": snapshot["workspace_id"],
             "project_id": snapshot.get("active_project_id"),
-            "channel": "telegram",
+            "channel": channel,
         }
         conversation = snapshot.get("conversation") or {}
         if conversation.get("messages"):
@@ -788,7 +730,7 @@ class ConversationService:
             "client_id": snapshot["client_id"],
             "workspace_id": snapshot["workspace_id"],
             "session_id": snapshot.get("active_session_id"),
-            "source": "telegram",
+            "source": request.metadata.get("source") or channel,
         }
         if snapshot.get("active_artifact_id"):
             metadata["active_artifact_id"] = snapshot["active_artifact_id"]
@@ -813,33 +755,7 @@ class ConversationService:
     async def _set_active_artifact(self, convo: ConversationState, artifact_id: str | None) -> None:
         if not artifact_id or not convo.workspace_id:
             return
-        try:
-            await self._sessions.workspace_manager.set_active_artifact(
-                UUID(str(convo.workspace_id)),
-                UUID(str(artifact_id)),
-            )
-        except Exception:
-            return
-
-    async def _append_history(self, snapshot: dict[str, Any], *, role: str, content: str) -> None:
-        conversation = snapshot.get("conversation") or {}
-        conversation_id = conversation.get("id")
-        session_id = snapshot.get("active_session_id")
-        if not conversation_id and session_id:
-            try:
-                ensured = await self._sessions.workspace_manager.ensure_conversation(UUID(str(session_id)))
-                conversation_id = str(ensured.id)
-            except Exception:
-                return
-        if not conversation_id or not content:
-            return
-        try:
-            await self._sessions.workspace_manager.append_message(
-                UUID(str(conversation_id)),
-                {"role": role, "content": content},
-            )
-        except Exception:
-            return
+        await self._sessions.set_active_artifact(convo.workspace_id, artifact_id)
 
     @staticmethod
     def _merge_state(current: dict[str, Any] | None, update: dict[str, Any]) -> dict[str, Any]:
@@ -860,6 +776,3 @@ def _safe_error_reason(message: str) -> str | None:
         _, _, tail = message.partition(": ")
         return tail or message
     return message
-
-
-INCOMPLETE_REASON = "Нет артефакта и нет текста результата."
