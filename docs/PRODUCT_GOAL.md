@@ -3,7 +3,7 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
-**Прогресс (2026-07-13):** Sprint A — **PARTIAL** (`1edbb65` + leftovers in this PR: P0-G fail-closed Redis/allowlist, P0-B missing `status` → FAIL, Stage 0 contracts). Sprint B — **PARTIAL**: P0-D/P0-E DONE; P0-C DONE (ConversationService channel-neutral via ports; Telegram = adapter; Redis FSM field aliases `telegram_*` retained). Sprint C — **PARTIAL** (Resolver owns ordered graph from hints + fail-closed; unified Render Contract entry; PDF not offered / stub; history truncate; Redis app-level checkpoint; LangGraph interrupt checkpointer still MemorySaver; live LLM eval open). Sprint D — **PARTIAL** (landed: Redis AUTH, Qdrant key, MinIO pin, migration lock, Telegram worker, tenant ACL, Sentry/metrics, readiness; open: TLS / backups schedule / rollback playbook / Celery; Redis security+rate-limit InMemory fallback fixed as Sprint A/P0-G leftover this PR).
+**Прогресс (2026-07-13):** Sprint A — **PARTIAL** (`1edbb65` + leftovers in this PR: P0-G fail-closed Redis/allowlist, P0-B missing `status` → FAIL, Stage 0 contracts). Sprint B — **PARTIAL**: P0-D/P0-E DONE; P0-C DONE (ConversationService channel-neutral via ports; Telegram = adapter; Redis FSM field aliases `telegram_*` retained). Sprint C — **PARTIAL** (Resolver owns ordered graph from hints + fail-closed; unified Render Contract entry; PDF not offered / stub; history truncate; Redis app-level checkpoint; LangGraph interrupt checkpointer still MemorySaver; live LLM eval open). Sprint D — **DONE** for ops DoD (TLS edge profile, backup schedule profile, rollback playbook in `docs/OPS_RUNBOOK.md`; Celery deferred N/A — internal Postgres task queue). Redis security+rate-limit InMemory fallback fixed as Sprint A/P0-G leftover this PR.
 
 ---
 
@@ -468,12 +468,12 @@ Readiness определяется **обязательными** сервиса
 ### 11.4 Этап 3 (P2) — Production hardening
 
 - [x] Redis AUTH, Qdrant key, MinIO pinned tags / deps (edge TLS external; MinIO plain inside network).
-- [x] Resource limits (modest mem/cpus on prod compose); [ ] TLS at edge — open; [ ] backups schedule — open; [ ] rollback deploy playbook — open.
+- [x] Resource limits (modest mem/cpus on prod compose); [x] TLS at edge — compose profile `tls` + `deploy/nginx` (`docs/OPS_RUNBOOK.md`); [x] backups schedule — compose profile `backup` + `deploy/backup_loop.sh`; [x] rollback deploy playbook — `deploy/rollback.sh` / `tag_release.sh` + OPS_RUNBOOK.
 - [x] Migrations не на каждый multi-worker startup race (advisory lock + one-shot recommendation).
 - [x] Sentry + metrics; wire LLM latency / tokens.
 - [x] Tenant ACL на CRUD; safe artifact object keys; compensation MinIO ↔ DB.
 - [x] Отдельный Telegram worker; shared Redis rate limit (**fail-closed**, no InMemory fallback in prod — this PR); idempotent update handling.
-- [ ] Реальный task queue / Celery — open (только если нужны длинные background jobs).
+- [x] Реальный task queue / Celery — **deferred / N/A**: internal Postgres task queue (`app.task_queue`) covers current needs; no long background jobs requiring a broker yet — Celery would be premature.
 - [x] Readiness: required vs degraded — закрепить в health контракте и compose/Dockerfile healthchecks.
 
 ---
@@ -495,7 +495,7 @@ Readiness определяется **обязательными** сервиса
 | **A** | **PARTIAL** (`1edbb65` + leftovers this PR) | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A/B/F mostly done; P0-G fail-closed this PR; Stage 0 contracts this PR |
 | **B** | **PARTIAL** | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C DONE; P0-D DONE (incl. bindings); P0-E DONE |
 | **C** | **PARTIAL** | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate | P1-A…P1-I; open: LangGraph Redis interrupt checkpointer, live LLM eval; PDF stub kept off surface |
-| **D** | **PARTIAL** | Production ops | Landed: secrets, workers, ACL, observability, readiness; open: TLS, backups schedule, rollback playbook, Celery |
+| **D** | **DONE** (ops DoD) | Production ops | Secrets, workers, ACL, observability, readiness; TLS profile, backup profile, rollback playbook (`docs/OPS_RUNBOOK.md`); Celery deferred N/A |
 | **E** | pending | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
 
 ### Sprint A — Definition of Done — PARTIAL (closing leftovers this PR)
@@ -536,7 +536,7 @@ Readiness определяется **обязательными** сервиса
 - [x] PDF not offered on product surface (stub honest); history truncate policy; catalog ≠ live eval (noted).
 - [ ] Live / golden Executive eval — open.
 
-### Sprint D — Definition of Done — PARTIAL
+### Sprint D — Definition of Done — DONE (ops)
 
 - [x] Persist API keys / audit (Redis starter: `security:apikey:*`, `security:audit`); InMemory **только** tests/dev; prod fail-closed.
 - [x] Redis AUTH (`REDIS_PASSWORD` / `--requirepass`); Qdrant API key wired in compose + env examples.
@@ -548,10 +548,10 @@ Readiness определяется **обязательными** сервиса
 - [x] Safe artifact object keys + MinIO compensation on DB create failure; best-effort delete logged.
 - [x] LLMGateway → `record_llm_call` (tokens/latency); Sentry init when `SENTRY_DSN` set.
 - [x] Readiness: compose + Dockerfile HEALTHCHECK → `/ready`; qdrant healthcheck; modest prod resource limits.
-- [ ] TLS at edge — open.
-- [ ] Backups schedule — open.
-- [ ] Rollback deploy playbook — open.
-- [ ] Real task queue / Celery — open.
+- [x] TLS at edge — compose profile `tls` (`edge` / nginx:1.27-alpine); certs via `./deploy/certs` or `TLS_CERTS_DIR`; see `docs/OPS_RUNBOOK.md`.
+- [x] Backups schedule — compose profile `backup` + `deploy/backup_loop.sh` (retention `BACKUP_RETENTION_DAYS`); host crontab alternative in OPS_RUNBOOK.
+- [x] Rollback deploy playbook — `docs/OPS_RUNBOOK.md` Release/Rollback; `deploy/rollback.sh` + `deploy/tag_release.sh`.
+- [x] Real task queue / Celery — **deferred / N/A** (internal Postgres `app.task_queue`; no broker-needed jobs yet).
 
 ### Sprint E — Definition of Done
 
@@ -597,3 +597,4 @@ Pilot + resilience / security / ops (Sprint D).
 - `docs/PRODUCTION_CONTRACT.md` — production guarantees / non-goals (Stage 0)
 - `docs/DECISION_CONTRACT.md` — Product Decision owner + Runtime Invariants (Stage 0)
 - `docs/CAPABILITY_MATRIX.md` — capability status matrix (Stage 0)
+- `docs/OPS_RUNBOOK.md` — production TLS / backups / release+rollback (Sprint D)

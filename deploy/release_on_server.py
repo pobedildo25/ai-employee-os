@@ -104,6 +104,9 @@ def main() -> int:
         PY
         export AGENCY_ARCHIVE_PATH="{archive_path}"
         docker compose -f docker-compose.prod.yml --env-file .env.production build
+        SHA="$(git rev-parse --short HEAD)"
+        docker tag ai-employee-os-backend:prod "ai-employee-os-backend:prod-${{SHA}}"
+        echo "Tagged ai-employee-os-backend:prod-${{SHA}} (rollback: ROLLBACK_IMAGE=...)"
         docker compose -f docker-compose.prod.yml --env-file .env.production up -d
         echo '--- compose ps ---'
         docker compose -f docker-compose.prod.yml --env-file .env.production ps
