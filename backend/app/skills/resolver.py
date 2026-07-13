@@ -1,3 +1,9 @@
+"""Owns final capability list after Product Decision.
+
+Calls ``resolve_capability_graph`` and writes the ordered list into state
+for Planner / direct_plan. Executive hints are soft suggestions only.
+"""
+
 import logging
 from typing import Any
 
@@ -16,7 +22,7 @@ SKILL_RESOLVER_NODE = "skill_resolver"
 
 
 class SkillResolverNode:
-    """Owns final capability list: validates Executive hints against the registry."""
+    """Capability Resolver node: owns ordered capability graph in AgentState."""
 
     name = SKILL_RESOLVER_NODE
 
@@ -46,7 +52,6 @@ class SkillResolverNode:
             _log_node({**state, **update}, self.name, "failed")
             return update
 
-        # Resolver owns the ordered list that enters the plan / understanding.
         updated_understanding = understanding.model_copy(
             update={"required_capabilities": ordered}
         ).model_dump(mode="json")

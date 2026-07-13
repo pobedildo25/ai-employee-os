@@ -9,11 +9,16 @@ from app.context.models import ContextRequest, ExecutionContext
 from app.context.providers.artifact_provider import ArtifactContextProvider
 from app.context.providers.base import ContextProvider
 from app.context.providers.client_provider import ClientContextProvider
-from app.context.providers.history_provider import HistoryProvider, InMemoryHistoryProvider
+from app.context.providers.history_provider import (
+    HistoryProvider,
+    InMemoryHistoryProvider,
+    truncate_conversation_history,
+)
 from app.context.providers.memory_provider import MemoryContextProvider
 from app.context.providers.project_provider import ProjectContextProvider
 from app.client_intelligence.manager import ClientIntelligenceManager
 from app.client_intelligence.providers.intelligence_provider import ClientIntelligenceContextProvider
+from app.core.config import get_settings
 from app.knowledge.manager import KnowledgeManager
 from app.knowledge.providers.knowledge_provider import KnowledgeContextProvider
 from app.learning.manager import LearningManager
@@ -35,8 +40,14 @@ CONTEXT_BUILDER_NODE = "context_builder"
 class ContextBuilder:
     """Collects and assembles execution context from independent providers."""
 
-    def __init__(self, providers: list[ContextProvider]) -> None:
+    def __init__(
+        self,
+        providers: list[ContextProvider],
+        *,
+        history_max_messages: int = 20,
+    ) -> None:
         self._providers = providers
+        self._history_max_messages = history_max_messages
 
     async def build(
         self,
@@ -67,13 +78,17 @@ class ContextBuilder:
         )
         merged = _merge_fragments(fragments)
 
+        history = list(merged.get("conversation_history") or [])
+        if self._history_max_messages > 0 and len(history) > self._history_max_messages:
+            history = history[-self._history_max_messages :]
+
         context = ExecutionContext(
             user_input=user_input,
             current_task=current_task or merged.get("current_task"),
             client_context=merged.get("client_context"),
             project_context=merged.get("project_context"),
             artifact_context=merged.get("artifact_context", []),
-            conversation_history=merged.get("conversation_history", []),
+            conversation_history=history,
             memory_context=merged.get("memory_context", []),
             knowledge_context=merged.get("knowledge_context", []),
             research_context=merged.get("research_context"),
@@ -139,11 +154,20 @@ class ContextBuilderNode:
             if value is not None:
                 merged_context[key] = value
 
+        # Explicit history truncation policy (may apply after transport overlay).
+        hist = merged_context.get("conversation_history")
+        if isinstance(hist, list):
+            merged_context["conversation_history"] = truncate_conversation_history(
+                hist, self._builder._history_max_messages
+            )
+
         exec_dump = execution_context.model_dump()
         core_fields = set(ExecutionContext.model_fields)
         for key, value in transport_hints.items():
             if value is not None and key not in core_fields:
                 exec_dump[key] = value
+        if "conversation_history" in merged_context:
+            exec_dump["conversation_history"] = merged_context["conversation_history"]
 
         update = {
             "current_step": self.name,
@@ -167,7 +191,13 @@ def create_context_builder(
     workspace_service: WorkspaceService | None = None,
     client_intelligence_manager: ClientIntelligenceManager | None = None,
     research_manager: ResearchManager | None = None,
+    history_max_messages: int | None = None,
 ) -> ContextBuilder:
+    max_messages = (
+        history_max_messages
+        if history_max_messages is not None
+        else get_settings().context_history_max_messages
+    )
     providers: list[ContextProvider] = []
 
     if client_repository is not None:
@@ -177,7 +207,11 @@ def create_context_builder(
     if artifact_repository is not None:
         providers.append(ArtifactContextProvider(artifact_repository))
 
-    providers.append(history_provider or InMemoryHistoryProvider())
+    providers.append(
+        history_provider
+        if history_provider is not None
+        else InMemoryHistoryProvider(max_messages=max_messages)
+    )
 
     if memory_manager is not None:
         providers.append(MemoryContextProvider(memory_manager))
@@ -216,7 +250,7 @@ def create_context_builder(
     if workspace_service is not None:
         providers.append(WorkspaceContextProvider(workspace_service))
 
-    return ContextBuilder(providers)
+    return ContextBuilder(providers, history_max_messages=max_messages)
 
 
 async def _fetch_provider_safe(

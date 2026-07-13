@@ -174,7 +174,7 @@ def test_skill_resolver_node(registry: CapabilityRegistry) -> None:
     assert update["understanding"]["required_capabilities"] == ["document_generation"]
 
 
-def test_skill_resolver_rejects_unknown_capability(registry: CapabilityRegistry) -> None:
+def test_skill_resolver_drops_unknown_capability(registry: CapabilityRegistry) -> None:
     node = SkillResolverNode(registry)
     state = create_initial_state(
         execution_id="exec-1",
@@ -191,8 +191,9 @@ def test_skill_resolver_rejects_unknown_capability(registry: CapabilityRegistry)
     }
 
     update = node(state)
-    assert update["status"] == "capabilities_failed"
-    assert "unknown_capability" in str(update.get("error") or "")
+    assert update["status"] == "capabilities_resolved"
+    assert update["understanding"]["required_capabilities"] == ["document_generation"]
+    assert "unknown_capability" in update["required_capabilities"]["unknown"]
 
 
 def test_skills_disabled(settings: Settings) -> None:

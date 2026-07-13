@@ -331,3 +331,32 @@ async def test_executive_agent_receives_built_context(settings: Settings, projec
     assert provider.calls
     user_message = provider.calls[0].messages[-1].content
     assert "Commercial proposal" in user_message or "current_task" in user_message
+
+
+@pytest.mark.asyncio
+async def test_history_truncate_policy() -> None:
+    provider = InMemoryHistoryProvider(max_messages=3)
+    for i in range(5):
+        await provider.append("sess-hist", {"role": "user", "content": f"m{i}"})
+
+    fetched = await provider.fetch(
+        ContextRequest(user_input="x", session_id="sess-hist", trace_id="t")
+    )
+    assert [m["content"] for m in fetched["conversation_history"]] == ["m2", "m3", "m4"]
+
+    builder = ContextBuilder(
+        providers=[
+            MockContextProvider(
+                {
+                    "conversation_history": [
+                        {"role": "user", "content": f"b{i}"} for i in range(10)
+                    ]
+                }
+            )
+        ],
+        history_max_messages=4,
+    )
+    context = await builder.build(user_input="q", session_id="sess-hist")
+    assert len(context.conversation_history) == 4
+    assert context.conversation_history[0]["content"] == "b6"
+    assert context.conversation_history[-1]["content"] == "b9"

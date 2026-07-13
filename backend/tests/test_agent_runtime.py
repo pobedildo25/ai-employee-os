@@ -1,12 +1,17 @@
 import pytest
 
-from app.agent_runtime.checkpoint.manager import InMemoryCheckpointManager
+from app.agent_runtime.checkpoint.manager import (
+    InMemoryCheckpointManager,
+    RedisCheckpointManager,
+    create_checkpoint_manager,
+)
 from app.agent_runtime.exceptions import GraphBuildError, GraphExecutionError
 from app.agent_runtime.graph.builder import GraphBuilder
 from app.agent_runtime.graph.edges import FINISH_NODE, PROCESS_INPUT_NODE, wire_default_workflow
 from app.agent_runtime.graph.nodes import FinishNode, InputNode
 from app.agent_runtime.runtime import AgentRuntime, build_default_graph
 from app.agent_runtime.state.models import create_initial_state
+from app.core.config import Settings
 
 
 def _demo_runtime() -> AgentRuntime:
@@ -156,7 +161,6 @@ async def test_runtime_handles_execution_error() -> None:
 @pytest.mark.asyncio
 async def test_executive_graph_omits_dead_document_nodes() -> None:
     from app.agent_runtime.runtime import build_executive_graph
-    from app.core.config import Settings
     from tests.llm_fixtures import executive_json, mock_gateway
 
     gateway, _ = mock_gateway(
@@ -176,3 +180,44 @@ def test_build_default_graph_with_checkpoint_manager() -> None:
     graph = build_default_graph(checkpoint_manager=manager)
     assert graph is not None
     assert manager.get_checkpointer() is not None
+
+
+class _FakeRedis:
+    def __init__(self) -> None:
+        self._data: dict[bytes | str, bytes] = {}
+
+    def set(self, key, value, ex=None) -> None:
+        self._data[key] = value
+
+    def get(self, key):
+        return self._data.get(key)
+
+    def delete(self, key) -> int:
+        return 1 if self._data.pop(key, None) is not None else 0
+
+
+def test_redis_checkpoint_manager_roundtrip() -> None:
+    client = _FakeRedis()
+    manager = RedisCheckpointManager("redis://unused", ttl_seconds=60, client=client)
+    state = create_initial_state(
+        execution_id="exec-r1",
+        trace_id="trace-r1",
+        user_input="redis checkpoint",
+    )
+    state["status"] = "completed"
+    manager.save("exec-r1", state)
+    loaded = manager.load("exec-r1")
+    assert loaded is not None
+    assert loaded["user_input"] == "redis checkpoint"
+    assert manager.delete("exec-r1") is True
+    assert manager.load("exec-r1") is None
+
+
+def test_create_checkpoint_manager_defaults_to_memory() -> None:
+    manager = create_checkpoint_manager(Settings(app_env="development"))
+    assert isinstance(manager, InMemoryCheckpointManager)
+
+
+def test_create_checkpoint_manager_production_uses_redis() -> None:
+    manager = create_checkpoint_manager(Settings(app_env="production", redis_url="redis://localhost:6379/15"))
+    assert isinstance(manager, RedisCheckpointManager)

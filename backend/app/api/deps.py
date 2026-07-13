@@ -29,7 +29,10 @@ from app.llm.gateway import create_llm_gateway
 from app.llm.gateway import LLMGateway
 from app.storage.minio_storage import MinioStorage
 from app.storage.storage_interface import StorageInterface
-from app.agent_runtime.checkpoint.manager import CheckpointManager, InMemoryCheckpointManager
+from app.agent_runtime.checkpoint.manager import (
+    CheckpointManager,
+    create_checkpoint_manager,
+)
 from app.agent_runtime.runtime import AgentRuntime, create_agent_runtime
 from app.context.builder import ContextBuilder, create_context_builder
 from app.database.redis import get_redis_client
@@ -124,7 +127,7 @@ def get_llm_gateway() -> LLMGateway:
 
 @lru_cache
 def get_checkpoint_manager() -> CheckpointManager:
-    return InMemoryCheckpointManager()
+    return create_checkpoint_manager(get_settings())
 
 
 @lru_cache

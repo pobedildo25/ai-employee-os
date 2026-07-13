@@ -5,7 +5,7 @@ from app.document_renderer.models import OutputFormat, RenderRequest, RenderResu
 
 
 class PdfRenderer(DocumentRenderer):
-    """PDF renderer interface stub — implementation deferred to a later stage."""
+    """PDF stub — not offered on product surface; raises if somehow called."""
 
     def validate(self, request: RenderRequest) -> None:
         if request.output_format != OutputFormat.PDF:
@@ -13,4 +13,6 @@ class PdfRenderer(DocumentRenderer):
 
     def render(self, request: RenderRequest) -> RenderResult:
         self.validate(request)
-        raise UnsupportedFormatError("PDF rendering is not implemented at this stage")
+        raise UnsupportedFormatError(
+            "PDF rendering is not implemented; use docx or pptx"
+        )

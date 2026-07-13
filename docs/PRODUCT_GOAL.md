@@ -3,7 +3,7 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
-**Прогресс (2026-07-13):** Sprint A — **PARTIAL** (`1edbb65` + leftovers in this PR: P0-G fail-closed Redis/allowlist, P0-B missing `status` → FAIL, Stage 0 contracts). Sprint B — **PARTIAL**: P0-D/P0-E DONE; P0-C DONE (ConversationService channel-neutral via ports; Telegram = adapter; Redis FSM field aliases `telegram_*` retained). Sprint C — **PARTIAL** (Resolver validates hints; approval = stored plan re-run; Render Contract / MemorySaver / PDF / history truncate / live eval open). Sprint D — **PARTIAL** (landed: Redis AUTH, Qdrant key, MinIO pin, migration lock, Telegram worker, tenant ACL, Sentry/metrics, readiness; open: TLS / backups schedule / rollback playbook / Celery; Redis security+rate-limit InMemory fallback fixed as Sprint A/P0-G leftover this PR).
+**Прогресс (2026-07-13):** Sprint A — **PARTIAL** (`1edbb65` + leftovers in this PR: P0-G fail-closed Redis/allowlist, P0-B missing `status` → FAIL, Stage 0 contracts). Sprint B — **PARTIAL**: P0-D/P0-E DONE; P0-C DONE (ConversationService channel-neutral via ports; Telegram = adapter; Redis FSM field aliases `telegram_*` retained). Sprint C — **PARTIAL** (Resolver owns ordered graph from hints + fail-closed; unified Render Contract entry; PDF not offered / stub; history truncate; Redis app-level checkpoint; LangGraph interrupt checkpointer still MemorySaver; live LLM eval open). Sprint D — **PARTIAL** (landed: Redis AUTH, Qdrant key, MinIO pin, migration lock, Telegram worker, tenant ACL, Sentry/metrics, readiness; open: TLS / backups schedule / rollback playbook / Celery; Redis security+rate-limit InMemory fallback fixed as Sprint A/P0-G leftover this PR).
 
 ---
 
@@ -405,7 +405,7 @@ Readiness определяется **обязательными** сервиса
 
 - [x] Простые `EXECUTE` (в т.ч. линейный multi-skill pipeline) — без лишних подтверждений.
 - [x] Approve = resume from stored plan/decision (`skip_executive_llm` + `resume_task_plan`), **не** LangGraph checkpoint / MemorySaver.
-- [ ] Persist execution / checkpoint Redis (LangGraph MemorySaver) — open.
+- [x] Persist execution state Redis (`RedisCheckpointManager` app-level blobs, TTL) in production; tests/dev → MemorySaver / InMemory — **PARTIAL**: LangGraph interrupt checkpointer still MemorySaver (`langgraph.checkpoint.redis` not in deps).
 
 #### P1-B. Context Builder
 
@@ -413,7 +413,7 @@ Readiness определяется **обязательными** сервиса
 - [x] Никогда не изменять смысл пользовательского запроса — только агрегировать.
 - [x] Не удалять transport context вне политики truncation.
 - [ ] Relevant recall; пустой knowledge search → пусто (не dump) — partial / follow-up.
-- [ ] Truncate history по явной политике — open.
+- [x] Truncate history по явной политике (`context_history_max_messages`, default 20).
 - [x] Learning inject только preference-слой с confidence filter.
 
 #### P1-C. Planner только по решению Executive и правильному критерию
@@ -425,12 +425,12 @@ Readiness определяется **обязательными** сервиса
 
 #### P1-D. Capability Resolver + Skills + Render Contract + Orchestrator
 
-- [x] После `EXECUTE`/`CREATE_PLAN` Capability Resolver **валидирует hints** Executive (не полный owner graph construction from scratch).
+- [x] После `EXECUTE`/`CREATE_PLAN` Capability Resolver **owns** final ordered capability graph (soft hints from Executive; drop unknown/disabled; `CAPABILITY_ORDER`; fail-closed if empty — no keyword invent from user text).
 - [x] Skill не знает, какая Skill будет следующей.
 - [x] Orchestrator знает только DAG; убраны capability-specific if (`presentation_design` / `document_rendering`).
-- [ ] Единый Render Contract (один вход) — open.
+- [x] Единый Render Contract — `DocumentRendererService.render(RenderRequest)` product entry (module docstring).
 - [x] Dead dual document nodes удалить или не использовать — unregistered from `build_executive_graph` (skills path intact).
-- [ ] PDF: реализовать позже или не предлагать в surface — open (stub).
+- [x] PDF: не предлагать в product surface (Executive prompt / DocumentRenderSkill reject); `PdfRenderer` stub raises — implement later.
 
 #### P1-E. Learning строго по контракту
 
@@ -455,6 +455,7 @@ Readiness определяется **обязательными** сервиса
 
 - [x] Policy catalog / scenario fixtures (existing).
 - [ ] Golden + spot live Executive — open.
+- [x] Catalog honesty: fixture routing ≠ live LLM proof (noted in DECISION_CONTRACT / scenario module docstring).
 - [x] Runtime не мутирует DecisionType (инвариант сохранён).
 
 #### P1-I. Telegram ops hygiene
@@ -493,7 +494,7 @@ Readiness определяется **обязательными** сервиса
 |--------|--------|-------------------------|--------|
 | **A** | **PARTIAL** (`1edbb65` + leftovers this PR) | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A/B/F mostly done; P0-G fail-closed this PR; Stage 0 contracts this PR |
 | **B** | **PARTIAL** | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C DONE; P0-D DONE (incl. bindings); P0-E DONE |
-| **C** | **PARTIAL** | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate | P1-A…P1-I; open: Render Contract, MemorySaver, PDF, history truncate, live eval |
+| **C** | **PARTIAL** | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate | P1-A…P1-I; open: LangGraph Redis interrupt checkpointer, live LLM eval; PDF stub kept off surface |
 | **D** | **PARTIAL** | Production ops | Landed: secrets, workers, ACL, observability, readiness; open: TLS, backups schedule, rollback playbook, Celery |
 | **E** | pending | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
 
@@ -520,19 +521,20 @@ Readiness определяется **обязательными** сервиса
 
 ### Sprint C — Definition of Done — PARTIAL
 
-- [x] Executive = только Product Decision; Capability Resolver **валидирует hints** (не полный owner graph).
+- [x] Executive = только Product Decision; Capability Resolver **owns** ordered capability graph (hints soft; fail-closed if empty).
 - [x] Context Builder только агрегирует и merge transport; не меняет смысл; не удаляет transport context вне truncation policy.
 - [x] Planner по зависимостям/ветвлению/`requires_llm_plan`, не по count(capabilities).
 - [x] Orchestrator знает только DAG / зависимости / статусы (нет capability-name ifs).
 - [x] Skills независимы; skill не знает следующего.
-- [ ] Единый Render Contract — open.
+- [x] Единый Render Contract — `DocumentRendererService.render(RenderRequest)`.
 - [x] Learning не влияет на DecisionType и стратегию выполнения; confidence filter + no one-off revision learn.
 - [x] Простые EXECUTE без лишнего approve; multi-stage approval = **stored plan re-run** (не LangGraph checkpoint).
-- [ ] LangGraph MemorySaver / checkpoint Redis — open.
+- [x] Redis app-level execution checkpoint (`RedisCheckpointManager`) in production — **PARTIAL**: LangGraph `MemorySaver` still used as interrupt checkpointer.
 - [x] Controlled degrade на LLM outage для strategy / presentation / quality.
 - [x] RUNNING busy gate в ConversationService.
 - [x] P1-F knowledge auto-remember gate; P1-I short DB txns; dead document nodes unregistered.
-- [ ] PDF / history truncate / live eval — open.
+- [x] PDF not offered on product surface (stub honest); history truncate policy; catalog ≠ live eval (noted).
+- [ ] Live / golden Executive eval — open.
 
 ### Sprint D — Definition of Done — PARTIAL
 

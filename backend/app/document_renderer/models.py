@@ -1,3 +1,10 @@
+"""Render Contract models.
+
+Product entry: ``DocumentRendererService.render(RenderRequest)``.
+``OutputFormat.PDF`` exists for the stub path only — do not advertise PDF in
+Executive prompt / skill product surface until implemented.
+"""
+
 import enum
 from typing import Any
 from uuid import UUID
@@ -11,7 +18,7 @@ from app.document_intelligence.ast.models import DocumentAST
 class OutputFormat(str, enum.Enum):
     DOCX = "docx"
     PPTX = "pptx"
-    PDF = "pdf"
+    PDF = "pdf"  # stub only — not offered on product surface
 
 
 class RenderStatus(str, enum.Enum):

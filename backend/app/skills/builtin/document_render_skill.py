@@ -86,6 +86,14 @@ class DocumentRenderSkill(BaseSkill):
                 "message": f"Unsupported output format: {output_format_raw}",
             }
 
+        # PDF is stub-only — do not offer on product surface.
+        if output_format == OutputFormat.PDF:
+            return {
+                "status": "failed",
+                "skill": self.name(),
+                "message": "PDF output is not available; use docx or pptx",
+            }
+
         request = RenderRequest(
             document_structure=document_ast,
             brand_profile=brand_profile,

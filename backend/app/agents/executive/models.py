@@ -8,7 +8,10 @@ class AgentUnderstanding(BaseModel):
     summary: str = Field(description="Brief understanding of the task")
     required_capabilities: list[str] = Field(
         default_factory=list,
-        description="Capabilities that may be needed to fulfill the goal",
+        description=(
+            "Optional soft hints for Capability Resolver; Resolver owns the "
+            "final ordered capability graph"
+        ),
     )
     missing_information: list[str] = Field(
         default_factory=list,

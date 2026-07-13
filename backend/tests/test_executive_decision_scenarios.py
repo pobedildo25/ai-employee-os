@@ -2,6 +2,9 @@
 
 Scenarios encode the product contract (expected DecisionType).
 Runtime assertions check routing policies — never keyword-match user text.
+
+Honesty: this catalog tests routing policies with fixture decisions —
+it is not live LLM proof of Executive quality (see PRODUCT_GOAL P1-H).
 """
 
 from __future__ import annotations

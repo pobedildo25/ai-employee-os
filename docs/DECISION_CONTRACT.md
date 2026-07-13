@@ -17,7 +17,7 @@ No other layer may invent, mutate, or substitute a Product Decision.
 | Runtime | Executes an already accepted decision |
 | Telegram / any channel | Map / send / UI only |
 | Planner | Builds a plan only after `CREATE_PLAN` |
-| Capability Resolver | Validates / orders capability graph after `EXECUTE` / `CREATE_PLAN` |
+| Capability Resolver | Builds / orders capability graph after `EXECUTE` / `CREATE_PLAN` (owns final list; Executive hints are soft) |
 | Orchestrator | Runs DAG steps / statuses only |
 | Context Builder | Aggregates context; never changes request meaning |
 | Skills | Independent capabilities; no product routing |
@@ -42,3 +42,8 @@ Runtime **must not**:
 - turn `EXECUTE` into `CREATE_PLAN` (or the reverse without an explicit demotion policy for an already accepted `CREATE_PLAN`).
 
 See `docs/PRODUCT_GOAL.md` §3–§4 for the full invariant table.
+
+## Decision eval honesty
+
+Catalog / fixture scenario tests (e.g. `test_executive_decision_scenarios.py`) exercise
+routing policies with fixture decisions. They are **not** live LLM proof of Executive quality.

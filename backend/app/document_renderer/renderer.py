@@ -18,7 +18,11 @@ logger = logging.getLogger(__name__)
 
 
 class DocumentRendererService:
-    """Routes render requests to format-specific renderers."""
+    """Unified Render Contract entry: ``render(RenderRequest)``.
+
+    Skills and product code must call this service (not format renderers directly).
+    PDF remains a stub and must not be advertised as available.
+    """
 
     def __init__(
         self,
