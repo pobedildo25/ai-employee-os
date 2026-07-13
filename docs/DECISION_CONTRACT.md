@@ -47,3 +47,7 @@ See `docs/PRODUCT_GOAL.md` §3–§4 for the full invariant table.
 
 Catalog / fixture scenario tests (e.g. `test_executive_decision_scenarios.py`) exercise
 routing policies with fixture decisions. They are **not** live LLM proof of Executive quality.
+
+Live spot-eval harness: `tests/test_executive_live_eval.py` (marked `@pytest.mark.live`).
+Skipped unless `LIVE_EXECUTIVE_EVAL=1` and `OPENROUTER_API_KEY` are set. Opt-in only —
+passing CI with the harness skipped does **not** prove live Executive quality.

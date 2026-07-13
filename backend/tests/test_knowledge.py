@@ -83,6 +83,30 @@ async def test_knowledge_manager_store_search(client_id) -> None:
 
 
 @pytest.mark.asyncio
+async def test_empty_knowledge_search_returns_empty_not_dump(client_id) -> None:
+    manager = KnowledgeManager(InMemoryKnowledgeStore())
+    await manager.add(
+        KnowledgeItem(
+            client_id=client_id,
+            title="Brand color",
+            category="brand",
+            content="Primary color is deep navy",
+            confidence=0.9,
+        )
+    )
+    assert await manager.get_context_for_client(client_id, query="zzz-no-match") == []
+
+
+@pytest.mark.asyncio
+async def test_knowledge_context_provider_empty_returns_empty_dict(client_id) -> None:
+    from app.context.models import ContextRequest
+    from app.knowledge.providers.knowledge_provider import KnowledgeContextProvider
+
+    provider = KnowledgeContextProvider(KnowledgeManager(InMemoryKnowledgeStore()))
+    assert await provider.fetch(ContextRequest(user_input="q", client_id=client_id, trace_id="t")) == {}
+
+
+@pytest.mark.asyncio
 async def test_migration_service(
     settings: Settings,
     client_id,
@@ -209,12 +233,15 @@ async def test_context_builder_knowledge_integration(client_id) -> None:
     )
 
     builder = create_context_builder(knowledge_manager=manager)
-    context = await builder.build(user_input="Prepare proposal", client_id=client_id)
+    context = await builder.build(user_input="formal", client_id=client_id)
 
     assert len(context.knowledge_context) == 1
     assert context.knowledge_context[0]["title"] == "Tone"
     prioritized = context.to_prioritized_dict()
     assert "knowledge_context" in prioritized
+
+    empty = await builder.build(user_input="zzz-unrelated-query", client_id=client_id)
+    assert empty.knowledge_context == []
 
 
 @pytest.mark.asyncio

@@ -62,6 +62,10 @@ def create_telegram_adapter(
 
             redis_client = get_redis_client(settings)
         except Exception as exc:
+            if settings.is_production:
+                raise RuntimeError(
+                    "Redis session bindings are required in production; refusing cache-only mode"
+                ) from exc
             logger.warning("telegram session bindings: Redis unavailable | error=%s", exc)
             redis_client = None
 
@@ -70,6 +74,7 @@ def create_telegram_adapter(
         client_repository=client_repository,
         redis_client=redis_client,
         db_release=db_release,
+        require_redis_bindings=settings.is_production,
     )
     return TelegramAdapter(
         runtime=runtime,

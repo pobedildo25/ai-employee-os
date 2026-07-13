@@ -3,7 +3,7 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
-**Прогресс (2026-07-13):** Sprint A — **PARTIAL** (`1edbb65` + leftovers in this PR: P0-G fail-closed Redis/allowlist, P0-B missing `status` → FAIL, Stage 0 contracts). Sprint B — **PARTIAL**: P0-D/P0-E DONE; P0-C DONE (ConversationService channel-neutral via ports; Telegram = adapter; Redis FSM field aliases `telegram_*` retained). Sprint C — **PARTIAL** (Resolver owns ordered graph from hints + fail-closed; unified Render Contract entry; PDF not offered / stub; history truncate; Redis app-level checkpoint; LangGraph interrupt checkpointer still MemorySaver; live LLM eval open). Sprint D — **DONE** for ops DoD (TLS edge profile, backup schedule profile, rollback playbook in `docs/OPS_RUNBOOK.md`; Celery deferred N/A — internal Postgres task queue). Redis security+rate-limit InMemory fallback fixed as Sprint A/P0-G leftover this PR.
+**Прогресс (2026-07-13):** Sprint A — **DONE** (P0 honesty / no silent success / allowlist+Redis security fail-closed / Stage 0 contracts). Sprint B — **DONE** (ConversationService channel-neutral; Redis FSM + session bindings fail-closed in production; no InMemory SoT in prod). Sprint C — **PARTIAL** (Resolver / Render Contract / history truncate / Redis app-level + LangGraph interrupt checkpointer done; PDF off product surface; live Executive eval harness exists but opt-in/`LIVE_EXECUTIVE_EVAL=1` — catalog ≠ live proof). Sprint D — **DONE** for ops DoD (TLS edge profile, backup schedule profile, rollback playbook in `docs/OPS_RUNBOOK.md`; Celery deferred N/A — internal Postgres task queue).
 
 ---
 
@@ -388,11 +388,11 @@ Readiness определяется **обязательными** сервиса
 - [x] Убрать document-type routing (`_wants_presentation` — только capability `presentation_design`).
 - [x] Runtime / Telegram не превращают Revision ↔ New Task самостоятельно.
 
-#### P0-G. Security + honesty + readiness — PARTIAL (Sprint A leftovers this PR)
+#### P0-G. Security + honesty + readiness — DONE
 
-- [x] Нельзя создавать ADMIN anonymously; Telegram allowlist: `None` = no filter (dev), empty set = deny all, non-empty = allowlist; **production + empty → deny all + error log** (this PR).
+- [x] Нельзя создавать ADMIN anonymously; Telegram allowlist: `None` = no filter (dev), empty set = deny all, non-empty = allowlist; **production + empty → deny all + error log**.
 - [x] Persist API keys / audit (не process memory как источник истины) — Redis provider; InMemory в tests/dev.
-- [x] Production: Redis security store / rate limiter **fail-closed** (no InMemory fallback) — this PR.
+- [x] Production: Redis security store / rate limiter **fail-closed** (no InMemory fallback).
 - [x] `/ready`: обязательные сервисы определяют readiness; optional → **DEGRADED**, не **NOT READY**.
 - [x] Research: feature flag OFF (`research_enabled=False`); нет в prompt и registry.
 - [x] Semantic memory: feature flag OFF (`semantic_memory_enabled=False`); нет в product surface.
@@ -405,14 +405,15 @@ Readiness определяется **обязательными** сервиса
 
 - [x] Простые `EXECUTE` (в т.ч. линейный multi-skill pipeline) — без лишних подтверждений.
 - [x] Approve = resume from stored plan/decision (`skip_executive_llm` + `resume_task_plan`), **не** LangGraph checkpoint / MemorySaver.
-- [x] Persist execution state Redis (`RedisCheckpointManager` app-level blobs, TTL) in production; tests/dev → MemorySaver / InMemory — **PARTIAL**: LangGraph interrupt checkpointer still MemorySaver (`langgraph.checkpoint.redis` not in deps).
+- [x] Persist execution state Redis (`RedisCheckpointManager` app-level blobs, TTL) in production; tests/dev → MemorySaver / InMemory.
+- [x] LangGraph interrupt checkpointer: `RedisCheckpointSaver` (`BaseCheckpointSaver`, keys `langgraph:ckpt:...`) via `RedisCheckpointManager.get_checkpointer()` — fail-closed on Redis failure.
 
 #### P1-B. Context Builder
 
 - [x] Merge transport context ∪ built context (Sprint B).
 - [x] Никогда не изменять смысл пользовательского запроса — только агрегировать.
 - [x] Не удалять transport context вне политики truncation.
-- [ ] Relevant recall; пустой knowledge search → пусто (не dump) — partial / follow-up.
+- [x] Relevant recall; пустой knowledge search → пусто (не dump).
 - [x] Truncate history по явной политике (`context_history_max_messages`, default 20).
 - [x] Learning inject только preference-слой с confidence filter.
 
@@ -430,7 +431,7 @@ Readiness определяется **обязательными** сервиса
 - [x] Orchestrator знает только DAG; убраны capability-specific if (`presentation_design` / `document_rendering`).
 - [x] Единый Render Contract — `DocumentRendererService.render(RenderRequest)` product entry (module docstring).
 - [x] Dead dual document nodes удалить или не использовать — unregistered from `build_executive_graph` (skills path intact).
-- [x] PDF: не предлагать в product surface (Executive prompt / DocumentRenderSkill reject); `PdfRenderer` stub raises — implement later.
+- [x] PDF: не предлагать в product surface (document_creation prompt `docx`|`pptx`; DocumentRenderNode maps unknown/pdf → docx; DocumentRenderSkill reject; `PdfRenderer` stub raises — implement later).
 
 #### P1-E. Learning строго по контракту
 
@@ -454,7 +455,7 @@ Readiness определяется **обязательными** сервиса
 #### P1-H. Decision eval
 
 - [x] Policy catalog / scenario fixtures (existing).
-- [ ] Golden + spot live Executive — open.
+- [x] Live / golden Executive harness — `tests/test_executive_live_eval.py` (`@pytest.mark.live`, opt-in `LIVE_EXECUTIVE_EVAL=1`); **live proof still PARTIAL** until routinely run against OpenRouter.
 - [x] Catalog honesty: fixture routing ≠ live LLM proof (noted in DECISION_CONTRACT / scenario module docstring).
 - [x] Runtime не мутирует DecisionType (инвариант сохранён).
 
@@ -492,13 +493,13 @@ Readiness определяется **обязательными** сервиса
 
 | Sprint | Статус | Фокус относительно Goal | Состав |
 |--------|--------|-------------------------|--------|
-| **A** | **PARTIAL** (`1edbb65` + leftovers this PR) | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A/B/F mostly done; P0-G fail-closed this PR; Stage 0 contracts this PR |
-| **B** | **PARTIAL** | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C DONE; P0-D DONE (incl. bindings); P0-E DONE |
-| **C** | **PARTIAL** | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate | P1-A…P1-I; open: LangGraph Redis interrupt checkpointer, live LLM eval; PDF stub kept off surface |
+| **A** | **DONE** | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A/B/F/G; Stage 0 contracts |
+| **B** | **DONE** | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C/D/E; Redis FSM + bindings fail-closed in prod |
+| **C** | **PARTIAL** | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate | P1-A…P1-I; LangGraph Redis interrupt checkpointer DONE; live eval harness DONE (opt-in); live proof still open |
 | **D** | **DONE** (ops DoD) | Production ops | Secrets, workers, ACL, observability, readiness; TLS profile, backup profile, rollback playbook (`docs/OPS_RUNBOOK.md`); Celery deferred N/A |
 | **E** | pending | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
 
-### Sprint A — Definition of Done — PARTIAL (closing leftovers this PR)
+### Sprint A — Definition of Done — DONE
 
 - [x] Вопрос / консультация / анализ не уходят в task/plan.
 - [x] «Курс доллара» / «Сделай КП» / уточнение КП ведут себя как ассистент, не как движок.
@@ -507,15 +508,15 @@ Readiness определяется **обязательными** сервиса
 - [x] Keyword / document routing убраны из decision path.
 - [x] Research и semantic memory: flag OFF → нет в prompt и registry; не mock/stub в product surface.
 - [x] `/ready`: optional deps = DEGRADED, не NOT READY.
-- [x] Security hard gate (allowlist deny-all when empty in prod; Redis store/rate-limit fail-closed) — this PR.
-- [x] Stage 0 contracts (`PRODUCTION_CONTRACT` / `DECISION_CONTRACT` / `CAPABILITY_MATRIX`) — this PR.
+- [x] Security hard gate (allowlist deny-all when empty in prod; Redis store/rate-limit fail-closed).
+- [x] Stage 0 contracts (`PRODUCTION_CONTRACT` / `DECISION_CONTRACT` / `CAPABILITY_MATRIX`).
 
-### Sprint B — Definition of Done — PARTIAL
+### Sprint B — Definition of Done — DONE
 
 - [x] ConversationService (`app.conversation`); Telegram = ports adapter (map/send only). FSM field aliases `telegram_*` retained for Redis JSON.
-- [x] Process memory не источник истины для FSM (Redis в bootstrap; InMemory для тестов).
+- [x] Process memory не источник истины для FSM — Redis fail-closed in production; InMemory только tests/dev (или fallback вне prod).
 - [x] Clarification с повторной оценкой Executive; transport context не теряется Builder-ом.
-- [x] Session bindings Redis (`conversation:binding:{user_id}`).
+- [x] Session bindings Redis (`conversation:binding:{user_id}`) — fail-closed persist/load in production; explicit `bindings={}` stays in-memory for tests.
 - [x] Runtime / LangGraph не переписаны «заодно».
 - [x] Runtime не мутирует DecisionType и не запускает Planner сам (инвариант Sprint A сохранён).
 
@@ -529,12 +530,13 @@ Readiness определяется **обязательными** сервиса
 - [x] Единый Render Contract — `DocumentRendererService.render(RenderRequest)`.
 - [x] Learning не влияет на DecisionType и стратегию выполнения; confidence filter + no one-off revision learn.
 - [x] Простые EXECUTE без лишнего approve; multi-stage approval = **stored plan re-run** (не LangGraph checkpoint).
-- [x] Redis app-level execution checkpoint (`RedisCheckpointManager`) in production — **PARTIAL**: LangGraph `MemorySaver` still used as interrupt checkpointer.
+- [x] Redis app-level execution checkpoint (`RedisCheckpointManager`) + LangGraph interrupt `RedisCheckpointSaver` in production.
 - [x] Controlled degrade на LLM outage для strategy / presentation / quality.
 - [x] RUNNING busy gate в ConversationService.
 - [x] P1-F knowledge auto-remember gate; P1-I short DB txns; dead document nodes unregistered.
-- [x] PDF not offered on product surface (stub honest); history truncate policy; catalog ≠ live eval (noted).
-- [ ] Live / golden Executive eval — open.
+- [x] PDF not offered on product creation surface (`docx`/`pptx` only); history truncate policy; catalog ≠ live eval (noted).
+- [x] Live / golden Executive eval **harness** (opt-in `LIVE_EXECUTIVE_EVAL=1`) — DONE.
+- [ ] Live Executive **proof** (routinely green against OpenRouter) — still open → Sprint C remains PARTIAL on live proof.
 
 ### Sprint D — Definition of Done — DONE (ops)
 

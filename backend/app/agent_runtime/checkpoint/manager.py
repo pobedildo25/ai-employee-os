@@ -7,6 +7,7 @@ from typing import Any
 import redis
 from langgraph.checkpoint.memory import MemorySaver
 
+from app.agent_runtime.checkpoint.redis_saver import RedisCheckpointSaver
 from app.agent_runtime.exceptions import CheckpointError
 from app.agent_runtime.state.models import AgentState
 from app.core.config import Settings, get_settings
@@ -64,11 +65,10 @@ class InMemoryCheckpointManager(CheckpointManager):
 
 
 class RedisCheckpointManager(CheckpointManager):
-    """Persist AgentRuntime final-state blobs in Redis (app-level checkpoint).
+    """Persist AgentRuntime final-state blobs + LangGraph interrupt checkpointer in Redis.
 
-    LangGraph interrupt checkpointer remains MemorySaver — ``langgraph.checkpoint.redis``
-    is not in project deps. Production uses Redis for durable execution_id → state;
-    tests/dev keep InMemoryCheckpointManager.
+    App-level keys: ``agent:checkpoint:{execution_id}``.
+    Interrupt checkpointer: ``RedisCheckpointSaver`` under ``langgraph:ckpt:...``.
     """
 
     def __init__(
@@ -79,8 +79,15 @@ class RedisCheckpointManager(CheckpointManager):
         client: redis.Redis | None = None,
     ) -> None:
         self._ttl_seconds = max(1, int(ttl_seconds))
-        self._client = client or redis.from_url(redis_url, decode_responses=False)
-        self._checkpointer = MemorySaver()
+        try:
+            self._client = client or redis.from_url(redis_url, decode_responses=False)
+            self._client.ping()
+        except Exception as exc:
+            raise CheckpointError(f"Redis checkpoint backend unavailable: {exc}") from exc
+        self._checkpointer = RedisCheckpointSaver(
+            self._client,
+            ttl_seconds=self._ttl_seconds,
+        )
 
     def _key(self, execution_id: str) -> str:
         return f"{_CHECKPOINT_KEY_PREFIX}{execution_id}"
@@ -119,7 +126,7 @@ class RedisCheckpointManager(CheckpointManager):
         except Exception as exc:
             raise CheckpointError(f"Failed to delete checkpoint: {exc}") from exc
 
-    def get_checkpointer(self) -> MemorySaver:
+    def get_checkpointer(self) -> RedisCheckpointSaver:
         return self._checkpointer
 
 

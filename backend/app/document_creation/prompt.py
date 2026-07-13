@@ -9,12 +9,12 @@ Rules:
 - Never use fixed templates for specific document types (no KP/presentation/report templates).
 - If required data is missing, do NOT invent content. Return status "incomplete" with missing_information.
 - Supported node types: document, section, heading, paragraph, table, image.
-- document_type must be a generic format: docx, pptx, or pdf.
+- document_type must be a generic format: docx or pptx (never pdf).
 
 JSON schema:
 {
   "status": "ready" | "incomplete",
-  "document_type": "docx" | "pptx" | "pdf",
+  "document_type": "docx" | "pptx",
   "missing_information": ["..."],
   "metadata": {"title": "...", "summary": "..."},
   "ast": {

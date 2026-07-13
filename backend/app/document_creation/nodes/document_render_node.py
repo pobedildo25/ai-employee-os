@@ -69,7 +69,8 @@ class DocumentRenderNode:
             )
 
         document_type = (creation_result.get("metadata") or {}).get("document_type", "docx")
-        output_format = document_type if document_type in {"docx", "pptx", "pdf"} else "docx"
+        # Product surface: docx | pptx only; unknown (incl. pdf) maps to docx.
+        output_format = document_type if document_type in {"docx", "pptx"} else "docx"
 
         payload: dict[str, Any] = {
             "document_ast": ast_data,

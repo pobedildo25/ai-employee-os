@@ -49,9 +49,8 @@ class KnowledgeManager:
         limit: int = 10,
     ) -> list[dict]:
         """Return knowledge fragments for Context Builder."""
+        # Empty search → empty context (no full-client dump).
         items = await self.search(client_id=client_id, query=query, limit=limit)
-        if not items and query:
-            items = await self.list_for_client(client_id, limit=limit)
         return [
             {
                 "id": str(item.id),

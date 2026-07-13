@@ -42,6 +42,8 @@ class TelegramSessionManager:
         bindings: dict[int, UUID] | None = None,
         redis_client: aioredis.Redis | None = None,
         db_release: DbRelease | None = None,
+        *,
+        require_redis_bindings: bool = False,
     ) -> None:
         if workspace_service is not None:
             self._service = workspace_service
@@ -53,6 +55,7 @@ class TelegramSessionManager:
             bindings if bindings is not None else get_session_bindings_singleton()
         )
         self._redis = None if bindings is not None else redis_client
+        self._require_redis_bindings = require_redis_bindings and self._redis is not None
         self._db_release = db_release
 
     @property
@@ -113,6 +116,10 @@ class TelegramSessionManager:
         try:
             raw = await self._redis.get(BINDING_KEY.format(user_id=telegram_user_id))
         except Exception as exc:
+            if self._require_redis_bindings:
+                raise RuntimeError(
+                    f"Redis binding load required but failed | user_id={telegram_user_id}"
+                ) from exc
             logger.warning("redis binding load failed | user_id=%s error=%s", telegram_user_id, exc)
             return None
         if not raw:
@@ -132,6 +139,10 @@ class TelegramSessionManager:
                 ex=BINDING_TTL_SECONDS,
             )
         except Exception as exc:
+            if self._require_redis_bindings:
+                raise RuntimeError(
+                    f"Redis binding persist required but failed | user_id={telegram_user_id}"
+                ) from exc
             logger.warning(
                 "redis binding persist failed | user_id=%s error=%s",
                 telegram_user_id,

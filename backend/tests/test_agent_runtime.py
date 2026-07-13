@@ -5,6 +5,8 @@ from app.agent_runtime.checkpoint.manager import (
     RedisCheckpointManager,
     create_checkpoint_manager,
 )
+from app.agent_runtime.checkpoint.redis_saver import RedisCheckpointSaver
+from app.agent_runtime.exceptions import CheckpointError
 from app.agent_runtime.exceptions import GraphBuildError, GraphExecutionError
 from app.agent_runtime.graph.builder import GraphBuilder
 from app.agent_runtime.graph.edges import FINISH_NODE, PROCESS_INPUT_NODE, wire_default_workflow
@@ -183,17 +185,48 @@ def test_build_default_graph_with_checkpoint_manager() -> None:
 
 
 class _FakeRedis:
+    """Minimal sync Redis stub for app-level + LangGraph checkpointer tests."""
+
     def __init__(self) -> None:
-        self._data: dict[bytes | str, bytes] = {}
+        self._data: dict[str, bytes] = {}
+        self._sets: dict[str, set[str]] = {}
+
+    def ping(self) -> bool:
+        return True
 
     def set(self, key, value, ex=None) -> None:
-        self._data[key] = value
+        self._data[str(key)] = value if isinstance(value, bytes) else bytes(value)
 
     def get(self, key):
-        return self._data.get(key)
+        return self._data.get(str(key))
 
-    def delete(self, key) -> int:
-        return 1 if self._data.pop(key, None) is not None else 0
+    def delete(self, *keys) -> int:
+        removed = 0
+        for key in keys:
+            k = str(key)
+            if self._data.pop(k, None) is not None:
+                removed += 1
+            if self._sets.pop(k, None) is not None:
+                removed += 1
+        return removed
+
+    def sadd(self, key, *members) -> int:
+        bucket = self._sets.setdefault(str(key), set())
+        before = len(bucket)
+        bucket.update(str(m) for m in members)
+        return len(bucket) - before
+
+    def smembers(self, key):
+        return set(self._sets.get(str(key), set()))
+
+    def expire(self, key, _seconds) -> bool:
+        return str(key) in self._data or str(key) in self._sets
+
+    def scan_iter(self, match: str = "*", count: int = 10):
+        prefix = match.rstrip("*")
+        for key in list(self._data.keys()) + list(self._sets.keys()):
+            if key.startswith(prefix):
+                yield key
 
 
 def test_redis_checkpoint_manager_roundtrip() -> None:
@@ -211,6 +244,41 @@ def test_redis_checkpoint_manager_roundtrip() -> None:
     assert loaded["user_input"] == "redis checkpoint"
     assert manager.delete("exec-r1") is True
     assert manager.load("exec-r1") is None
+    assert isinstance(manager.get_checkpointer(), RedisCheckpointSaver)
+
+
+def test_redis_langgraph_checkpointer_roundtrip() -> None:
+    client = _FakeRedis()
+    saver = RedisCheckpointSaver(client, ttl_seconds=60)
+    config = {"configurable": {"thread_id": "t1", "checkpoint_ns": ""}}
+    checkpoint = {
+        "v": 1,
+        "id": "1ef4f797-8335-6428-8001-8a1503f9b875",
+        "ts": "2026-07-13T00:00:00+00:00",
+        "channel_values": {"messages": ["hi"]},
+        "channel_versions": {"messages": "00000000000000000000000000000001.1"},
+        "versions_seen": {},
+    }
+    saved = saver.put(config, checkpoint, {"source": "test"}, {"messages": "00000000000000000000000000000001.1"})
+    loaded = saver.get_tuple(saved)
+    assert loaded is not None
+    assert loaded.checkpoint["channel_values"]["messages"] == ["hi"]
+    saver.put_writes(saved, [("messages", "pending")], task_id="task-1")
+    again = saver.get_tuple(saved)
+    assert again is not None
+    assert again.pending_writes
+    assert ("task-1", "messages", "pending") in again.pending_writes
+    saver.delete_thread("t1")
+    assert saver.get_tuple(saved) is None
+
+
+def test_redis_checkpoint_manager_raises_when_redis_unavailable() -> None:
+    class BoomRedis:
+        def ping(self):
+            raise ConnectionError("down")
+
+    with pytest.raises(CheckpointError):
+        RedisCheckpointManager("redis://unused", client=BoomRedis())  # type: ignore[arg-type]
 
 
 def test_create_checkpoint_manager_defaults_to_memory() -> None:
@@ -218,6 +286,14 @@ def test_create_checkpoint_manager_defaults_to_memory() -> None:
     assert isinstance(manager, InMemoryCheckpointManager)
 
 
-def test_create_checkpoint_manager_production_uses_redis() -> None:
-    manager = create_checkpoint_manager(Settings(app_env="production", redis_url="redis://localhost:6379/15"))
+def test_create_checkpoint_manager_production_uses_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeRedis()
+    monkeypatch.setattr(
+        "app.agent_runtime.checkpoint.manager.redis.from_url",
+        lambda *_args, **_kwargs: fake,
+    )
+    manager = create_checkpoint_manager(
+        Settings(app_env="production", redis_url="redis://localhost:6379/15")
+    )
     assert isinstance(manager, RedisCheckpointManager)
+    assert isinstance(manager.get_checkpointer(), RedisCheckpointSaver)

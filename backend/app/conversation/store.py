@@ -73,7 +73,7 @@ def get_conversation_store_singleton() -> ConversationStore:
 
 
 def create_conversation_store(settings: Settings) -> ConversationStore:
-    """Prefer Redis-backed store for production bot wiring; fall back to in-memory on init failure.
+    """Redis-backed FSM in production (fail-closed); prefer Redis elsewhere, InMemory OK for tests/dev.
 
     Return type is annotated as ConversationStore for call-site convenience; Redis store
     implements the same async API (duck-typed).
@@ -86,6 +86,10 @@ def create_conversation_store(settings: Settings) -> ConversationStore:
         logger.info("conversation store: RedisConversationStore")
         return store  # type: ignore[return-value]
     except Exception as exc:
+        if settings.is_production:
+            raise RuntimeError(
+                "Redis conversation store is required in production; refusing InMemory fallback"
+            ) from exc
         logger.warning(
             "Redis conversation store unavailable, falling back to in-memory | error=%s",
             exc,

@@ -179,6 +179,46 @@ async def test_session_bindings_redis_roundtrip() -> None:
     assert again["workspace_id"] == str(workspace_id)
 
 
+@pytest.mark.asyncio
+async def test_session_bindings_fail_closed_when_required() -> None:
+    class BoomRedis(FakeRedis):
+        async def set(self, key: str, value: str, ex: int | None = None) -> bool:
+            raise ConnectionError("redis down")
+
+    workspace = WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository()))
+    manager = TelegramSessionManager(
+        workspace_service=workspace,
+        redis_client=BoomRedis(),
+        require_redis_bindings=True,
+    )
+    with pytest.raises(RuntimeError, match="Redis binding persist required"):
+        await manager.resolve(9999)
+
+
+def test_factory_production_raises_without_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.adapters.telegram.factory import create_telegram_adapter
+    from app.adapters.telegram.sender import InMemoryTelegramSender
+    from app.core.config import Settings
+
+    def _boom(_settings):
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr("app.database.redis.get_redis_client", _boom)
+    settings = Settings(
+        app_env="production",
+        telegram_enabled=True,
+        telegram_bot_token="",
+        telegram_allowed_user_ids="1",
+    )
+    with pytest.raises(RuntimeError, match="Redis session bindings are required"):
+        create_telegram_adapter(
+            runtime=object(),  # type: ignore[arg-type]
+            workspace_service=WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository())),
+            settings=settings,
+            sender=InMemoryTelegramSender(),
+        )
+
+
 def test_knowledge_min_confidence_raised() -> None:
     assert DEFAULT_MIN_CONFIDENCE >= 0.7
     low = KnowledgeItem(title="t", category="fact", content="c", confidence=0.5)

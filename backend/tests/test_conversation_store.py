@@ -155,3 +155,43 @@ async def test_redis_user_lock_serializes(settings: Settings) -> None:
         ["a-enter", "a-exit", "b-enter", "b-exit"],
         ["b-enter", "b-exit", "a-enter", "a-exit"],
     )
+
+
+def test_create_conversation_store_falls_back_outside_production(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conversation.store import ConversationStore, create_conversation_store
+
+    def _boom(_settings: Settings):
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr("app.database.redis.get_redis_client", _boom)
+    store = create_conversation_store(Settings(app_env="development"))
+    assert isinstance(store, ConversationStore)
+
+
+def test_create_conversation_store_raises_in_production_when_redis_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conversation.store import create_conversation_store
+
+    def _boom(_settings: Settings):
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr("app.database.redis.get_redis_client", _boom)
+    with pytest.raises(RuntimeError, match="Redis conversation store is required"):
+        create_conversation_store(Settings(app_env="production"))
+
+
+def test_create_conversation_store_uses_redis_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.conversation.redis_store import RedisConversationStore
+    from app.conversation.store import create_conversation_store
+
+    monkeypatch.setattr(
+        "app.database.redis.get_redis_client",
+        lambda _settings: _FakeRedis(),
+    )
+    store = create_conversation_store(Settings(app_env="production"))
+    assert isinstance(store, RedisConversationStore)
