@@ -81,6 +81,8 @@ class ConversationService:
         await self._store.save(convo)
 
         await self._append_history(snapshot, role="user", content=request.user_input)
+        # P1-I: release DB session after short persistence before LLM/classify.
+        await self._sessions.release_db()
 
         if convo.flow_mode == FlowMode.RUNNING:
             text = "Ещё работаю над предыдущим запросом. Подождите немного."
@@ -322,6 +324,7 @@ class ConversationService:
     async def _handle_callback_locked(self, request: TelegramCallbackRequest) -> dict[str, Any]:
         convo = await self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
         snapshot = await self._sessions.resolve(request.telegram_user_id)
+        await self._sessions.release_db()
 
         if request.action == "approve":
             return await self._handle_approval_resume(convo, snapshot)

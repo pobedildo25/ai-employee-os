@@ -1,3 +1,6 @@
+from collections.abc import Awaitable, Callable
+import logging
+
 from app.adapters.telegram.bot import TelegramAdapter, TelegramBot
 from app.adapters.telegram.conversation_store import TelegramConversationStore
 from app.adapters.telegram.mapper import TelegramMapper
@@ -13,9 +16,9 @@ from app.skills.registry import CapabilityRegistry
 from app.storage.storage_interface import StorageInterface
 from app.workspace.service import WorkspaceService
 
-import logging
-
 logger = logging.getLogger(__name__)
+
+DbRelease = Callable[[], Awaitable[None]]
 
 
 def create_telegram_adapter(
@@ -31,6 +34,8 @@ def create_telegram_adapter(
     capability_registry: CapabilityRegistry | None = None,
     client_repository: ClientRepository | None = None,
     executive_agent: ExecutiveAgent | None = None,
+    db_release: DbRelease | None = None,
+    redis_client=None,
 ) -> TelegramAdapter:
     """Wire Telegram transport to existing runtime/workspace. No new singletons."""
     if sender is None:
@@ -45,9 +50,20 @@ def create_telegram_adapter(
             "telegram allowlist empty in production — all users accepted until configured"
         )
 
+    if redis_client is None:
+        try:
+            from app.database.redis import get_redis_client
+
+            redis_client = get_redis_client(settings)
+        except Exception as exc:
+            logger.warning("telegram session bindings: Redis unavailable | error=%s", exc)
+            redis_client = None
+
     session_manager = TelegramSessionManager(
         workspace_service=workspace_service,
         client_repository=client_repository,
+        redis_client=redis_client,
+        db_release=db_release,
     )
     return TelegramAdapter(
         runtime=runtime,
@@ -78,6 +94,8 @@ def create_telegram_bot(
     executive_agent: ExecutiveAgent | None = None,
     capability_registry: CapabilityRegistry | None = None,
     conversation_store: TelegramConversationStore | None = None,
+    db_release: DbRelease | None = None,
+    redis_client=None,
 ) -> TelegramBot:
     adapter = create_telegram_adapter(
         runtime=runtime,
@@ -91,5 +109,7 @@ def create_telegram_bot(
         client_repository=client_repository,
         executive_agent=executive_agent,
         capability_registry=capability_registry,
+        db_release=db_release,
+        redis_client=redis_client,
     )
     return TelegramBot(adapter, token=settings.telegram_bot_token or None)

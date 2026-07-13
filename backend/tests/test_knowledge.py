@@ -139,6 +139,60 @@ async def test_migration_does_not_auto_remember(
 
     assert result.memory_candidates
     assert all(c.get("source") == "knowledge_migration" for c in result.memory_candidates)
+    # P1-F: persist defaults to False — extracted items are not auto-stored.
+    stored = await manager.list_for_client(client_id)
+    assert stored == []
+
+
+@pytest.mark.asyncio
+async def test_migration_persist_requires_high_confidence_or_confirm(
+    settings: Settings,
+    client_id,
+    artifact_id,
+    representation: DocumentRepresentation,
+) -> None:
+    from app.knowledge.policies.migration_policy import DEFAULT_MIN_CONFIDENCE
+
+    assert DEFAULT_MIN_CONFIDENCE >= 0.7
+    gateway, _ = mock_gateway(
+        settings,
+        knowledge_json(
+            items=[
+                {
+                    "title": "Weak signal",
+                    "category": "fact",
+                    "content": "Low confidence note",
+                    "confidence": 0.45,
+                }
+            ]
+        ),
+    )
+    manager = KnowledgeManager(InMemoryKnowledgeStore())
+    service = KnowledgeMigrationService(KnowledgeExtractor(gateway), manager)
+    artifacts = [
+        {
+            "id": str(artifact_id),
+            "metadata": {"document_representation": representation.model_dump(mode="json")},
+        }
+    ]
+
+    low = await service.migrate(client_id=client_id, artifacts=artifacts, persist=True)
+    assert low.extracted_items == [] or all(
+        item.confidence < DEFAULT_MIN_CONFIDENCE for item in low.extracted_items
+    )
+    assert await manager.list_for_client(client_id) == []
+
+    gateway_ok, _ = mock_gateway(settings, knowledge_json())
+    service_ok = KnowledgeMigrationService(KnowledgeExtractor(gateway_ok), manager)
+    confirmed = await service_ok.migrate(
+        client_id=client_id,
+        artifacts=artifacts,
+        context={"confirm_persist": True},
+    )
+    assert len(confirmed.extracted_items) == 2
+    stored = await manager.list_for_client(client_id)
+    assert len(stored) == 2
+
 
 
 @pytest.mark.asyncio

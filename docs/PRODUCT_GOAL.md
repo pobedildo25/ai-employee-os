@@ -3,7 +3,7 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
-**Прогресс (2026-07-13):** Sprint A выполнен (`1edbb65`). Sprint B: P0-C / P0-D / P0-E landed (незакоммичено); follow-up — Redis session bindings + persist API keys. Sprint C: P1-A…P1-I highest-impact landed (незакоммичено); full Render Contract / Knowledge persist / Decision eval live — partial / follow-up.
+**Прогресс (2026-07-13):** Sprint A выполнен (`1edbb65`). Sprint B: P0-C / P0-D / P0-E landed (незакоммичено). Sprint C tails landed (незакоммичено): P1-I short DB txns, P1-F knowledge gate (≥0.7 / persist=False), dead document nodes removed from executive graph, Redis session bindings. Sprint D starter: Redis `SecurityStore` (API keys + audit) wired for production.
 
 ---
 
@@ -390,7 +390,7 @@ Readiness определяется **обязательными** сервиса
 #### P0-G. Security + honesty + readiness — MOSTLY DONE (Sprint A)
 
 - [x] Нельзя создавать ADMIN anonymously; Telegram allowlist при непустом списке; закрыть `/docs` в prod.
-- [ ] Persist API keys / audit (не process memory как источник истины) — остаётся на Sprint B/D.
+- [x] Persist API keys / audit (не process memory как источник истины) — Redis provider (Sprint D starter); InMemory в tests/dev.
 - [x] `/ready`: обязательные сервисы определяют readiness; optional → **DEGRADED**, не **NOT READY**.
 - [x] Research: feature flag OFF (`research_enabled=False`); нет в prompt и registry.
 - [x] Semantic memory: feature flag OFF (`semantic_memory_enabled=False`); нет в product surface.
@@ -427,7 +427,7 @@ Readiness определяется **обязательными** сервиса
 - [x] Skill не знает, какая Skill будет следующей.
 - [x] Orchestrator знает только DAG; убраны capability-specific if (`presentation_design` / `document_rendering`).
 - [ ] Единый Render Contract (один вход) — partial (skills supply defaults; full contract follow-up).
-- [ ] Dead dual document nodes удалить или не использовать — follow-up.
+- [x] Dead dual document nodes удалить или не использовать — unregistered from `build_executive_graph` (skills path intact).
 - [ ] PDF: реализовать позже или не предлагать в surface — follow-up.
 
 #### P1-E. Learning строго по контракту
@@ -441,8 +441,8 @@ Readiness определяется **обязательными** сервиса
 
 #### P1-F. Knowledge
 
-- [ ] Не auto-remember на низком пороге — follow-up.
-- [ ] Persist только при достаточном confidence и / или явном confirm / review queue — follow-up.
+- [x] Не auto-remember на низком пороге — `DEFAULT_MIN_CONFIDENCE=0.7`.
+- [x] Persist только при `persist=True` / confirm metadata (default `persist=False`) + confidence gate.
 
 #### P1-G. LLM degrade
 
@@ -457,7 +457,7 @@ Readiness определяется **обязательными** сервиса
 
 #### P1-I. Telegram ops hygiene
 
-- [ ] Короткие DB-транзакции в polling — follow-up.
+- [x] Короткие DB-транзакции в polling — `db_release` после resolve/history, до LLM.
 - [x] При RUNNING — сообщение «ещё работаю», не параллельный второй pipeline.
 
 ---
@@ -491,8 +491,8 @@ Readiness определяется **обязательными** сервиса
 |--------|--------|-------------------------|--------|
 | **A** | **DONE** (`1edbb65`, 2026-07-13) | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A, P0-B, P0-E (clarify fix), P0-F, P0-G |
 | **B** | **DONE** (код landed; commit pending) | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C, P0-D, P0-E; bindings follow-up |
-| **C** | **IN PROGRESS** (highest-impact P1 landed; commit pending) | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate | P1-A … P1-I (partial) |
-| **D** | pending | Production ops | Этап 3 (P2) |
+| **C** | **DONE** (tails landed; commit pending) | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate + P1-F/I + dead nodes | P1-A … P1-I |
+| **D** | **STARTED** (Redis security persist) | Production ops | Этап 3 (P2) partial: API keys/audit Redis |
 | **E** | pending | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
 
 ### Sprint A — Definition of Done — DONE
@@ -506,7 +506,7 @@ Readiness определяется **обязательными** сервиса
 - [x] `/ready`: optional deps = DEGRADED, не NOT READY.
 - [x] Security hard gate (allowlist, keys, docs) закрыт для prod-конфига.
 
-Известный остаток Sprint A → перенесён: durable persist API keys/audit (P0-G). Context Builder transport merge (P0-E) — done в Sprint B. Session bindings Redis — follow-up P0-D.
+Известный остаток Sprint A → перенесён: durable persist API keys/audit (P0-G) — **Sprint D starter landed** (`RedisSecurityProvider`). Context Builder transport merge (P0-E) — done в Sprint B. Session bindings Redis — **done** (`conversation:binding:{user_id}`).
 
 ### Sprint B — Definition of Done — DONE
 
@@ -516,7 +516,7 @@ Readiness определяется **обязательными** сервиса
 - [x] Runtime / LangGraph не переписаны «заодно».
 - [x] Runtime не мутирует DecisionType и не запускает Planner сам (инвариант Sprint A сохранён).
 
-Follow-up вне DoD: Redis session bindings; persist API keys/audit (P0-G).
+Follow-up вне DoD: ~~Redis session bindings~~ done; ~~persist API keys/audit (P0-G)~~ Redis provider landed (Sprint D starter).
 
 ### Sprint C — Definition of Done
 
@@ -530,10 +530,12 @@ Follow-up вне DoD: Redis session bindings; persist API keys/audit (P0-G).
 - [x] Простые EXECUTE без лишнего approve; multi-stage approval = resume stored plan (skip Executive).
 - [x] Controlled degrade на LLM outage для strategy / presentation / quality.
 - [x] RUNNING busy gate в ConversationService.
+- [x] P1-F knowledge auto-remember gate; P1-I short DB txns; dead document nodes unregistered.
 
 ### Sprint D — Definition of Done
 
-- Tenant ACL, observability, idempotency, infra secrets, workers-safe FSM, backups/rollback, readiness contract закреплён в ops.
+- [x] Persist API keys / audit (Redis starter: `security:apikey:*`, `security:audit`); InMemory в tests/dev.
+- [ ] Tenant ACL, observability, idempotency, infra secrets, workers-safe FSM, backups/rollback, readiness contract закреплён в ops.
 
 ### Sprint E — Definition of Done
 

@@ -12,6 +12,7 @@ from app.knowledge.extractor import KnowledgeExtractor
 from app.knowledge.manager import KnowledgeManager
 from app.knowledge.memory_preparer import prepare_knowledge_memory_items
 from app.knowledge.models import KnowledgeItem, KnowledgeMigrationResult
+from app.knowledge.policies.migration_policy import select_items_for_persist
 from app.repositories.client_repository import ClientRepository
 
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class KnowledgeMigrationService:
         artifacts: list[dict[str, Any]],
         context: dict[str, Any] | None = None,
         file_bytes_by_artifact: dict[str, bytes] | None = None,
-        persist: bool = True,
+        persist: bool = False,
         trace_id: str = "-",
     ) -> KnowledgeMigrationResult:
         if self._clients is not None:
@@ -60,6 +61,10 @@ class KnowledgeMigrationService:
         brand_profiles: list[dict[str, Any]] = []
         warnings: list[str] = []
         file_bytes_by_artifact = file_bytes_by_artifact or {}
+        confirm = bool(
+            (context or {}).get("confirm_persist")
+            or (context or {}).get("confirm_knowledge")
+        )
 
         for artifact in artifacts:
             artifact_id = _parse_uuid(artifact.get("id") or artifact.get("artifact_id"))
@@ -103,8 +108,9 @@ class KnowledgeMigrationService:
                 item.client_id = client_id
                 item.source_artifact_id = artifact_id
 
-            if persist and items:
-                await self._manager.add_many(items)
+            to_store = select_items_for_persist(items, persist=persist, confirm=confirm)
+            if to_store:
+                await self._manager.add_many(to_store)
 
             extracted.extend(items)
             processed.append(artifact_id)

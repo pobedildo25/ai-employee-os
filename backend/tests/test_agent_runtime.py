@@ -153,6 +153,24 @@ async def test_runtime_handles_execution_error() -> None:
         await runtime.execute("fail")
 
 
+@pytest.mark.asyncio
+async def test_executive_graph_omits_dead_document_nodes() -> None:
+    from app.agent_runtime.runtime import build_executive_graph
+    from app.core.config import Settings
+    from tests.llm_fixtures import executive_json, mock_gateway
+
+    gateway, _ = mock_gateway(
+        Settings(),
+        executive_json(goal="g", summary="s", action="RESPOND", response_message="hi"),
+    )
+    graph = build_executive_graph(gateway)
+    nodes = set(graph.get_graph().nodes)
+    assert "document_creation" not in nodes
+    assert "document_render" not in nodes
+    assert "skill_resolver" in nodes
+    assert "executor" in nodes
+
+
 def test_build_default_graph_with_checkpoint_manager() -> None:
     manager = InMemoryCheckpointManager()
     graph = build_default_graph(checkpoint_manager=manager)

@@ -66,12 +66,16 @@ class KnowledgeMigrationSkill(BaseSkill):
                 "payload_keys": list(payload.keys()),
             }
 
+        context = dict(payload.get("context") or {})
+        if payload.get("confirm_persist") or payload.get("confirm_knowledge"):
+            context["confirm_persist"] = True
+
         result = await self._migration_service.migrate(
             client_id=UUID(str(client_id_raw)),
             artifacts=artifacts,
-            context=payload.get("context") or {},
+            context=context,
             file_bytes_by_artifact=payload.get("file_bytes_by_artifact") or {},
-            persist=bool(payload.get("persist", True)),
+            persist=bool(payload.get("persist", False)),
             trace_id=str(payload.get("trace_id") or "-"),
         )
 

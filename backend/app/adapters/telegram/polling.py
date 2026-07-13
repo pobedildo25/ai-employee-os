@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
@@ -14,6 +15,8 @@ from app.core.config import get_settings
 from app.database.session import get_session_factory
 
 logger = logging.getLogger(__name__)
+
+DbRelease = Callable[[], Awaitable[None]]
 
 
 class TelegramPollingService:
@@ -76,14 +79,30 @@ class TelegramPollingService:
                     await asyncio.sleep(5)
 
     async def _dispatch_update(self, session_factory, update: dict[str, Any]) -> None:
+        """Handle one update without holding a DB transaction across LLM (P1-I).
+
+        SQLAlchemy repos still need an AsyncSession for this process today, but we
+        commit/release after short persistence bursts (resolve, history) via
+        ``db_release`` so the connection is not held open for the entire LLM call.
+        Final commit covers any trailing writes (artifacts, etc.).
+        """
         async with session_factory() as session:
+            async def db_release() -> None:
+                if session.in_transaction():
+                    await session.commit()
+
             try:
-                bot: TelegramBot = build_telegram_bot(session)
+                bot: TelegramBot = build_telegram_bot(session, db_release=db_release)
                 await bot.process_update(update)
-                await session.commit()
+                if session.in_transaction():
+                    await session.commit()
             except Exception:
-                await session.rollback()
-                logger.exception("telegram update handling failed | update_id=%s", update.get("update_id"))
+                if session.in_transaction():
+                    await session.rollback()
+                logger.exception(
+                    "telegram update handling failed | update_id=%s",
+                    update.get("update_id"),
+                )
                 raise
 
 

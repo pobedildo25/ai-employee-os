@@ -157,3 +157,11 @@ def test_api_key_provider_hash_stable() -> None:
     raw = "aeo_test_key_value_1234567890"
     assert APIKeyProvider.hash_key(raw) == APIKeyProvider.hash_key(raw)
     assert APIKeyProvider.hash_key(raw) != raw
+
+
+def test_create_security_store_uses_in_memory_outside_production() -> None:
+    from app.core.config import Settings
+    from app.main import create_security_store
+
+    store = create_security_store(Settings(app_env="development"))
+    assert isinstance(store, InMemorySecurityProvider)

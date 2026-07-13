@@ -17,10 +17,6 @@ from app.agents.executive.agent import ExecutiveAgent
 from app.agents.executive.node import ChatResponseNode, ExecutiveAgentNode
 from app.context.builder import ContextBuilder, ContextBuilderNode, create_context_builder
 from app.llm.gateway import LLMGateway, create_llm_gateway
-from app.document_creation.creator import DocumentCreator
-from app.document_creation.generators.ast_generator import DocumentASTGenerator
-from app.document_creation.nodes.document_creation_node import DocumentCreationNode
-from app.document_creation.nodes.document_render_node import DocumentRenderNode
 from app.orchestration.nodes.orchestration_node import OrchestrationNode
 from app.planning.executor import TaskExecutor
 from app.planning.nodes.executor_node import ExecutorNode
@@ -57,15 +53,15 @@ def build_executive_graph(
     checkpoint_manager: CheckpointManager | None = None,
     learning_manager: "LearningManager | None" = None,
 ) -> CompiledStateGraph:
-    """Build executive workflow with context, skills, and decision nodes."""
+    """Build executive workflow with context, skills, and decision nodes.
+
+    Document creation/render run via skills in the executor path — dual LangGraph
+    DocumentCreationNode/DocumentRenderNode are intentionally not registered
+    (dead edges in wire_executive_workflow).
+    """
     registry = capability_registry or create_capability_registry()
     agent = ExecutiveAgent(llm_gateway, capability_registry=registry)
     planner = TaskPlanner(llm_gateway)
-    document_creator = DocumentCreator(DocumentASTGenerator(llm_gateway))
-    from app.presentation_design.designer import PresentationDesigner
-    from app.presentation_design.planner import PresentationPlanner
-
-    presentation_designer = PresentationDesigner(PresentationPlanner(llm_gateway))
     builder_instance = context_builder or create_context_builder()
     builder = GraphBuilder()
     builder.add_node(InputNode())
@@ -76,8 +72,6 @@ def build_executive_graph(
     builder.add_node(PlannerNode(planner, registry))
     builder.add_node(OrchestrationNode())
     builder.add_node(ExecutorNode(TaskExecutor(), registry))
-    builder.add_node(DocumentCreationNode(document_creator, registry, presentation_designer))
-    builder.add_node(DocumentRenderNode())
     builder.add_node(QualityGateNode(QualityGate(ReviewerAgent(llm_gateway))))
     builder.add_node(
         RevisionNode(

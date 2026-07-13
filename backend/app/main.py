@@ -9,11 +9,12 @@ from app.api.projects import router as projects_router
 from app.api.artifacts import router as artifacts_router
 from app.api.tasks import router as tasks_router
 from app.api.v1.router import api_router as api_v1_router
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.logging import new_trace_id, setup_logging
 from app.database.postgres import close_postgres
 from app.database.qdrant import close_qdrant
 from app.database.redis import close_redis
+from app.security.interfaces.security import SecurityStore
 from app.security.manager import SecurityManager
 from app.security.middleware import SecurityMiddleware
 from app.security.providers.in_memory_provider import InMemorySecurityProvider
@@ -23,19 +24,37 @@ from app.security.secrets import SecretsManager
 logger = logging.getLogger(__name__)
 
 
+def create_security_store(settings: Settings) -> SecurityStore:
+    """Production prefers Redis-backed keys/audit; tests/dev keep InMemory."""
+    if not settings.is_production:
+        return InMemorySecurityProvider()
+    try:
+        from app.database.redis import get_redis_client
+        from app.security.providers.redis_provider import RedisSecurityProvider
+
+        return RedisSecurityProvider(get_redis_client(settings))
+    except Exception as exc:
+        logger.warning("Redis security store unavailable, using in-memory | error=%s", exc)
+        return InMemorySecurityProvider()
+
+
+def _build_security_manager(settings: Settings) -> SecurityManager:
+    return SecurityManager(
+        create_security_store(settings),
+        rate_limiter=RateLimiter(
+            limit=settings.security_rate_limit,
+            window_seconds=settings.security_rate_window_seconds,
+        ),
+        secrets=SecretsManager(settings),
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     setup_logging(settings.log_level)
     if not hasattr(app.state, "security_manager"):
-        app.state.security_manager = SecurityManager(
-            InMemorySecurityProvider(),
-            rate_limiter=RateLimiter(
-                limit=settings.security_rate_limit,
-                window_seconds=settings.security_rate_window_seconds,
-            ),
-            secrets=SecretsManager(settings),
-        )
+        app.state.security_manager = _build_security_manager(settings)
     logger.info("Starting AI Employee OS backend (env=%s)", settings.app_env)
 
     from app.adapters.telegram.polling import get_polling_service
@@ -54,14 +73,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    security_manager = SecurityManager(
-        InMemorySecurityProvider(),
-        rate_limiter=RateLimiter(
-            limit=settings.security_rate_limit,
-            window_seconds=settings.security_rate_window_seconds,
-        ),
-        secrets=SecretsManager(settings),
-    )
+    security_manager = _build_security_manager(settings)
     is_production = settings.is_production
     app = FastAPI(
         title="AI Employee OS",

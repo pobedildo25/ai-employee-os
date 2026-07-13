@@ -43,9 +43,16 @@ class KnowledgeMigrationNode:
         result = await self._migration_service.migrate(
             client_id=client_id,
             artifacts=list(artifacts),
-            context=execution_context,
+            context={
+                **execution_context,
+                **(
+                    {"confirm_persist": True}
+                    if metadata.get("confirm_persist") or metadata.get("confirm_knowledge")
+                    else {}
+                ),
+            },
             file_bytes_by_artifact=metadata.get("file_bytes_by_artifact") or {},
-            persist=bool(metadata.get("persist_knowledge", True)),
+            persist=bool(metadata.get("persist_knowledge", False)),
             trace_id=state.get("trace_id", "-"),
         )
 

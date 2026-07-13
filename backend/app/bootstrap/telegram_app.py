@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.telegram.bot import TelegramBot
@@ -40,8 +42,20 @@ from app.workspace.repositories.workspace_repository import PostgresWorkspaceRep
 from app.workspace.service import WorkspaceService
 
 
-def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) -> TelegramBot:
-    """Build a Telegram bot bound to one DB session (commit per update)."""
+DbRelease = Callable[[], Awaitable[None]]
+
+
+def build_telegram_bot(
+    session: AsyncSession,
+    settings: Settings | None = None,
+    *,
+    db_release: DbRelease | None = None,
+) -> TelegramBot:
+    """Build a Telegram bot bound to one DB session.
+
+    ``db_release`` (P1-I) commits the short persistence unit of work before LLM
+    so polling does not hold an open transaction across runtime execution.
+    """
     settings = settings or get_settings()
     llm_gateway = create_llm_gateway(settings)
     client_repository = SQLAlchemyClientRepository(session)
@@ -103,4 +117,5 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         executive_agent=executive_agent,
         capability_registry=capability_registry,
         conversation_store=create_conversation_store(settings),
+        db_release=db_release,
     )
