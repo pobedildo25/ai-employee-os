@@ -7,7 +7,6 @@ import pytest
 from app.core.config import Settings
 from app.skills.capability_resolver import (
     CAPABILITY_ORDER,
-    CapabilityResolutionError,
     apply_capability_order,
     build_required_capabilities,
     resolve_capability_graph,
@@ -19,7 +18,9 @@ from app.agent_runtime.state.models import create_initial_state
 
 @pytest.fixture
 def registry():
-    return create_capability_registry(Settings(skills_enabled=True, research_enabled=True))
+    return create_capability_registry(
+        Settings(skills_enabled=True, research_enabled=True, research_allow_mock=True)
+    )
 
 
 def test_apply_capability_order_canonical() -> None:
@@ -40,6 +41,9 @@ def test_apply_capability_order_canonical() -> None:
     assert CAPABILITY_ORDER.index("presentation_design") < CAPABILITY_ORDER.index(
         "document_rendering"
     )
+    # L2: stub-only capabilities must not live in ORDER.
+    assert "data_analysis" not in CAPABILITY_ORDER
+    assert "content_analysis" not in CAPABILITY_ORDER
 
 
 def test_research_before_strategy(registry) -> None:
@@ -88,22 +92,31 @@ def test_drops_unknown_keeps_valid(registry) -> None:
     assert [c.name for c in required.resolved] == ordered
 
 
-def test_fail_closed_empty_hints(registry) -> None:
-    with pytest.raises(CapabilityResolutionError, match="no capabilities resolved"):
-        resolve_capability_graph(
-            {"action": "EXECUTE"},
-            {"required_capabilities": []},
-            registry,
-        )
+def test_empty_hints_uses_default_document_pipeline(registry) -> None:
+    ordered = resolve_capability_graph(
+        {"action": "EXECUTE"},
+        {"required_capabilities": []},
+        registry,
+    )
+    assert ordered == ["document_creation", "document_rendering"]
 
 
-def test_fail_closed_all_unknown(registry) -> None:
-    with pytest.raises(CapabilityResolutionError, match="no capabilities resolved"):
-        resolve_capability_graph(
-            {"action": "EXECUTE"},
-            {"required_capabilities": ["not_a_real_cap"]},
-            registry,
-        )
+def test_all_unknown_falls_back_to_default_pipeline(registry) -> None:
+    ordered = resolve_capability_graph(
+        {"action": "EXECUTE"},
+        {"required_capabilities": ["not_a_real_cap"]},
+        registry,
+    )
+    assert ordered == ["document_creation", "document_rendering"]
+
+
+def test_partial_hint_expands_render_dependency(registry) -> None:
+    ordered = resolve_capability_graph(
+        {"action": "EXECUTE"},
+        {"required_capabilities": ["document_creation"]},
+        registry,
+    )
+    assert ordered == ["document_creation", "document_rendering"]
 
 
 def test_respond_returns_empty_without_error(registry) -> None:
@@ -141,7 +154,7 @@ def test_skill_resolver_node_reorders_and_owns_list(registry) -> None:
     ]
 
 
-def test_skill_resolver_node_fail_closed_empty(registry) -> None:
+def test_skill_resolver_node_empty_hints_defaults(registry) -> None:
     node = SkillResolverNode(registry)
     state = create_initial_state(
         execution_id="exec-1",
@@ -157,5 +170,8 @@ def test_skill_resolver_node_fail_closed_empty(registry) -> None:
         "next_action": "execute",
     }
     update = node(state)
-    assert update["status"] == "capabilities_failed"
-    assert "no capabilities resolved" in str(update.get("error") or "")
+    assert update["status"] == "capabilities_resolved"
+    assert update["understanding"]["required_capabilities"] == [
+        "document_creation",
+        "document_rendering",
+    ]

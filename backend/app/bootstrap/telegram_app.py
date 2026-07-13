@@ -34,6 +34,7 @@ from app.repositories.sqlalchemy_artifact_repository import SQLAlchemyArtifactRe
 from app.repositories.sqlalchemy_artifact_version_repository import SQLAlchemyArtifactVersionRepository
 from app.repositories.sqlalchemy_client_repository import SQLAlchemyClientRepository
 from app.repositories.sqlalchemy_project_repository import SQLAlchemyProjectRepository
+from app.document_renderer.renderer import RenderArtifactService
 from app.research.manager import ResearchManager
 from app.services.artifact_service import ArtifactService
 from app.skills.registry import create_capability_registry
@@ -65,6 +66,7 @@ def build_telegram_bot(
     version_repository = SQLAlchemyArtifactVersionRepository(session)
     storage = MinioStorage(settings)
     artifact_service = ArtifactService(artifact_repository, version_repository, storage)
+    render_artifact_service = RenderArtifactService(artifact_service=artifact_service)
     memory_manager = create_memory_manager(
         short_term=RedisShortTermMemory(get_redis_client(settings), settings),
         long_term=PostgresLongTermMemory(session),
@@ -74,7 +76,11 @@ def build_telegram_bot(
     knowledge_manager = KnowledgeManager(PostgresKnowledgeStore(session))
     learning_manager = LearningManager(PostgresLearningStore(session), llm_gateway=llm_gateway)
     workspace_service = WorkspaceService(WorkspaceManager(PostgresWorkspaceRepository(session)))
-    capability_registry = create_capability_registry(settings)
+    capability_registry = create_capability_registry(
+        settings,
+        artifact_service=artifact_service,
+        render_artifact_service=render_artifact_service,
+    )
     intelligence_manager = ClientIntelligenceManager(
         analyzer=ClientIntelligenceAnalyzer(llm_gateway),
         builder=ClientIntelligenceBuilder(ClientIntelligenceAnalyzer(llm_gateway)),
@@ -86,7 +92,12 @@ def build_telegram_bot(
         learning_manager=learning_manager,
         workspace_service=workspace_service,
     )
-    research_manager = ResearchManager(llm_gateway=llm_gateway)
+    if settings.research_enabled:
+        from app.research.factory import create_research_manager
+
+        research_manager = create_research_manager(settings, llm_gateway=llm_gateway)
+    else:
+        research_manager = ResearchManager(llm_gateway=llm_gateway)
     context_builder = create_context_builder(
         client_repository=client_repository,
         project_repository=project_repository,
@@ -109,6 +120,7 @@ def build_telegram_bot(
         context_builder=context_builder,
         capability_registry=capability_registry,
         learning_manager=learning_manager,
+        artifact_service=artifact_service,
     )
     orchestrator = Orchestrator(store=get_execution_store_singleton())
     executive_agent = ExecutiveAgent(llm_gateway, capability_registry=capability_registry)
@@ -120,6 +132,7 @@ def build_telegram_bot(
         storage=storage,
         orchestrator=orchestrator,
         client_repository=client_repository,
+        project_repository=project_repository,
         executive_agent=executive_agent,
         capability_registry=capability_registry,
         conversation_store=create_conversation_store(settings),

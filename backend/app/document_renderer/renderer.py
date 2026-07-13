@@ -58,6 +58,10 @@ class RenderArtifactService:
         self._renderer_service = renderer_service or DocumentRendererService()
         self._artifact_service = artifact_service
 
+    @property
+    def can_persist(self) -> bool:
+        return self._artifact_service is not None
+
     async def render_and_store(self, request: RenderRequest) -> RenderResult:
         render_result = self._renderer_service.render(request)
 

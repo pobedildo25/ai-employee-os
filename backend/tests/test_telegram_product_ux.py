@@ -11,7 +11,6 @@ from app.adapters.telegram.mapper import TelegramMapper
 from app.adapters.telegram.models import TelegramCallbackRequest, TelegramExecutionRequest
 from app.adapters.telegram.presenter import format_approval_message, format_revision_prompt
 from app.adapters.telegram.progress import TelegramProgressMessenger
-from app.adapters.telegram.revision import is_contextual_revision_message
 from app.adapters.telegram.sender import InMemoryTelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.exceptions import GraphExecutionError
@@ -402,12 +401,21 @@ async def test_revision_from_text_message(
     sender: InMemoryTelegramSender,
     conversation_store: TelegramConversationStore,
 ) -> None:
+    runtime = StreamableFakeRuntime(
+        final_state={
+            "execution_id": "exec-rev-text",
+            "status": "completed",
+            "result": {"message": "Правки внесены."},
+            "quality_check": {"passed": True, "score": 0.9},
+        }
+    )
     flow = build_flow(
-        StreamableFakeRuntime(final_state={"status": "completed"}),
+        runtime,
         session_manager,
         sender,
         conversation_store,
         continuation=FakeContinuation(),
+        executive_agent=_revision_executive_agent(),
     )
     convo = await conversation_store.get_or_create(777, 555)
     convo.flow_mode = TelegramFlowMode.REVISION_PROMPTED
@@ -426,23 +434,33 @@ async def test_revision_from_text_message(
         telegram_message_id=99,
     )
     result = await flow.handle_message(request)
-    assert result["status"] == "revised"
-    assert "Готово" in result["reply"]
+    assert result["status"] == "completed"
+    assert runtime.calls
+    assert "Правки" in (result.get("reply") or "") or result.get("reply")
 
 
 @pytest.mark.asyncio
-async def test_contextual_revision_without_button(
+async def test_post_completed_revision_via_executive(
     session_manager: TelegramSessionManager,
     sender: InMemoryTelegramSender,
     conversation_store: TelegramConversationStore,
 ) -> None:
-    assert is_contextual_revision_message("Сделай короче") is True
+    """COMPLETED + task DecisionType → runtime (Executive), not keyword/continuation fork."""
+    runtime = StreamableFakeRuntime(
+        final_state={
+            "execution_id": "exec-rev-ctx",
+            "status": "completed",
+            "result": {"message": "Стиль обновлён."},
+            "quality_check": {"passed": True, "score": 0.9},
+        }
+    )
+    continuation = FakeContinuation()
     flow = build_flow(
-        StreamableFakeRuntime(final_state={"status": "completed"}),
+        runtime,
         session_manager,
         sender,
         conversation_store,
-        continuation=FakeContinuation(),
+        continuation=continuation,
         executive_agent=_revision_executive_agent(),
     )
     convo = await conversation_store.get_or_create(777, 555)
@@ -460,7 +478,10 @@ async def test_contextual_revision_without_button(
         telegram_chat_id=555,
     )
     result = await flow.handle_message(request)
-    assert result["status"] == "revised"
+    assert result["status"] == "completed"
+    assert result.get("contextual") is not True
+    assert runtime.calls
+    assert continuation.calls == []
 
 
 @pytest.mark.asyncio

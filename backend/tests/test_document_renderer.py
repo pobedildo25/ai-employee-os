@@ -229,6 +229,27 @@ async def test_document_render_skill_with_artifact(
     assert len(presentation.slides) >= 1
 
 
+@pytest.mark.asyncio
+async def test_document_render_skill_fails_closed_without_persistence(
+    brand_profile: BrandProfile,
+) -> None:
+    """When ids ask for store but ArtifactService is not wired, do not fake completed."""
+    skill = DocumentRenderSkill()
+    client_id, project_id = uuid4(), uuid4()
+    result = await skill.execute(
+        {
+            "document_ast": _sample_ast().model_dump(mode="json"),
+            "brand_profile": brand_profile.model_dump(mode="json"),
+            "output_format": "docx",
+            "client_id": str(client_id),
+            "project_id": str(project_id),
+            "store_artifact": True,
+        }
+    )
+    assert result["status"] == "failed"
+    assert "storage is not configured" in result["message"]
+
+
 def test_skill_registry_includes_document_rendering() -> None:
     registry = create_capability_registry()
     names = {capability.name for capability in registry.list_available()}

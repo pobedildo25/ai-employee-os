@@ -13,20 +13,23 @@ class ResearchSkill(BaseSkill):
         self,
         manager: ResearchManager | None = None,
         llm_gateway: Any | None = None,
+        *,
+        allow_mock: bool | None = None,
     ) -> None:
         if manager is None:
+            from app.core.config import get_settings
             from app.llm.gateway import LLMGateway, create_llm_gateway
-            from app.research.providers.mock_provider import MockProvider
-            from app.research.providers.search_provider import SearchProvider
-            from app.research.researcher import Researcher
+            from app.research.factory import create_research_manager
 
-            gateway = llm_gateway or create_llm_gateway()
+            settings = get_settings()
+            if allow_mock is True:
+                settings = settings.model_copy(
+                    update={"research_allow_mock": True, "research_provider": "mock"}
+                )
+            gateway = llm_gateway or create_llm_gateway(settings)
             if not isinstance(gateway, LLMGateway):
                 raise TypeError("llm_gateway must be an LLMGateway instance")
-            manager = ResearchManager(
-                researcher=Researcher(SearchProvider(MockProvider()), llm_gateway=gateway),
-                llm_gateway=gateway,
-            )
+            manager = create_research_manager(settings, llm_gateway=gateway)
         self._manager = manager
         super().__init__(
             metadata=SkillMetadata(

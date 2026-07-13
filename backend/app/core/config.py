@@ -58,6 +58,12 @@ class Settings(BaseSettings):
 
     research_enabled: bool = False
     semantic_memory_enabled: bool = False
+    # Escape hatches for tests only — prod must keep False until real backends (L4).
+    research_allow_mock: bool = False
+    embedding_allow_stub: bool = False
+    # Research backend: none | mock | sonar (Perplexity Sonar via OpenRouter).
+    research_provider: str = "none"
+    research_sonar_model: str = "perplexity/sonar"
 
     sentry_dsn: str | None = None
 

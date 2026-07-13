@@ -204,9 +204,13 @@ class InMemorySemanticMemory(MemoryStore):
 
 def create_semantic_memory(settings: Settings, client: QdrantClient | None = None) -> MemoryStore:
     """Build semantic store; fall back to in-memory if Qdrant client cannot be created."""
+    from app.core.feature_guards import validate_optional_stacks
+
+    validate_optional_stacks(settings)
     if not settings.semantic_memory_enabled:
         logger.info("semantic memory disabled by feature flag")
         return InMemorySemanticMemory()
+    # Enabled path still uses stub_embed until L4 — only allowed via embedding_allow_stub.
     try:
         from app.database.qdrant import get_qdrant_client
 

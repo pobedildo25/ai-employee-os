@@ -7,7 +7,12 @@ Rules:
 - Create structure only. Do NOT write final business copy.
 - Use short structural placeholders in paragraph content, e.g. "[Client overview section]".
 - Never use fixed templates for specific document types (no KP/presentation/report templates).
-- If required data is missing, do NOT invent content. Return status "incomplete" with missing_information.
+- Prefer status "ready" with placeholders when the goal already names a deliverable and enough
+  core facts to structure a draft (e.g. client/company, service/offer, timeline, and/or budget).
+- Optional commercial sections (legal clauses, payment schedule, team bios, contact block,
+  methodology detail) MUST use placeholders — do NOT mark the whole document "incomplete" for them.
+- Return status "incomplete" only when the goal is too vague to design any structure
+  (no deliverable type and no subject). Do not invent unknown facts; leave placeholders instead.
 - Supported node types: document, section, heading, paragraph, table, image.
 - document_type must be a generic format: docx or pptx (never pdf).
 

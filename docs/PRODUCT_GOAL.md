@@ -3,7 +3,7 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
-**Прогресс (2026-07-13):** Sprint A — **DONE** (P0 honesty / no silent success / allowlist+Redis security fail-closed / Stage 0 contracts). Sprint B — **DONE** (ConversationService channel-neutral; Redis FSM + session bindings fail-closed in production; no InMemory SoT in prod). Sprint C — **PARTIAL** (Resolver / Render Contract / history truncate / Redis app-level + LangGraph interrupt checkpointer done; PDF off product surface; live Executive eval harness exists but opt-in/`LIVE_EXECUTIVE_EVAL=1` — catalog ≠ live proof). Sprint D — **DONE** for ops DoD (TLS edge profile, backup schedule profile, rollback playbook in `docs/OPS_RUNBOOK.md`; Celery deferred N/A — internal Postgres task queue). Sprint E — **DONE** for assistant UX DoD (slash `/new` `/status` `/cancel` `/start`; less progress theater on single-step EXECUTE; `/cancel` during RUNNING; research/embeddings stack still open — flags remain OFF).
+**Прогресс (2026-07-13):** Sprint A–B — **DONE**. Sprint C — **PARTIAL** (live Executive proof open). Sprint D — **DONE** (ops). Sprint E — **DONE** (UX; research/embeddings deferred). Critical C1–C3, H2, Medium M1–M4, L2–L3 — **DONE**. Остаток — §14.
 
 ---
 
@@ -593,7 +593,39 @@ Pilot + resilience / security / ops (Sprint D).
 
 ---
 
-## 14. Связанные документы
+## 14. Остаток исправлений (приоритет)
+
+Актуально после live Executive re-spot + L4 ADR (2026-07-13).  
+Открытых пунктов в §14 нет. Новые gaps — только отдельным аудитом.
+
+### High / Low (закрыто)
+
+| # | Статус |
+|---|--------|
+| H3 | ✅ Live Executive spot **5/5** после правки prompt (`CREATE_PLAN` на multi-deliverable) |
+| L4 | ✅ ADR + **Sonar wired**: `docs/ADR_RESEARCH_EMBEDDINGS.md`, `SonarResearchProvider` (OpenRouter `perplexity/sonar`); enable via `RESEARCH_ENABLED=true` + `RESEARCH_PROVIDER=sonar` |
+| H1 / L1 | ✅ файлы stub/revision удалены |
+
+### Live Executive spot report (H3)
+
+Прогон: `LIVE_EXECUTIVE_EVAL=1`, OpenRouter, без Docker. После уточнения Executive prompt:
+
+| scenario_id | expected | got | result |
+|-------------|----------|-----|--------|
+| live-respond-fx | RESPOND | RESPOND | pass |
+| live-execute-kp | EXECUTE | EXECUTE | pass |
+| live-clarify-vague | ASK_CLARIFICATION | ASK_CLARIFICATION | pass |
+| live-plan-multistage | CREATE_PLAN | CREATE_PLAN | pass |
+| live-respond-consult | RESPOND | RESPOND | pass |
+
+### Pilot
+
+**Закрытый / уверенный pilot** при `research_enabled=False`, `semantic_memory_enabled=False`, Telegram allowlist.  
+Включение research/semantic — только по ADR L4 после real provider wiring.
+
+---
+
+## 15. Связанные документы
 
 - `docs/PROJECT_CONTEXT.md` — контекст и видение проекта
 - `docs/ARCHITECTURE.md` — техническая архитектура
@@ -603,3 +635,5 @@ Pilot + resilience / security / ops (Sprint D).
 - `docs/DECISION_CONTRACT.md` — Product Decision owner + Runtime Invariants (Stage 0)
 - `docs/CAPABILITY_MATRIX.md` — capability status matrix (Stage 0)
 - `docs/OPS_RUNBOOK.md` — production TLS / backups / release+rollback (Sprint D)
+- `docs/LAUNCH_PLAN.md` — локальный запуск + проверка в Telegram, затем staging/prod
+- `docs/ADR_RESEARCH_EMBEDDINGS.md` — L4 research (Sonar via OpenRouter) + embeddings decision

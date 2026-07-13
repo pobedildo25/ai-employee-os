@@ -19,6 +19,7 @@ def settings() -> Settings:
     return Settings(
         memory_enabled=True,
         semantic_memory_enabled=True,
+        embedding_allow_stub=True,
         redis_memory_ttl=3600,
         qdrant_collection="test_knowledge",
     )

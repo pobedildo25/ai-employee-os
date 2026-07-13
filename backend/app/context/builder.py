@@ -162,6 +162,10 @@ class ContextBuilderNode:
             )
 
         exec_dump = execution_context.model_dump()
+        # Keep transport identity for skills that persist artifacts (client/project ids).
+        for key in ("client_id", "project_id", "workspace_id"):
+            if transport_hints.get(key) is not None:
+                exec_dump[key] = transport_hints[key]
         core_fields = set(ExecutionContext.model_fields)
         for key, value in transport_hints.items():
             if value is not None and key not in core_fields:

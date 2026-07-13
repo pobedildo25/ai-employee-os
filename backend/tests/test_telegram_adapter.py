@@ -147,6 +147,73 @@ async def test_telegram_session_manager(session_manager: TelegramSessionManager)
 
 
 @pytest.mark.asyncio
+async def test_telegram_session_ensures_default_project(
+    workspace_service: WorkspaceService,
+) -> None:
+    from dataclasses import dataclass, field
+    from datetime import datetime, timezone
+
+    from app.schemas.project import ProjectCreate, ProjectUpdate
+
+    @dataclass
+    class _Project:
+        id: UUID
+        client_id: UUID
+        name: str
+        description: str | None = None
+        status: str = "active"
+        created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+        updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    class FakeProjectRepository:
+        def __init__(self) -> None:
+            self.items: list[_Project] = []
+
+        async def create(self, data: ProjectCreate) -> _Project:
+            project = _Project(
+                id=UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"),
+                client_id=data.client_id,
+                name=data.name,
+                description=data.description,
+                status=data.status,
+            )
+            self.items.append(project)
+            return project
+
+        async def get_by_id(self, project_id: UUID) -> _Project | None:
+            return next((p for p in self.items if p.id == project_id), None)
+
+        async def list_by_client(
+            self, client_id: UUID, skip: int = 0, limit: int = 100
+        ) -> list[_Project]:
+            matched = [p for p in self.items if p.client_id == client_id]
+            return matched[skip : skip + limit]
+
+        async def list_all(self, skip: int = 0, limit: int = 100) -> list[_Project]:
+            return self.items[skip : skip + limit]
+
+        async def update(self, project_id: UUID, data: ProjectUpdate) -> _Project | None:
+            return await self.get_by_id(project_id)
+
+        async def delete(self, project_id: UUID) -> bool:
+            return False
+
+    projects = FakeProjectRepository()
+    manager = TelegramSessionManager(
+        workspace_service=workspace_service,
+        project_repository=projects,  # type: ignore[arg-type]
+        bindings={},
+    )
+    snapshot = await manager.resolve(888)
+    assert snapshot["active_project_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert len(projects.items) == 1
+
+    again = await manager.resolve(888)
+    assert again["active_project_id"] == snapshot["active_project_id"]
+    assert len(projects.items) == 1
+
+
+@pytest.mark.asyncio
 async def test_telegram_handler(
     runtime: FakeAgentRuntime,
     session_manager: TelegramSessionManager,

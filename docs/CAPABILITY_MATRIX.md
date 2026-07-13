@@ -13,12 +13,12 @@ Rule: **off ⇒ absent from registry and from prompts.**
 | strategy | prod | `skills_enabled` | Real skill |
 | client_intelligence | prod | `skills_enabled` | Real skill |
 | analytics | prod | `skills_enabled` | Real skill |
-| research | **off** | `research_enabled=False` | Not registered when flag off |
+| research | **sonar-ready / off by default** | `research_enabled` + `research_provider=sonar` | Perplexity Sonar via OpenRouter; Mock only with `research_allow_mock` |
 | document_rendering | prod / PDF stub | `skills_enabled` | DOCX/PPTX real; PDF renderer stub |
 | quality_review | prod | `skills_enabled` | Real skill |
 | revision | prod | `skills_enabled` | Real skill |
 | knowledge_migration | prod | `skills_enabled` | Real skill |
-| DocumentSkill / AnalysisSkill / FileSkill | **stub** | — | Not in prod registry |
-| semantic memory | **off** | `semantic_memory_enabled=False` | Not a skill; product surface off |
+| DocumentSkill / AnalysisSkill / FileSkill | **removed** | — | Stub modules deleted (L1); not in tree |
+| semantic memory | **off** | `semantic_memory_enabled=False` | Not a skill; enable only per `ADR_RESEARCH_EMBEDDINGS.md` |
 
 Default flags: `skills_enabled=True`, `research_enabled=False`, `semantic_memory_enabled=False`.

@@ -51,10 +51,11 @@ def test_revision_policy_max_limit() -> None:
 
 def test_feedback_parsing() -> None:
     suggestions = parse_user_feedback("Сделай меньше текста")
-    assert any("concise" in item.lower() or "меньше" in item.lower() for item in suggestions)
+    assert suggestions == ["Сделай меньше текста"]
 
     detailed = parse_user_feedback("Добавь больше деталей")
-    assert any("detail" in item.lower() or "детал" in item.lower() for item in detailed)
+    assert detailed == ["Добавь больше деталей"]
+    assert parse_user_feedback("  ") == []
 
 
 def test_build_revision_request_merges_feedback() -> None:
@@ -66,7 +67,7 @@ def test_build_revision_request_merges_feedback() -> None:
         source_artifact_id=uuid4(),
     )
     assert request.source_artifact_id is not None
-    assert len(request.suggested_changes) >= 2
+    assert request.suggested_changes == ["Expand services", "Сделай меньше текста"]
 
 
 def test_route_after_quality_revise_once() -> None:

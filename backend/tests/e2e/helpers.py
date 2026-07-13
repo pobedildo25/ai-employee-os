@@ -55,7 +55,9 @@ def build_e2e_registry(
     registry.register(PresentationDesignSkill(llm_gateway=llm_gateway))
     registry.register(StrategySkill(llm_gateway=llm_gateway))
     if settings.research_enabled:
-        registry.register(ResearchSkill(llm_gateway=llm_gateway))
+        registry.register(
+            ResearchSkill(llm_gateway=llm_gateway, allow_mock=settings.research_allow_mock)
+        )
     registry.register(
         DocumentRenderSkill(
             artifact_service=RenderArtifactService(
@@ -139,8 +141,6 @@ def build_e2e_runtime(
     from app.planning.nodes.executor_node import ExecutorNode
     from app.planning.nodes.planner_node import PlannerNode
     from app.planning.planner import TaskPlanner
-    from app.presentation_design.designer import PresentationDesigner
-    from app.presentation_design.planner import PresentationPlanner
     from app.quality.gate import QualityGate
     from app.quality.nodes.quality_gate_node import QualityGateNode
     from app.quality.reviewer import ReviewerAgent
@@ -152,7 +152,6 @@ def build_e2e_runtime(
     agent = ExecutiveAgent(gateway, capability_registry=registry)
     planner = TaskPlanner(gateway)
     document_creator = DocumentCreator(DocumentASTGenerator(gateway))
-    presentation_designer = PresentationDesigner(PresentationPlanner(gateway))
     builder = GraphBuilder()
     builder.add_node(InputNode())
     builder.add_node(E2EContextBuilderNode(context_builder))
@@ -162,7 +161,7 @@ def build_e2e_runtime(
     builder.add_node(PlannerNode(planner, registry))
     builder.add_node(OrchestrationNode())
     builder.add_node(ExecutorNode(TaskExecutor(), registry))
-    builder.add_node(DocumentCreationNode(document_creator, registry, presentation_designer))
+    builder.add_node(DocumentCreationNode(document_creator, registry))
     builder.add_node(DocumentRenderNode())
     builder.add_node(QualityGateNode(QualityGate(ReviewerAgent(gateway))))
     builder.add_node(RevisionNode(RevisionManager(RevisionAgent(gateway)), learning_manager=learning))

@@ -1,11 +1,14 @@
 """Capability Resolver — owns the capability graph after Product Decision.
 
 Executive may suggest ``required_capabilities`` as soft hints only.
-This module validates hints against the registry, drops unknown/disabled,
-applies canonical dependency ordering, and is the sole owner of the final
-ordered list that enters Planner / direct_plan.
+This module:
+- treats hints as optional;
+- applies default linear pipelines when hints are empty;
+- expands known dependency edges;
+- drops unknown/disabled names;
+- applies canonical ordering.
 
-Fail-closed: empty result after filtering raises ``CapabilityResolutionError``.
+Fail-closed only when no usable capability remains after defaults + filtering.
 No keyword routing from raw user text.
 """
 
@@ -24,6 +27,8 @@ class CapabilityResolutionError(ValueError):
 
 
 # Canonical pipeline order (index = priority). Unknown names sort after known ones.
+# Only enableable product capabilities (plus document_generation alias of document_creation).
+# ``research`` is gated by research_enabled — kept here for ordering when registered.
 CAPABILITY_ORDER: tuple[str, ...] = (
     "research",
     "document_analysis",
@@ -31,10 +36,8 @@ CAPABILITY_ORDER: tuple[str, ...] = (
     "client_intelligence",
     "strategy_analysis",
     "analytics",
-    "data_analysis",
-    "content_analysis",
     "document_creation",
-    "document_generation",
+    "document_generation",  # alias exposed by DocumentCreationSkill
     "document_revision",
     "presentation_design",
     "document_rendering",
@@ -43,7 +46,7 @@ CAPABILITY_ORDER: tuple[str, ...] = (
 )
 
 # Explicit dependency edges (predecessor, successor) when both are present.
-# Used to document policy; ordering is driven by CAPABILITY_ORDER.
+# Used for documentation / ordering context only — not auto-chained into plans.
 CAPABILITY_DEPENDENCY_EDGES: tuple[tuple[str, str], ...] = (
     ("document_analysis", "brand_style_analysis"),
     ("brand_style_analysis", "document_generation"),
@@ -53,6 +56,22 @@ CAPABILITY_DEPENDENCY_EDGES: tuple[tuple[str, str], ...] = (
     ("research", "strategy_analysis"),
     ("strategy_analysis", "presentation_design"),
     ("presentation_design", "document_rendering"),
+    ("document_revision", "document_rendering"),
+)
+
+# Only these edges are auto-completed for linear EXECUTE pipelines.
+# Do NOT chain research→strategy→presentation (that is CREATE_PLAN territory).
+RENDER_COMPLETION_EDGES: tuple[tuple[str, str], ...] = (
+    ("document_generation", "document_rendering"),
+    ("document_creation", "document_rendering"),
+    ("presentation_design", "document_rendering"),
+    ("document_revision", "document_rendering"),
+)
+
+# Default linear deliverable pipeline when Executive gives no capability hints.
+DEFAULT_EXECUTE_PIPELINE: tuple[str, ...] = (
+    "document_creation",
+    "document_rendering",
 )
 
 _ORDER_INDEX = {name: idx for idx, name in enumerate(CAPABILITY_ORDER)}
@@ -85,6 +104,32 @@ def _extract_hint(
     return [str(name).strip() for name in raw if name and str(name).strip()]
 
 
+def _available_names(registry: CapabilityRegistry, names: list[str] | tuple[str, ...]) -> list[str]:
+    resolved = registry.find_capabilities(list(names))
+    available = {cap.name for cap in resolved}
+    return [name for name in names if name in available]
+
+
+def _expand_dependencies(names: list[str], registry: CapabilityRegistry) -> list[str]:
+    """Add registered render successors when a deliverable producer is present."""
+    present = set(names)
+    expanded = list(names)
+    for predecessor, successor in RENDER_COMPLETION_EDGES:
+        if predecessor not in present:
+            continue
+        if successor in present:
+            continue
+        if registry.get_skill_for_capability(successor) is None:
+            continue
+        expanded.append(successor)
+        present.add(successor)
+    return expanded
+
+
+def _default_pipeline(registry: CapabilityRegistry) -> list[str]:
+    return _available_names(registry, DEFAULT_EXECUTE_PIPELINE)
+
+
 def resolve_capability_graph(
     decision: dict[str, Any] | None,
     understanding: AgentUnderstanding | dict[str, Any] | None,
@@ -93,27 +138,33 @@ def resolve_capability_graph(
     """Return ordered capability names owned by the Resolver.
 
     Ownership:
-    - Executive hints are soft suggestions only.
-    - Unknown / disabled capabilities are dropped (not fatal by themselves).
-    - Remaining names are reordered by ``CAPABILITY_ORDER`` / dependency policy.
-    - Empty result after filtering fails closed with a clear error.
-    - No keyword routing from user text; no invented defaults from free text.
+    - Executive hints are optional soft suggestions.
+    - Empty hints → default linear document pipeline (if registered).
+    - Unknown / disabled capabilities are dropped.
+    - Dependency edges complete partial pipelines.
+    - Remaining names are reordered by ``CAPABILITY_ORDER``.
+    - Empty result after defaults + filtering fails closed.
+    - No keyword routing from user text.
     """
     action = normalize_action((decision or {}).get("action"))
     if not expects_capabilities(action):
         return []
 
     hint = _extract_hint(understanding)
-    if not hint:
+    if hint:
+        valid = _available_names(registry, hint)
+        seed = valid if valid else _default_pipeline(registry)
+    else:
+        seed = _default_pipeline(registry)
+
+    if not seed:
         raise CapabilityResolutionError("no capabilities resolved")
 
-    resolved = registry.find_capabilities(hint)
-    available = {cap.name for cap in resolved}
-    valid = [name for name in hint if name in available]
-    if not valid:
+    expanded = _expand_dependencies(seed, registry)
+    ordered = apply_capability_order(expanded)
+    if not ordered:
         raise CapabilityResolutionError("no capabilities resolved")
-
-    return apply_capability_order(valid)
+    return ordered
 
 
 def build_required_capabilities(

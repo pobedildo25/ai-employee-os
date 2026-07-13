@@ -128,16 +128,14 @@ class ConversationService:
                 "send_result": send_result,
             }
 
-        if convo.flow_mode == FlowMode.REVISION_PROMPTED:
-            return await self._handle_revision_feedback(request, convo, snapshot)
-
         if convo.pending_clarification is not None:
             return await self._resume_pending_clarification(request, convo, snapshot)
 
         classification = await self._classify_intent(request, snapshot)
 
-        # After a completed deliverable, route only via Executive — no keyword revision gate.
-        if convo.flow_mode == FlowMode.COMPLETED:
+        # After deliverable or revise prompt: Product Decision only (DecisionType).
+        # Never branch on capability names (revision vs new task).
+        if convo.flow_mode in {FlowMode.COMPLETED, FlowMode.REVISION_PROMPTED}:
             return await self._handle_after_completed(request, convo, snapshot, classification)
 
         if classification is not None:
@@ -156,22 +154,27 @@ class ConversationService:
         convo: ConversationState,
         snapshot: dict[str, Any],
         classification,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | _DeferredExecution:
+        """Route post-artifact / revision-prompt messages by DecisionType only."""
         if classification is None:
             return await self._degraded_intent_reply(request, snapshot, convo)
 
         if is_chat_decision(classification.decision.action.value):
+            if convo.flow_mode == FlowMode.REVISION_PROMPTED:
+                convo.flow_mode = (
+                    FlowMode.COMPLETED if convo.last_agent_state else FlowMode.IDLE
+                )
+                convo.revision_prompted_at = None
+                await self._store.save(convo)
             return await self._handle_chat_response(request, convo, classification, snapshot)
 
         if is_task_decision(classification.decision.action.value):
-            caps = list(classification.understanding.required_capabilities or [])
-            non_revision = [name for name in caps if name != "document_revision"]
-            if non_revision:
-                return await self._run_execution(
-                    request, convo, snapshot, classification=classification
-                )
-            return await self._handle_revision_feedback(
-                request, convo, snapshot, contextual=True
+            # Capability graph (incl. revision vs creation) is owned by Resolver / runtime.
+            if convo.flow_mode == FlowMode.REVISION_PROMPTED:
+                convo.revision_prompted_at = None
+                await self._store.save(convo)
+            return await self._run_execution(
+                request, convo, snapshot, classification=classification
             )
 
         return await self._degraded_intent_reply(request, snapshot, convo)
@@ -615,7 +618,75 @@ class ConversationService:
 
         artifacts = await self._artifacts.collect_artifacts(state)
         has_result = has_real_result_message(state)
+
+        if status == "waiting_user_revision":
+            if artifacts:
+                convo.flow_mode = FlowMode.REVISION_PROMPTED
+                convo.artifact_ids = [str(item.get("id")) for item in artifacts if item.get("id")]
+                await self._store.save(convo)
+                await self._set_active_artifact(
+                    convo, convo.artifact_ids[-1] if convo.artifact_ids else None
+                )
+                caption = format_delivery_caption(artifacts)
+                send_result = await self._notifier.send_artifacts(
+                    request.chat_id, artifacts, caption=caption
+                )
+                prompt = format_revision_prompt()
+                prompt_send = await self._notifier.send_text(request.chat_id, prompt)
+                reply = prompt
+                snapshot = {
+                    "active_session_id": convo.session_id,
+                    "workspace_id": convo.workspace_id,
+                }
+                await self._sessions.append_history(snapshot, role="assistant", content=reply)
+                return {
+                    "execution_id": state.get("execution_id"),
+                    "trace_id": state.get("trace_id"),
+                    "status": status,
+                    "reply": reply,
+                    "workspace_id": convo.workspace_id,
+                    "send_result": {**send_result, "prompt": prompt_send},
+                    "progress_message_id": progress_message_id,
+                }
+
+            convo.flow_mode = FlowMode.FAILED
+            await self._store.save(convo)
+            text = format_error_message(INCOMPLETE_REASON)
+            send_result = await self._notifier.send_retry(request.chat_id, text)
+            await self._sessions.append_history(
+                {"active_session_id": convo.session_id, "workspace_id": convo.workspace_id},
+                role="assistant",
+                content=text,
+            )
+            return {
+                "execution_id": state.get("execution_id"),
+                "status": "incomplete",
+                "reply": text,
+                "send_result": send_result,
+                "progress_message_id": progress_message_id,
+            }
+
         if status == "completed" and not artifacts and not has_result:
+            convo.flow_mode = FlowMode.FAILED
+            await self._store.save(convo)
+            text = format_error_message(INCOMPLETE_REASON)
+            send_result = await self._notifier.send_retry(request.chat_id, text)
+            await self._sessions.append_history(
+                {"active_session_id": convo.session_id, "workspace_id": convo.workspace_id},
+                role="assistant",
+                content=text,
+            )
+            return {
+                "execution_id": state.get("execution_id"),
+                "status": "incomplete",
+                "reply": text,
+                "send_result": send_result,
+                "progress_message_id": progress_message_id,
+            }
+
+        # Non-completed statuses without a real reply must not dump internal status/
+        # understanding paraphrase into chat.
+        if status != "completed" and not artifacts and not has_result:
             convo.flow_mode = FlowMode.FAILED
             await self._store.save(convo)
             text = format_error_message(INCOMPLETE_REASON)
@@ -648,9 +719,11 @@ class ConversationService:
             send_result = {**send_result, "reply": reply}
         else:
             completion = format_completion_message(state)
-            text = completion if status == "completed" else (
-                extract_reply_text(state) or completion
+            text = completion if has_result else (
+                extract_reply_text(state) if status == "completed" else completion
             )
+            if not has_result and (not text or text == status):
+                text = format_error_message(INCOMPLETE_REASON)
             send_result = await self._notifier.send_text(request.chat_id, text)
             reply = text
 
@@ -816,60 +889,6 @@ class ConversationService:
         send_result = await self._notifier.send_text(convo.chat_id, text)
         return {"status": "revision_prompted", "reply": text, "send_result": send_result}
 
-    async def _handle_revision_feedback(
-        self,
-        request: UserMessageRequest,
-        convo: ConversationState,
-        snapshot: dict[str, Any],
-        *,
-        contextual: bool = False,
-    ) -> dict[str, Any]:
-        if not convo.last_agent_state or self._continuation is None:
-            text = "Сначала нужно получить результат, прежде чем вносить правки."
-            send_result = await self._notifier.send_text(request.chat_id, text)
-            return {"status": "revision_unavailable", "reply": text, "send_result": send_result}
-
-        prior_state = self._enrich_prior_state_for_revision(convo)
-        try:
-            state = await self._continuation.continue_revision(
-                prior_state,
-                request.text,
-            )
-        except Exception as exc:
-            text = format_error_message(str(exc))
-            send_result = await self._notifier.send_retry(request.chat_id, text)
-            return {"status": "revision_failed", "reply": text, "send_result": send_result}
-
-        convo.last_agent_state = state
-        convo.flow_mode = FlowMode.COMPLETED
-        convo.revision_prompted_at = None
-        artifacts = await self._artifacts.collect_artifacts(state)
-        convo.artifact_ids = [str(item.get("id")) for item in artifacts if item.get("id")] or list(
-            convo.artifact_ids
-        )
-        await self._store.save(convo)
-
-        await self._set_active_artifact(convo, convo.artifact_ids[-1] if convo.artifact_ids else None)
-
-        if artifacts:
-            caption = format_delivery_caption(artifacts)
-            send_result = await self._notifier.send_artifacts(
-                request.chat_id, artifacts, caption=caption
-            )
-            reply = format_delivery_summary(artifacts, state)
-            send_result = {**send_result, "reply": reply}
-        else:
-            reply = format_completion_message(state)
-            send_result = await self._notifier.send_text(request.chat_id, reply)
-
-        await self._sessions.append_history(snapshot, role="assistant", content=str(reply))
-        return {
-            "status": "revised",
-            "contextual": contextual,
-            "reply": reply,
-            "send_result": send_result,
-        }
-
     async def _handle_retry(
         self,
         convo: ConversationState,
@@ -928,21 +947,6 @@ class ConversationService:
             metadata["active_artifact_id"] = snapshot["active_artifact_id"]
             context["active_artifact_id"] = snapshot["active_artifact_id"]
         return context, metadata
-
-    @staticmethod
-    def _enrich_prior_state_for_revision(convo: ConversationState) -> dict[str, Any]:
-        prior = dict(convo.last_agent_state or {})
-        render_result = dict(prior.get("render_result") or {})
-        if not render_result.get("artifact_id") and convo.artifact_ids:
-            render_result["artifact_id"] = convo.artifact_ids[-1]
-            prior["render_result"] = render_result
-        metadata = dict(prior.get("metadata") or {})
-        if convo.session_id and not metadata.get("session_id"):
-            metadata["session_id"] = convo.session_id
-        if convo.workspace_id and not metadata.get("workspace_id"):
-            metadata["workspace_id"] = convo.workspace_id
-        prior["metadata"] = metadata
-        return prior
 
     async def _set_active_artifact(self, convo: ConversationState, artifact_id: str | None) -> None:
         if not artifact_id or not convo.workspace_id:

@@ -10,7 +10,6 @@ from app.core.config import Settings
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMResponse
 from app.skills.base.skill import BaseSkill
-from app.skills.builtin.document_skill import DocumentSkill
 from app.skills.models import Capability, SkillMetadata
 from app.skills.registry import CapabilityRegistry, SkillAlreadyRegisteredError, create_capability_registry
 from app.skills.resolver import SkillResolverNode
@@ -40,9 +39,30 @@ class DisabledSkill(BaseSkill):
         )
 
 
+class _TestOnlyDocumentStub(BaseSkill):
+    """Local stub for registry unit tests — not a prod skill module."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            metadata=SkillMetadata(
+                id="test_document_stub",
+                name="test_document_stub",
+                description="Test-only document stub",
+                capabilities=["document_generation"],
+            ),
+            capabilities=[
+                Capability(
+                    name="document_generation",
+                    description="Создание документов",
+                    category="document",
+                ),
+            ],
+        )
+
+
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(skills_enabled=True, research_enabled=True)
+    return Settings(skills_enabled=True, research_enabled=True, research_allow_mock=True)
 
 
 @pytest.fixture
@@ -52,7 +72,9 @@ def registry(settings: Settings) -> CapabilityRegistry:
 
 def test_research_skill_gated_by_flag() -> None:
     off = create_capability_registry(Settings(skills_enabled=True, research_enabled=False))
-    on = create_capability_registry(Settings(skills_enabled=True, research_enabled=True))
+    on = create_capability_registry(
+        Settings(skills_enabled=True, research_enabled=True, research_allow_mock=True)
+    )
     assert off.get_skill("research_skill") is None
     assert on.get_skill("research_skill") is not None
     assert "research" not in {c.name for c in off.list_available()}
@@ -73,7 +95,7 @@ def test_skill_registration(registry: CapabilityRegistry) -> None:
     assert registry.get_skill("quality_review_skill") is not None
     assert registry.get_skill("revision_skill") is not None
     assert registry.get_skill("knowledge_migration_skill") is not None
-    # Stub BaseSkill modules are not registered in prod registry.
+    # Stub BaseSkill modules were removed from the tree (L1).
     assert registry.get_skill("document_skill") is None
     assert registry.get_skill("analysis_skill") is None
     assert registry.get_skill("file_skill") is None
@@ -120,7 +142,7 @@ def test_metadata_validation(registry: CapabilityRegistry) -> None:
 
 def test_disabled_skill_excluded_from_available(settings: Settings) -> None:
     registry = CapabilityRegistry(settings)
-    registry.register(DocumentSkill())
+    registry.register(_TestOnlyDocumentStub())
     registry.register(DisabledSkill())
 
     available = {capability.name for capability in registry.list_available()}
@@ -148,6 +170,19 @@ async def test_stub_skills_not_in_prod_registry(registry: CapabilityRegistry) ->
     assert skill.name() == "document_creation_skill"
 
 
+def test_removed_stub_skill_modules_are_gone() -> None:
+    """L1: stub skill files deleted — cannot be imported from app.skills.builtin."""
+    import importlib
+
+    for module in (
+        "app.skills.builtin.document_skill",
+        "app.skills.builtin.analysis_skill",
+        "app.skills.builtin.file_skill",
+    ):
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(module)
+
+
 def test_skill_resolver_node(registry: CapabilityRegistry) -> None:
     node = SkillResolverNode(registry)
     state = create_initial_state(
@@ -168,10 +203,15 @@ def test_skill_resolver_node(registry: CapabilityRegistry) -> None:
     required = update["required_capabilities"]
 
     assert required["requested"] == ["document_generation"]
-    assert len(required["resolved"]) == 1
-    assert required["resolved"][0]["name"] == "document_generation"
+    assert [c["name"] for c in required["resolved"]] == [
+        "document_generation",
+        "document_rendering",
+    ]
     assert required["unknown"] == []
-    assert update["understanding"]["required_capabilities"] == ["document_generation"]
+    assert update["understanding"]["required_capabilities"] == [
+        "document_generation",
+        "document_rendering",
+    ]
 
 
 def test_skill_resolver_drops_unknown_capability(registry: CapabilityRegistry) -> None:
@@ -192,7 +232,10 @@ def test_skill_resolver_drops_unknown_capability(registry: CapabilityRegistry) -
 
     update = node(state)
     assert update["status"] == "capabilities_resolved"
-    assert update["understanding"]["required_capabilities"] == ["document_generation"]
+    assert update["understanding"]["required_capabilities"] == [
+        "document_generation",
+        "document_rendering",
+    ]
     assert "unknown_capability" in update["required_capabilities"]["unknown"]
 
 

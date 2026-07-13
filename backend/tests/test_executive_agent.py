@@ -99,9 +99,13 @@ async def test_clear_proposal_request_executes_without_planner(settings: Setting
 
     assert result["decision"]["action"] == DecisionType.EXECUTE.value
     assert result["task_plan"] is not None
-    assert len(result["task_plan"]["steps"]) == 1
-    # Executive only — non-document EXECUTE skips LLM reviewer.
-    assert len(provider.calls) == 1
+    caps = [step["capability"] for step in result["task_plan"]["steps"]]
+    # Resolver expands document_generation → document_rendering for linear EXECUTE.
+    assert caps[0] == "document_generation"
+    assert "document_rendering" in caps
+    # First LLM call is Executive; quality review may follow after the render chain.
+    assert len(provider.calls) >= 1
+    assert "NOVA" in provider.calls[0].messages[0].content
 
 
 @pytest.mark.asyncio

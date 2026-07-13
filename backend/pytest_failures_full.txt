@@ -1,0 +1,381 @@
+﻿FFFFFFFF                                                                 [100%]
+================================== FAILURES ===================================
+____________ test_clear_proposal_request_executes_without_planner _____________
+app\agent_runtime\runtime.py:149: in execute
+    result = await self._graph.ainvoke(state, config)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\pregel\main.py:4090: in ainvoke
+    async for chunk in self.astream(
+.venv\Lib\site-packages\langgraph\pregel\main.py:3440: in astream
+    async for _ in runner.atick(
+.venv\Lib\site-packages\langgraph\pregel\_runner.py:396: in atick
+    await arun_with_retry(
+.venv\Lib\site-packages\langgraph\pregel\_retry.py:744: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:733: in ainvoke
+    input = await asyncio.create_task(
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:501: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\revision\nodes\revision_node.py:97: in __call__
+    result = await self._manager.apply_revision(
+app\revision\manager.py:66: in apply_revision
+    planned = await self._agent.revise(
+app\revision\agent.py:90: in revise
+    raise RevisionAgentError(
+E   app.revision.agent.RevisionAgentError: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+E   During task with name 'revision' and id '59182649-82e0-0ee6-5c7f-a0d6326d5158'
+
+The above exception was the direct cause of the following exception:
+tests\test_executive_agent.py:96: in test_clear_proposal_request_executes_without_planner
+    result = await runtime.execute(
+app\agent_runtime\runtime.py:166: in execute
+    raise GraphExecutionError(
+E   app.agent_runtime.exceptions.GraphExecutionError: Workflow execution failed: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+------------------------------ Captured log call ------------------------------
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=051a764563f64792 attempt=1 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=051a764563f64792 attempt=2 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=051a764563f64792 attempt=3 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+ERROR    app.agent_runtime.runtime:runtime.py:160 graph execution failed | execution_id=54a83e09b9cb4b1fac56e516d239aeec trace_id=051a764563f64792 status=failed error=Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+_____________________ test_executive_graph_full_workflow ______________________
+app\agent_runtime\runtime.py:149: in execute
+    result = await self._graph.ainvoke(state, config)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\pregel\main.py:4090: in ainvoke
+    async for chunk in self.astream(
+.venv\Lib\site-packages\langgraph\pregel\main.py:3440: in astream
+    async for _ in runner.atick(
+.venv\Lib\site-packages\langgraph\pregel\_runner.py:396: in atick
+    await arun_with_retry(
+.venv\Lib\site-packages\langgraph\pregel\_retry.py:744: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:733: in ainvoke
+    input = await asyncio.create_task(
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:501: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\revision\nodes\revision_node.py:97: in __call__
+    result = await self._manager.apply_revision(
+app\revision\manager.py:66: in apply_revision
+    planned = await self._agent.revise(
+app\revision\agent.py:90: in revise
+    raise RevisionAgentError(
+E   app.revision.agent.RevisionAgentError: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+E   During task with name 'revision' and id '83976325-783b-cabf-35c7-f61265ef4c6a'
+
+The above exception was the direct cause of the following exception:
+tests\test_executive_agent.py:212: in test_executive_graph_full_workflow
+    result = await runtime.execute(
+app\agent_runtime\runtime.py:166: in execute
+    raise GraphExecutionError(
+E   app.agent_runtime.exceptions.GraphExecutionError: Workflow execution failed: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+------------------------------ Captured log call ------------------------------
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=trace-exec attempt=1 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=trace-exec attempt=2 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=trace-exec attempt=3 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+ERROR    app.agent_runtime.runtime:runtime.py:160 graph execution failed | execution_id=3a883733dda94baa9c11d2ee8baa0d71 trace_id=trace-exec status=failed error=Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+_________ test_langgraph_execute_uses_direct_plan_without_llm_planner _________
+app\agent_runtime\runtime.py:149: in execute
+    result = await self._graph.ainvoke(state, config)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\pregel\main.py:4090: in ainvoke
+    async for chunk in self.astream(
+.venv\Lib\site-packages\langgraph\pregel\main.py:3440: in astream
+    async for _ in runner.atick(
+.venv\Lib\site-packages\langgraph\pregel\_runner.py:396: in atick
+    await arun_with_retry(
+.venv\Lib\site-packages\langgraph\pregel\_retry.py:744: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:733: in ainvoke
+    input = await asyncio.create_task(
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:501: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\revision\nodes\revision_node.py:97: in __call__
+    result = await self._manager.apply_revision(
+app\revision\manager.py:66: in apply_revision
+    planned = await self._agent.revise(
+app\revision\agent.py:90: in revise
+    raise RevisionAgentError(
+E   app.revision.agent.RevisionAgentError: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+E   During task with name 'revision' and id 'bdc6483a-79f5-630b-c7a8-ee72e8e4d689'
+
+The above exception was the direct cause of the following exception:
+tests\test_planning.py:291: in test_langgraph_execute_uses_direct_plan_without_llm_planner
+    result = await runtime.execute("╧юфуюЄют№ ╩╧ фы  ъышхэЄр")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\agent_runtime\runtime.py:166: in execute
+    raise GraphExecutionError(
+E   app.agent_runtime.exceptions.GraphExecutionError: Workflow execution failed: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+------------------------------ Captured log call ------------------------------
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=c0af4f09bf224fa0 attempt=1 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=c0af4f09bf224fa0 attempt=2 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=c0af4f09bf224fa0 attempt=3 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+ERROR    app.agent_runtime.runtime:runtime.py:160 graph execution failed | execution_id=6009e5319a61469298c216cc30fc324c trace_id=c0af4f09bf224fa0 status=failed error=Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+_______________ test_langgraph_create_plan_invokes_llm_planner ________________
+app\agent_runtime\runtime.py:149: in execute
+    result = await self._graph.ainvoke(state, config)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\pregel\main.py:4090: in ainvoke
+    async for chunk in self.astream(
+.venv\Lib\site-packages\langgraph\pregel\main.py:3440: in astream
+    async for _ in runner.atick(
+.venv\Lib\site-packages\langgraph\pregel\_runner.py:396: in atick
+    await arun_with_retry(
+.venv\Lib\site-packages\langgraph\pregel\_retry.py:744: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:733: in ainvoke
+    input = await asyncio.create_task(
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:501: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\revision\nodes\revision_node.py:97: in __call__
+    result = await self._manager.apply_revision(
+app\revision\manager.py:66: in apply_revision
+    planned = await self._agent.revise(
+app\revision\agent.py:90: in revise
+    raise RevisionAgentError(
+E   app.revision.agent.RevisionAgentError: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+E   During task with name 'revision' and id '607b8387-441a-7da3-ab1f-35187eabae68'
+
+The above exception was the direct cause of the following exception:
+tests\test_planning.py:344: in test_langgraph_create_plan_invokes_llm_planner
+    result = await runtime.execute(
+app\agent_runtime\runtime.py:166: in execute
+    raise GraphExecutionError(
+E   app.agent_runtime.exceptions.GraphExecutionError: Workflow execution failed: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+------------------------------ Captured log call ------------------------------
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=98e9d805088c4912 attempt=1 error=Revision response did not include a valid AST
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=98e9d805088c4912 attempt=2 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=98e9d805088c4912 attempt=3 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+ERROR    app.agent_runtime.runtime:runtime.py:160 graph execution failed | execution_id=d32a0b279e7b451c81d2671f26581f51 trace_id=98e9d805088c4912 status=failed error=Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+_____________________ test_registry_integration_in_graph ______________________
+app\agent_runtime\runtime.py:149: in execute
+    result = await self._graph.ainvoke(state, config)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\pregel\main.py:4090: in ainvoke
+    async for chunk in self.astream(
+.venv\Lib\site-packages\langgraph\pregel\main.py:3440: in astream
+    async for _ in runner.atick(
+.venv\Lib\site-packages\langgraph\pregel\_runner.py:396: in atick
+    await arun_with_retry(
+.venv\Lib\site-packages\langgraph\pregel\_retry.py:744: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:733: in ainvoke
+    input = await asyncio.create_task(
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:501: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\revision\nodes\revision_node.py:97: in __call__
+    result = await self._manager.apply_revision(
+app\revision\manager.py:66: in apply_revision
+    planned = await self._agent.revise(
+app\revision\agent.py:90: in revise
+    raise RevisionAgentError(
+E   app.revision.agent.RevisionAgentError: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+E   During task with name 'revision' and id '61de0b4e-3ba6-5004-4e2b-b04147a5ae12'
+
+The above exception was the direct cause of the following exception:
+tests\test_skills_registry.py:220: in test_registry_integration_in_graph
+    result = await runtime.execute("╧ЁюрэрышчшЁєщ фрээ√х")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\agent_runtime\runtime.py:166: in execute
+    raise GraphExecutionError(
+E   app.agent_runtime.exceptions.GraphExecutionError: Workflow execution failed: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+------------------------------ Captured log call ------------------------------
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=6769165448904db8 attempt=1 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=6769165448904db8 attempt=2 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=6769165448904db8 attempt=3 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+ERROR    app.agent_runtime.runtime:runtime.py:160 graph execution failed | execution_id=574677438b234b889a358cf899e7b6fe trace_id=6769165448904db8 status=failed error=Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+__________________ test_langgraph_orchestration_integration ___________________
+app\agent_runtime\runtime.py:149: in execute
+    result = await self._graph.ainvoke(state, config)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\pregel\main.py:4090: in ainvoke
+    async for chunk in self.astream(
+.venv\Lib\site-packages\langgraph\pregel\main.py:3440: in astream
+    async for _ in runner.atick(
+.venv\Lib\site-packages\langgraph\pregel\_runner.py:396: in atick
+    await arun_with_retry(
+.venv\Lib\site-packages\langgraph\pregel\_retry.py:744: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:733: in ainvoke
+    input = await asyncio.create_task(
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:501: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\revision\nodes\revision_node.py:97: in __call__
+    result = await self._manager.apply_revision(
+app\revision\manager.py:66: in apply_revision
+    planned = await self._agent.revise(
+app\revision\agent.py:90: in revise
+    raise RevisionAgentError(
+E   app.revision.agent.RevisionAgentError: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+E   During task with name 'revision' and id 'e2b91b2e-dd30-986b-a074-8e5cc9645b03'
+
+The above exception was the direct cause of the following exception:
+tests\test_orchestration.py:327: in test_langgraph_orchestration_integration
+    result = await runtime.execute("╧юфуюЄют№ ╩╧ фы  ъышхэЄр")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\agent_runtime\runtime.py:166: in execute
+    raise GraphExecutionError(
+E   app.agent_runtime.exceptions.GraphExecutionError: Workflow execution failed: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+------------------------------ Captured log call ------------------------------
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=d77909f7966948fc attempt=1 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=d77909f7966948fc attempt=2 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=d77909f7966948fc attempt=3 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+ERROR    app.agent_runtime.runtime:runtime.py:160 graph execution failed | execution_id=82d78f18053b47aa8d163b73eed977eb trace_id=d77909f7966948fc status=failed error=Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+______________ test_document_creation_with_brand_style_pipeline _______________
+app\agent_runtime\runtime.py:149: in execute
+    result = await self._graph.ainvoke(state, config)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\pregel\main.py:4090: in ainvoke
+    async for chunk in self.astream(
+.venv\Lib\site-packages\langgraph\pregel\main.py:3440: in astream
+    async for _ in runner.atick(
+.venv\Lib\site-packages\langgraph\pregel\_runner.py:396: in atick
+    await arun_with_retry(
+.venv\Lib\site-packages\langgraph\pregel\_retry.py:744: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:733: in ainvoke
+    input = await asyncio.create_task(
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:501: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\revision\nodes\revision_node.py:97: in __call__
+    result = await self._manager.apply_revision(
+app\revision\manager.py:66: in apply_revision
+    planned = await self._agent.revise(
+app\revision\agent.py:90: in revise
+    raise RevisionAgentError(
+E   app.revision.agent.RevisionAgentError: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+E   During task with name 'revision' and id 'a6f158c1-9150-3342-e6e3-aff3b65ea583'
+
+The above exception was the direct cause of the following exception:
+tests\e2e\test_scenario_01_document_brand.py:89: in test_document_creation_with_brand_style_pipeline
+    result = await runtime.execute(
+app\agent_runtime\runtime.py:166: in execute
+    raise GraphExecutionError(
+E   app.agent_runtime.exceptions.GraphExecutionError: Workflow execution failed: Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+------------------------------ Captured log call ------------------------------
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=513ae508127048f7 attempt=1 error=Revision response did not include a valid AST
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=513ae508127048f7 attempt=2 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=513ae508127048f7 attempt=3 error=Invalid JSON: Expecting value: line 1 column 1 (char 0)
+ERROR    app.agent_runtime.runtime:runtime.py:160 graph execution failed | execution_id=4c69af00d3974b5d98e52baae2c29e7e trace_id=513ae508127048f7 status=failed error=Failed to obtain valid revision after 3 attempts: Invalid JSON: Expecting value: line 1 column 1 (char 0)
+_______________ test_marketing_strategy_flow_with_presentation ________________
+app\agent_runtime\runtime.py:149: in execute
+    result = await self._graph.ainvoke(state, config)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\pregel\main.py:4090: in ainvoke
+    async for chunk in self.astream(
+.venv\Lib\site-packages\langgraph\pregel\main.py:3440: in astream
+    async for _ in runner.atick(
+.venv\Lib\site-packages\langgraph\pregel\_runner.py:396: in atick
+    await arun_with_retry(
+.venv\Lib\site-packages\langgraph\pregel\_retry.py:744: in arun_with_retry
+    return await task.proc.ainvoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:733: in ainvoke
+    input = await asyncio.create_task(
+.venv\Lib\site-packages\langgraph\_internal\_runnable.py:501: in ainvoke
+    ret = await self.afunc(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+app\revision\nodes\revision_node.py:97: in __call__
+    result = await self._manager.apply_revision(
+app\revision\manager.py:66: in apply_revision
+    planned = await self._agent.revise(
+app\revision\agent.py:90: in revise
+    raise RevisionAgentError(
+E   app.revision.agent.RevisionAgentError: Failed to obtain valid revision after 3 attempts: Revision response did not include a valid AST
+E   During task with name 'revision' and id '6cb7d62f-3f01-076e-43ab-edbb53197285'
+
+The above exception was the direct cause of the following exception:
+tests\e2e\test_scenario_02_marketing_strategy.py:43: in test_marketing_strategy_flow_with_presentation
+    result = await runtime.execute(
+app\agent_runtime\runtime.py:166: in execute
+    raise GraphExecutionError(
+E   app.agent_runtime.exceptions.GraphExecutionError: Workflow execution failed: Failed to obtain valid revision after 3 attempts: Revision response did not include a valid AST
+------------------------------ Captured log call ------------------------------
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.llm.providers.openrouter:openrouter.py:24 OpenRouter API key is not configured
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=1878811947be488e attempt=1 error=Revision response did not include a valid AST
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=1878811947be488e attempt=2 error=Revision response did not include a valid AST
+WARNING  app.revision.agent:agent.py:77 revision parse failed | trace_id=1878811947be488e attempt=3 error=Revision response did not include a valid AST
+ERROR    app.agent_runtime.runtime:runtime.py:160 graph execution failed | execution_id=25259336ac7944f0afba50796d441e43 trace_id=1878811947be488e status=failed error=Failed to obtain valid revision after 3 attempts: Revision response did not include a valid AST
+=========================== short test summary info ===========================
+FAILED tests/test_executive_agent.py::test_clear_proposal_request_executes_without_planner
+FAILED tests/test_executive_agent.py::test_executive_graph_full_workflow - ap...
+FAILED tests/test_planning.py::test_langgraph_execute_uses_direct_plan_without_llm_planner
+FAILED tests/test_planning.py::test_langgraph_create_plan_invokes_llm_planner
+FAILED tests/test_skills_registry.py::test_registry_integration_in_graph - ap...
+FAILED tests/test_orchestration.py::test_langgraph_orchestration_integration
+FAILED tests/e2e/test_scenario_01_document_brand.py::test_document_creation_with_brand_style_pipeline
+FAILED tests/e2e/test_scenario_02_marketing_strategy.py::test_marketing_strategy_flow_with_presentation
+8 failed in 4.75s

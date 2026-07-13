@@ -115,6 +115,12 @@ class DocumentRenderSkill(BaseSkill):
         if store_artifact is None:
             store_artifact = bool(request.client_id and request.project_id)
         if store_artifact and request.client_id and request.project_id:
+            if not self._artifact_service.can_persist:
+                return {
+                    "status": "failed",
+                    "skill": self.name(),
+                    "message": "document render storage is not configured",
+                }
             try:
                 render_result = await self._artifact_service.render_and_store(request)
             except Exception as exc:
@@ -122,6 +128,17 @@ class DocumentRenderSkill(BaseSkill):
                     "status": "failed",
                     "skill": self.name(),
                     "message": f"document render failed: {exc}",
+                }
+            if render_result.artifact_id is None:
+                storage_error = (render_result.metadata or {}).get("storage_error")
+                return {
+                    "status": "failed",
+                    "skill": self.name(),
+                    "message": (
+                        f"document render failed to persist artifact"
+                        + (f": {storage_error}" if storage_error else "")
+                    ),
+                    "render_result": render_result.model_dump(mode="json", exclude={"file_bytes"}),
                 }
         else:
             try:

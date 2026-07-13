@@ -41,6 +41,15 @@ def test_parse_missing_information_response() -> None:
     assert "нет стоимости" in missing
 
 
+def test_document_creation_prompt_prefers_placeholders_over_incomplete() -> None:
+    from app.document_creation.prompt import DOCUMENT_CREATION_SYSTEM_PROMPT
+
+    prompt = DOCUMENT_CREATION_SYSTEM_PROMPT
+    assert 'Prefer status "ready"' in prompt
+    assert "placeholders" in prompt.lower()
+    assert "too vague" in prompt
+
+
 def test_ast_validator(settings: Settings) -> None:
     document_ast, _, _, _ = parse_creation_response(creation_ast_json())
     assert document_ast is not None

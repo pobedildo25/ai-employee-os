@@ -26,7 +26,12 @@ def learning_manager(settings: Settings) -> LearningManager:
 @pytest.fixture
 def e2e_runtime_factory(settings, artifact_service, learning_manager):
     def _factory(*responses: str, learning: LearningManager | None = None, research_enabled: bool = False):
-        run_settings = settings.model_copy(update={"research_enabled": research_enabled})
+        run_settings = settings.model_copy(
+            update={
+                "research_enabled": research_enabled,
+                "research_allow_mock": research_enabled,
+            }
+        )
         gateway, provider = mock_gateway(run_settings, *responses)
         runtime, registry, _ = build_e2e_runtime(
             gateway,

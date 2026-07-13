@@ -167,6 +167,45 @@ async def test_quality_review_skill(settings: Settings) -> None:
     assert result["review_result"]["status"] == ReviewStatus.PASS.value
 
 
+@pytest.mark.asyncio
+async def test_quality_review_skill_fail_closed_on_llm_degrade(settings: Settings) -> None:
+    from app.llm.exceptions import LLMProviderError
+    from app.llm.gateway import LLMGateway
+    from tests.test_llm_gateway import MockProvider
+
+    provider = MockProvider(
+        errors=[
+            LLMProviderError("primary down"),
+            LLMProviderError("fallback down"),
+            LLMProviderError("secondary down"),
+        ]
+    )
+    skill = QualityReviewSkill(gate=QualityGate(ReviewerAgent(LLMGateway(provider, settings))))
+    result = await skill.execute(
+        {
+            "user_goal": "Подготовь документ",
+            "decision": {"action": "EXECUTE"},
+            "document_ast": {
+                "root": {
+                    "node_type": "document",
+                    "children": [
+                        {
+                            "node_type": "section",
+                            "children": [{"node_type": "heading", "content": "Title", "children": []}],
+                        }
+                    ],
+                },
+                "node_count": 3,
+            },
+            "render_result": {"metadata": {"format": "docx"}},
+        }
+    )
+
+    assert result["status"] == "failed"
+    assert result["review_result"]["metadata"].get("degraded") is True
+    assert result["review_result"]["status"] == ReviewStatus.ESCALATE.value
+
+
 def test_skill_registry_includes_quality_review() -> None:
     registry = create_capability_registry()
     names = {capability.name for capability in registry.list_available()}

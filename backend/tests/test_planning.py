@@ -194,8 +194,10 @@ def test_skill_result_succeeded_missing_status_is_failure() -> None:
 
     assert _skill_result_succeeded({"skill": "x"}) is False
     assert _skill_result_succeeded({"status": "completed"}) is True
-    assert _skill_result_succeeded("ok") is True
-    assert _skill_result_succeeded(None) is True
+    assert _skill_result_succeeded({"status": "failed"}) is False
+    assert _skill_result_succeeded("ok") is False
+    assert _skill_result_succeeded(None) is False
+    assert _skill_result_succeeded(42) is False
 
 
 @pytest.mark.asyncio

@@ -371,14 +371,15 @@ def test_executive_prompt_prefers_assistant_like_respond() -> None:
     prompt = EXECUTIVE_SYSTEM_PROMPT
     assert "RESPOND" in prompt
     assert "modern AI assistant" in prompt
-    assert "CREATE_PLAN — only for objectively multi-stage" in prompt
+    assert "CREATE_PLAN — multi-stage work" in prompt
     assert "Never match keywords" in prompt
     assert "prefer a direct useful reply" in prompt
     assert "draft-first" in prompt or "Prefer draft-first" in prompt
     assert "up-to-the-minute" in prompt or "real-time" in prompt
     assert "Capability Resolver owns" in prompt
     assert "≥2" not in prompt
-    assert "linear multi-skill" in prompt.lower() or "Linear multi-skill" in prompt
+    assert "multiple distinct deliverables" in prompt.lower()
+    assert "linear" in prompt.lower()
 
 
 def test_direct_plan_builder_for_execute_capabilities() -> None:

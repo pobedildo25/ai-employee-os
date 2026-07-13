@@ -109,7 +109,12 @@ class CapabilityRegistry:
         ]
 
 
-def create_capability_registry(settings: Settings | None = None) -> CapabilityRegistry:
+def create_capability_registry(
+    settings: Settings | None = None,
+    *,
+    artifact_service: "ArtifactService | None" = None,
+    render_artifact_service: "RenderArtifactService | None" = None,
+) -> CapabilityRegistry:
     from app.skills.builtin.brand_style_analysis_skill import BrandStyleAnalysisSkill
     from app.skills.builtin.document_analysis_skill import DocumentAnalysisSkill
     from app.skills.builtin.document_creation_skill import DocumentCreationSkill
@@ -123,8 +128,16 @@ def create_capability_registry(settings: Settings | None = None) -> CapabilityRe
     from app.skills.builtin.analytics_skill import AnalyticsSkill
     from app.skills.builtin.research_skill import ResearchSkill
 
+    from app.core.feature_guards import validate_optional_stacks
+    from app.document_renderer.renderer import RenderArtifactService
+
     settings = settings or get_settings()
+    validate_optional_stacks(settings)
     registry = CapabilityRegistry(settings)
+
+    render_svc = render_artifact_service
+    if render_svc is None and artifact_service is not None:
+        render_svc = RenderArtifactService(artifact_service=artifact_service)
 
     if settings.skills_enabled:
         # Real skills only — stub BaseSkill implementations stay out of prod registry.
@@ -136,8 +149,19 @@ def create_capability_registry(settings: Settings | None = None) -> CapabilityRe
         registry.register(ClientIntelligenceSkill())
         registry.register(AnalyticsSkill())
         if settings.research_enabled:
-            registry.register(ResearchSkill())
-        registry.register(DocumentRenderSkill())
+            from app.research.factory import create_research_manager
+
+            registry.register(
+                ResearchSkill(
+                    manager=create_research_manager(settings),
+                    allow_mock=settings.research_allow_mock,
+                )
+            )
+        registry.register(
+            DocumentRenderSkill(artifact_service=render_svc)
+            if render_svc is not None
+            else DocumentRenderSkill()
+        )
         registry.register(QualityReviewSkill())
         registry.register(RevisionSkill())
         registry.register(KnowledgeMigrationSkill())

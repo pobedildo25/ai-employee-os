@@ -225,15 +225,23 @@ def get_analytics_manager(
 @lru_cache
 def get_research_manager_singleton() -> ResearchManager:
     """Process-local research cache so GET /research/{id} can resolve prior runs."""
-    from app.research.providers.mock_provider import MockProvider
-    from app.research.providers.search_provider import SearchProvider
-    from app.research.researcher import Researcher
+    from app.core.config import get_settings
+    from app.research.factory import create_research_manager
 
-    gateway = create_llm_gateway()
-    return ResearchManager(
-        researcher=Researcher(SearchProvider(MockProvider()), llm_gateway=gateway),
-        llm_gateway=gateway,
-    )
+    settings = get_settings()
+    if not settings.research_enabled:
+        # DI wiring when flag off — manager exists but API/registry refuse use.
+        from app.research.manager import ResearchManager
+        from app.research.providers.mock_provider import MockProvider
+        from app.research.providers.search_provider import SearchProvider
+        from app.research.researcher import Researcher
+
+        gateway = create_llm_gateway()
+        return ResearchManager(
+            researcher=Researcher(SearchProvider(MockProvider()), llm_gateway=gateway),
+            llm_gateway=gateway,
+        )
+    return create_research_manager(settings, llm_gateway=create_llm_gateway(settings))
 
 
 def get_research_manager(

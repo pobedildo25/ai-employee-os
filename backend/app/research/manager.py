@@ -10,6 +10,15 @@ from app.research.researcher import Researcher
 from app.research.validators.research_validator import ResearchValidator, result_to_document_ast
 
 
+def _provider_is_mock(provider: ResearchProvider | None) -> bool:
+    if provider is None:
+        return True
+    if isinstance(provider, MockProvider):
+        return True
+    backend = getattr(provider, "_backend", None)
+    return isinstance(backend, MockProvider)
+
+
 class ResearchManager(ResearchManagerInterface):
     """Runs research and keeps an in-memory result cache for API/context (not Knowledge)."""
 
@@ -27,6 +36,9 @@ class ResearchManager(ResearchManagerInterface):
         self._results: dict[str, ResearchResult] = {}
         self._latest_by_client: dict[str, str] = {}
 
+    def _is_mock_backend(self) -> bool:
+        return _provider_is_mock(getattr(self._researcher, "_provider", None))
+
     async def run(self, request: ResearchRequest, *, trace_id: str = "-") -> ResearchResult:
         errors = self._validator.validate_request(request)
         if errors:
@@ -34,7 +46,7 @@ class ResearchManager(ResearchManagerInterface):
                 query=request.query,
                 research_type=request.research_type,
                 analysis_warnings=errors,
-                metadata={"status": "invalid_request"},
+                metadata={"status": "invalid_request", "strategy_ready": False},
             )
 
         result = await self._researcher.research(request, trace_id=trace_id)
@@ -42,6 +54,7 @@ class ResearchManager(ResearchManagerInterface):
         result.analysis_warnings = warnings
         if warnings and (not result.sources or not result.findings):
             result.metadata["status"] = "incomplete"
+            result.metadata["strategy_ready"] = False
             self._store(result, client_id=request.client_id)
             return result
 
@@ -49,9 +62,17 @@ class ResearchManager(ResearchManagerInterface):
         result.document_ast = document_ast.model_dump(mode="json")
         memory_items = prepare_research_memory_items(result, client_id=request.client_id)
         result.memory_candidates = [item.model_dump(mode="json") for item in memory_items]
-        result.metadata["status"] = "ready"
         result.metadata["document_type"] = "docx"
-        result.metadata["strategy_ready"] = True
+
+        # Mock / fixture providers must never look like production-ready research.
+        if self._is_mock_backend():
+            result.metadata["status"] = "mock_not_production"
+            result.metadata["strategy_ready"] = False
+            result.metadata["provider"] = "mock"
+        else:
+            result.metadata["status"] = "ready"
+            result.metadata["strategy_ready"] = True
+
         self._store(result, client_id=request.client_id)
         return result
 

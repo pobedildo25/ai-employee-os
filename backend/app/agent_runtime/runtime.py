@@ -33,6 +33,7 @@ from app.skills.resolver import SkillResolverNode
 
 if TYPE_CHECKING:
     from app.learning.manager import LearningManager
+    from app.services.artifact_service import ArtifactService
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,7 @@ def build_executive_graph(
     capability_registry: CapabilityRegistry | None = None,
     checkpoint_manager: CheckpointManager | None = None,
     learning_manager: "LearningManager | None" = None,
+    artifact_service: "ArtifactService | None" = None,
 ) -> CompiledStateGraph:
     """Build executive workflow with context, skills, and decision nodes.
 
@@ -59,10 +61,24 @@ def build_executive_graph(
     DocumentCreationNode/DocumentRenderNode are intentionally not registered
     (dead edges in wire_executive_workflow).
     """
-    registry = capability_registry or create_capability_registry()
+    from app.document_renderer.renderer import RenderArtifactService
+
+    registry = capability_registry or create_capability_registry(
+        artifact_service=artifact_service,
+    )
     agent = ExecutiveAgent(llm_gateway, capability_registry=registry)
     planner = TaskPlanner(llm_gateway)
     builder_instance = context_builder or create_context_builder()
+    render_artifact_service = (
+        RenderArtifactService(artifact_service=artifact_service)
+        if artifact_service is not None
+        else None
+    )
+    revision_manager = RevisionManager(
+        RevisionAgent(llm_gateway),
+        artifact_service=artifact_service,
+        render_artifact_service=render_artifact_service,
+    )
     builder = GraphBuilder()
     builder.add_node(InputNode())
     builder.add_node(ContextBuilderNode(builder_instance))
@@ -75,7 +91,7 @@ def build_executive_graph(
     builder.add_node(QualityGateNode(QualityGate(ReviewerAgent(llm_gateway))))
     builder.add_node(
         RevisionNode(
-            RevisionManager(RevisionAgent(llm_gateway)),
+            revision_manager,
             learning_manager=learning_manager,
         )
     )
@@ -89,6 +105,7 @@ def create_agent_runtime(
     context_builder: ContextBuilder | None = None,
     capability_registry: CapabilityRegistry | None = None,
     learning_manager: "LearningManager | None" = None,
+    artifact_service: "ArtifactService | None" = None,
 ) -> "AgentRuntime":
     manager = checkpoint_manager or InMemoryCheckpointManager()
     gateway = llm_gateway or create_llm_gateway()
@@ -98,6 +115,7 @@ def create_agent_runtime(
         context_builder=context_builder,
         capability_registry=capability_registry,
         learning_manager=learning_manager,
+        artifact_service=artifact_service,
     )
     return AgentRuntime(graph=graph, checkpoint_manager=manager)
 

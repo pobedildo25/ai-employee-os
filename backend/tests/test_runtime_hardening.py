@@ -43,7 +43,12 @@ from tests.test_telegram_product_ux import FakeArtifactDelivery, FakeContinuatio
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(memory_enabled=True, skills_enabled=True, semantic_memory_enabled=True)
+    return Settings(
+        memory_enabled=True,
+        skills_enabled=True,
+        semantic_memory_enabled=True,
+        embedding_allow_stub=True,
+    )
 
 
 class BrokenSemanticMemory:

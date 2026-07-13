@@ -77,8 +77,12 @@ class QualityReviewSkill(BaseSkill):
             session_id=payload.get("session_id"),
         )
 
+        meta = review_result.metadata or {}
+        degraded = bool(meta.get("degraded")) or str(meta.get("status") or "").lower() == "failed"
+        skill_status = "failed" if degraded else "completed"
+
         return {
-            "status": "completed",
+            "status": skill_status,
             "skill": self.name(),
             "review_result": review_result.model_dump(mode="json"),
             "revision_request": revision_request.model_dump(mode="json") if revision_request else None,

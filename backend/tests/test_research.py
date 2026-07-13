@@ -174,7 +174,9 @@ def test_ast_conversion() -> None:
 
 @pytest.mark.asyncio
 async def test_skill_registry_and_strategy_handoff(settings: Settings) -> None:
-    registry = create_capability_registry(Settings(skills_enabled=True, research_enabled=True))
+    registry = create_capability_registry(
+        Settings(skills_enabled=True, research_enabled=True, research_allow_mock=True)
+    )
     assert registry.get_skill_for_capability("research") is not None
     assert registry.get_skill_for_capability("strategy_analysis") is not None
 
@@ -213,7 +215,8 @@ async def test_skill_registry_and_strategy_handoff(settings: Settings) -> None:
     assert out["status"] == "completed"
     assert out["memory_candidates"]
     assert out["memory_candidates"][0]["type"] == MemoryType.KNOWLEDGE.value
-    assert out["metadata"].get("strategy_ready") is True
+    assert out["metadata"].get("strategy_ready") is False
+    assert out["metadata"].get("status") == "mock_not_production"
     assert out["document_ast"]["root"]["attributes"]["kind"] == "research"
 
 
@@ -262,7 +265,26 @@ async def test_context_provider_integration(settings: Settings) -> None:
 
 
 @pytest.mark.asyncio
-async def test_api_research(settings: Settings) -> None:
+async def test_api_research_disabled_by_default(settings: Settings) -> None:
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        run_resp = await client.post(
+            "/api/v1/research/run",
+            json={"type": "MARKET_RESEARCH", "query": "AI marketing tools"},
+        )
+        assert run_resp.status_code == 503
+        assert "disabled" in run_resp.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_api_research(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "app.api.v1.research.get_settings",
+        lambda: Settings(
+            research_enabled=True, skills_enabled=True, research_allow_mock=True
+        ),
+    )
     gateway, _ = mock_gateway(
         settings,
         json.dumps(
@@ -300,6 +322,8 @@ async def test_api_research(settings: Settings) -> None:
         body = run_resp.json()
         assert body["summary"]
         assert body["sources"]
+        assert body["metadata"].get("strategy_ready") is False
+        assert body["metadata"].get("status") == "mock_not_production"
         research_id = body["id"]
 
         get_resp = await client.get(f"/api/v1/research/{research_id}")

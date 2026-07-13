@@ -9,6 +9,8 @@ import redis.asyncio as aioredis
 
 from app.clients.classification import telegram_user_client_metadata
 from app.repositories.client_repository import ClientRepository
+from app.repositories.project_repository import ProjectRepository
+from app.schemas.project import ProjectCreate
 from app.workspace.manager import WorkspaceManager
 from app.workspace.service import WorkspaceService
 
@@ -16,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 BINDING_KEY = "conversation:binding:{user_id}"
 BINDING_TTL_SECONDS = 60 * 60 * 24 * 30  # 30 days
+DEFAULT_TELEGRAM_PROJECT_NAME = "Telegram"
 
 DbRelease = Callable[[], Awaitable[None]]
 
@@ -39,6 +42,7 @@ class TelegramSessionManager:
         workspace_service: WorkspaceService | None = None,
         workspace_manager: WorkspaceManager | None = None,
         client_repository: ClientRepository | None = None,
+        project_repository: ProjectRepository | None = None,
         bindings: dict[int, UUID] | None = None,
         redis_client: aioredis.Redis | None = None,
         db_release: DbRelease | None = None,
@@ -50,6 +54,7 @@ class TelegramSessionManager:
         else:
             self._service = WorkspaceService(workspace_manager or WorkspaceManager())
         self._client_repository = client_repository
+        self._project_repository = project_repository
         # Explicit bindings={} keeps tests fully in-memory (no Redis side effects).
         self._bindings: dict[int, UUID] = (
             bindings if bindings is not None else get_session_bindings_singleton()
@@ -79,7 +84,7 @@ class TelegramSessionManager:
         if existing_id is not None:
             snapshot = await self._service.get_snapshot(existing_id)
             if snapshot is not None and snapshot.get("active_session_id"):
-                return snapshot
+                return await self._ensure_active_project(snapshot)
 
         if self._client_repository is not None:
             await self._client_repository.get_or_create_with_id(
@@ -94,17 +99,49 @@ class TelegramSessionManager:
         if existing is not None and existing.get("active_session_id"):
             workspace_id = UUID(existing["workspace_id"])
             await self._bind(telegram_user_id, workspace_id)
-            return existing
+            return await self._ensure_active_project(existing)
 
         snapshot = await self._service.ensure_session_for_client(
             client_id=client_id,
             metadata={"source": "telegram", "telegram_user_id": telegram_user_id},
         )
         await self._bind(telegram_user_id, UUID(snapshot["workspace_id"]))
-        return snapshot
+        return await self._ensure_active_project(snapshot)
 
     def get_bound_workspace_id(self, telegram_user_id: int) -> UUID | None:
         return self._bindings.get(telegram_user_id)
+
+    async def _ensure_active_project(self, snapshot: dict) -> dict:
+        """Artifacts require project_id; Telegram workspaces get a default project."""
+        if snapshot.get("active_project_id"):
+            return snapshot
+        if self._project_repository is None:
+            return snapshot
+
+        client_id = UUID(str(snapshot["client_id"]))
+        workspace_id = UUID(str(snapshot["workspace_id"]))
+        projects = await self._project_repository.list_by_client(client_id, limit=1)
+        if projects:
+            project = projects[0]
+        else:
+            project = await self._project_repository.create(
+                ProjectCreate(
+                    client_id=client_id,
+                    name=DEFAULT_TELEGRAM_PROJECT_NAME,
+                    description="Default project for Telegram workspace",
+                )
+            )
+            logger.info(
+                "telegram default project created | client_id=%s project_id=%s",
+                client_id,
+                project.id,
+            )
+
+        await self._service.manager.set_active_project(workspace_id, project.id)
+        refreshed = await self._service.get_snapshot(workspace_id)
+        if refreshed is not None:
+            return refreshed
+        return {**snapshot, "active_project_id": str(project.id)}
 
     async def _bind(self, telegram_user_id: int, workspace_id: UUID) -> None:
         self._bindings[telegram_user_id] = workspace_id

@@ -186,10 +186,8 @@ def extract_reply_text(state: dict[str, Any]) -> str:
             if value:
                 return str(value)
 
-    understanding = state.get("understanding")
-    if isinstance(understanding, dict) and understanding.get("summary"):
-        return str(understanding["summary"])
-
+    # Do NOT fall back to understanding.summary — that paraphrases the user
+    # request and leaks into failed/waiting delivery paths as a fake answer.
     status = state.get("status")
     return str(status) if status else "ok"
 

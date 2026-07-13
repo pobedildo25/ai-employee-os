@@ -103,7 +103,10 @@ class TelegramAdapter(TelegramAdapterInterface):
         executive_agent: ExecutiveAgent | None = None,
         allowed_user_ids: set[int] | None = None,
     ) -> TelegramProductFlow:
-        continuation = self._build_continuation(capability_registry)
+        continuation = self._build_continuation(
+            capability_registry,
+            artifact_service=artifact_service,
+        )
         service = build_telegram_conversation_service(
             runtime=runtime,
             session_manager=session_manager,
@@ -121,17 +124,30 @@ class TelegramAdapter(TelegramAdapterInterface):
     @staticmethod
     def _build_continuation(
         capability_registry: CapabilityRegistry | None = None,
+        *,
+        artifact_service: ArtifactService | None = None,
     ) -> TelegramGraphContinuation | None:
         try:
+            from app.document_renderer.renderer import RenderArtifactService
             from app.llm.gateway import create_llm_gateway
 
             llm_gateway = create_llm_gateway()
-            revision_node = RevisionNode(RevisionManager(RevisionAgent(llm_gateway)))
+            render_artifact_service = (
+                RenderArtifactService(artifact_service=artifact_service)
+                if artifact_service is not None
+                else None
+            )
+            revision_manager = RevisionManager(
+                RevisionAgent(llm_gateway),
+                artifact_service=artifact_service,
+                render_artifact_service=render_artifact_service,
+            )
+            revision_node = RevisionNode(revision_manager)
             quality_gate_node = QualityGateNode(QualityGate(ReviewerAgent(llm_gateway)))
             return TelegramGraphContinuation(
                 revision_node=revision_node,
                 quality_gate_node=quality_gate_node,
-                revision_manager=RevisionManager(RevisionAgent(llm_gateway)),
+                revision_manager=revision_manager,
                 capability_registry=capability_registry,
             )
         except Exception:

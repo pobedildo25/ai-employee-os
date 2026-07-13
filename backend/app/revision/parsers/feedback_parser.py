@@ -6,29 +6,10 @@ from app.revision.models import RevisionRequest
 
 
 def parse_user_feedback(feedback: str | None) -> list[str]:
-    """Parse free-form user feedback into suggested change hints — no fixed commands."""
+    """Pass through free-form user feedback — no keyword→hint expansion (Decision/routing-safe)."""
     if not feedback or not feedback.strip():
         return []
-
-    text = feedback.strip()
-    suggestions: list[str] = [text]
-
-    lowered = text.lower()
-    if any(token in lowered for token in ("меньше", "короче", "shorter", "less text", "brief")):
-        suggestions.append("Reduce text volume and keep content concise")
-    if any(token in lowered for token in ("больше", "детал", "more detail", "expand", "подробн")):
-        suggestions.append("Add more detail to incomplete sections")
-    if any(token in lowered for token in ("визуал", "visual", "image", "таблиц", "table")):
-        suggestions.append("Increase visual or tabular elements where appropriate")
-
-    seen: set[str] = set()
-    unique: list[str] = []
-    for item in suggestions:
-        key = item.lower()
-        if key not in seen:
-            seen.add(key)
-            unique.append(item)
-    return unique
+    return [feedback.strip()]
 
 
 def build_revision_request_from_review(

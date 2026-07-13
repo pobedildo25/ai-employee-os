@@ -327,11 +327,12 @@ async def test_revision_uses_prior_artifact_after_chat(
     )
     assert revised["status"] == "revision_prompted"
 
+    # C1: after revise prompt, Executive DecisionType routes to execution (not capability fork).
+    flow._executive_agent = FakeExecutiveAgent(action="EXECUTE")  # type: ignore[assignment]
     feedback = await flow.handle_message(_request("Сделай короче и добавь CTA"))
-    assert feedback["status"] == "revised"
-    assert continuation.calls
-    prior = continuation.calls[0]["prior_state"]
-    assert prior.get("render_result", {}).get("artifact_id") == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    assert feedback["status"] == "completed"
+    assert runtime.calls
+    assert len(runtime.calls) >= 2
 
 
 @pytest.mark.asyncio
@@ -463,6 +464,125 @@ async def test_allowlist_nonempty_filters_users(
     denied = await flow.handle_message(_request("привет"))
     assert denied["status"] == "forbidden"
     assert runtime.calls == []
+
+
+@pytest.mark.asyncio
+async def test_incomplete_delivery_without_artifact_or_text(
+    session_manager: TelegramSessionManager,
+    sender: InMemoryTelegramSender,
+    conversation_store: TelegramConversationStore,
+) -> None:
+    """M2: completed without artifacts/result text → incomplete, not silent «Готово»."""
+    from app.conversation.messages import INCOMPLETE_REASON
+
+    runtime = StreamableFakeRuntime(
+        final_state={
+            "execution_id": "exec-empty",
+            "status": "completed",
+        }
+    )
+    flow = build_flow(
+        runtime,
+        session_manager,
+        sender,
+        conversation_store,
+        executive_agent=FakeExecutiveAgent(action="EXECUTE"),
+    )
+    result = await flow.handle_message(_request("Сделай КП"))
+    assert result["status"] == "incomplete"
+    assert INCOMPLETE_REASON in (result.get("reply") or "")
+    assert "Готово" not in (result.get("reply") or "")
+    convo = await conversation_store.get(777)
+    assert convo is not None
+    assert convo.flow_mode == TelegramFlowMode.FAILED
+
+
+@pytest.mark.asyncio
+async def test_waiting_user_revision_without_artifact_is_incomplete(
+    session_manager: TelegramSessionManager,
+    sender: InMemoryTelegramSender,
+    conversation_store: TelegramConversationStore,
+) -> None:
+    """Do not leak understanding.summary when quality asks for user after empty render."""
+    from app.conversation.messages import INCOMPLETE_REASON
+
+    runtime = StreamableFakeRuntime(
+        final_state={
+            "execution_id": "exec-wait-empty",
+            "status": "waiting_user_revision",
+            "understanding": {
+                "summary": (
+                    "Пользователь запрашивает коммерческое предложение "
+                    "для компании Acme на услугу SEO-аудита."
+                ),
+                "goal": "КП Acme",
+            },
+            "revision_count": 1,
+        }
+    )
+    flow = build_flow(
+        runtime,
+        session_manager,
+        sender,
+        conversation_store,
+        executive_agent=FakeExecutiveAgent(action="EXECUTE"),
+    )
+    result = await flow.handle_message(_request("Сделай КП для Acme"))
+    assert result["status"] == "incomplete"
+    reply = result.get("reply") or ""
+    assert INCOMPLETE_REASON in reply
+    assert "Пользователь запрашивает" not in reply
+    convo = await conversation_store.get(777)
+    assert convo is not None
+    assert convo.flow_mode == TelegramFlowMode.FAILED
+
+
+@pytest.mark.asyncio
+async def test_revision_prompted_routes_via_executive_not_blind_feedback(
+    session_manager: TelegramSessionManager,
+    sender: InMemoryTelegramSender,
+    conversation_store: TelegramConversationStore,
+) -> None:
+    """M3: after revise prompt, chat/new-task go through Executive — not blind continuation."""
+    continuation = FakeContinuation()
+    runtime = StreamableFakeRuntime(
+        final_state={
+            "execution_id": "exec-rev-m3",
+            "status": "completed",
+            "result": {"message": "Новая задача выполнена."},
+        }
+    )
+    flow = build_flow(
+        runtime,
+        session_manager,
+        sender,
+        conversation_store,
+        continuation=continuation,
+        executive_agent=FakeExecutiveAgent(action="RESPOND", response_message="Ок, понял."),
+    )
+    convo = await conversation_store.get_or_create(777, 555)
+    convo.flow_mode = TelegramFlowMode.REVISION_PROMPTED
+    convo.last_agent_state = {
+        "status": "completed",
+        "render_result": {"artifact_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"},
+    }
+    await conversation_store.save(convo)
+
+    chat = await flow.handle_message(_request("Спасибо, пока не надо"))
+    assert chat["status"] == "completed"
+    assert continuation.calls == []
+    assert runtime.calls == []
+    convo = await conversation_store.get(777)
+    assert convo is not None
+    assert convo.flow_mode == TelegramFlowMode.COMPLETED
+
+    convo.flow_mode = TelegramFlowMode.REVISION_PROMPTED
+    await conversation_store.save(convo)
+    flow._executive_agent = FakeExecutiveAgent(action="EXECUTE")  # type: ignore[assignment]
+    task = await flow.handle_message(_request("Сделай другое КП"))
+    assert task["status"] == "completed"
+    assert continuation.calls == []
+    assert runtime.calls
 
 
 def test_factory_production_empty_allowlist_is_deny_all(workspace_service: WorkspaceService) -> None:

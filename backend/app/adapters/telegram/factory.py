@@ -11,6 +11,7 @@ from app.agents.executive.agent import ExecutiveAgent
 from app.core.config import Settings
 from app.orchestration.orchestrator import Orchestrator
 from app.repositories.client_repository import ClientRepository
+from app.repositories.project_repository import ProjectRepository
 from app.services.artifact_service import ArtifactService
 from app.skills.registry import CapabilityRegistry
 from app.storage.storage_interface import StorageInterface
@@ -33,6 +34,7 @@ def create_telegram_adapter(
     conversation_store: TelegramConversationStore | None = None,
     capability_registry: CapabilityRegistry | None = None,
     client_repository: ClientRepository | None = None,
+    project_repository: ProjectRepository | None = None,
     executive_agent: ExecutiveAgent | None = None,
     db_release: DbRelease | None = None,
     redis_client=None,
@@ -72,6 +74,7 @@ def create_telegram_adapter(
     session_manager = TelegramSessionManager(
         workspace_service=workspace_service,
         client_repository=client_repository,
+        project_repository=project_repository,
         redis_client=redis_client,
         db_release=db_release,
         require_redis_bindings=settings.is_production,
@@ -102,6 +105,7 @@ def create_telegram_bot(
     storage: StorageInterface | None = None,
     orchestrator: Orchestrator | None = None,
     client_repository: ClientRepository | None = None,
+    project_repository: ProjectRepository | None = None,
     executive_agent: ExecutiveAgent | None = None,
     capability_registry: CapabilityRegistry | None = None,
     conversation_store: TelegramConversationStore | None = None,
@@ -118,6 +122,7 @@ def create_telegram_bot(
         orchestrator=orchestrator,
         conversation_store=conversation_store,
         client_repository=client_repository,
+        project_repository=project_repository,
         executive_agent=executive_agent,
         capability_registry=capability_registry,
         db_release=db_release,

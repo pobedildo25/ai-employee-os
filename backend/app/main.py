@@ -86,6 +86,9 @@ def _init_sentry(settings: Settings) -> None:
 async def lifespan(app: FastAPI):
     settings = get_settings()
     setup_logging(settings.log_level)
+    from app.core.feature_guards import validate_optional_stacks
+
+    validate_optional_stacks(settings)
     _init_sentry(settings)
     if not hasattr(app.state, "security_manager"):
         app.state.security_manager = _build_security_manager(settings)
