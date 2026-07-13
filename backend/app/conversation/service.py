@@ -82,6 +82,20 @@ class ConversationService:
 
         await self._append_history(snapshot, role="user", content=request.user_input)
 
+        if convo.flow_mode == FlowMode.RUNNING:
+            text = "Ещё работаю над предыдущим запросом. Подождите немного."
+            send_result = await self._sender.send_message(
+                request.telegram_chat_id,
+                text,
+                reply_to_message_id=request.telegram_message_id,
+            )
+            return {
+                "status": "busy",
+                "reply": text,
+                "workspace_id": convo.workspace_id,
+                "send_result": send_result,
+            }
+
         if convo.flow_mode == FlowMode.REVISION_PROMPTED:
             return await self._handle_revision_feedback(request, convo, snapshot)
 
@@ -583,11 +597,25 @@ class ConversationService:
             send_result = await self._sender.send_message(convo.telegram_chat_id, text)
             return {"status": "noop", "reply": text, "send_result": send_result}
 
+        prior = convo.last_agent_state or {}
+        metadata: dict[str, Any] = {
+            "auto_approve": True,
+            "source": "telegram",
+            "skip_executive_llm": True,
+        }
+        # Resume from stored decision/plan — do not re-run Executive classification.
+        if isinstance(prior.get("decision"), dict):
+            metadata["preclassified_decision"] = prior["decision"]
+        if isinstance(prior.get("understanding"), dict):
+            metadata["preclassified_understanding"] = prior["understanding"]
+        if isinstance(prior.get("task_plan"), dict):
+            metadata["resume_task_plan"] = prior["task_plan"]
+
         request = TelegramExecutionRequest(
             user_input=convo.last_user_input,
             telegram_user_id=convo.telegram_user_id,
             telegram_chat_id=convo.telegram_chat_id,
-            metadata={"auto_approve": True, "source": "telegram"},
+            metadata=metadata,
             context={"channel": "telegram"},
         )
         return await self._run_execution(request, convo, snapshot)

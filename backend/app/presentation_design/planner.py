@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from app.agents.parsers.response_parser import ResponseParseError, extract_json_content
+from app.llm.exceptions import LLMProviderError
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMMessage
 from app.presentation_design.interfaces.designer import PresentationPlannerInterface
@@ -60,6 +61,19 @@ class PresentationPlanner(PresentationPlannerInterface):
                     attempt,
                 )
                 return plan
+            except LLMProviderError as exc:
+                logger.warning(
+                    "presentation llm degraded | trace_id=%s attempt=%d error=%s",
+                    trace_id,
+                    attempt,
+                    exc,
+                )
+                return PresentationPlan(
+                    title="Presentation unavailable",
+                    goal=goal,
+                    slides=[],
+                    metadata={"status": "failed", "degraded": True, "error": str(exc)},
+                )
             except (ResponseParseError, ValueError) as exc:
                 last_error = exc
                 messages.append(
@@ -68,7 +82,21 @@ class PresentationPlanner(PresentationPlannerInterface):
                         content="Return ONLY valid JSON for PresentationPlan schema.",
                     )
                 )
-        raise ResponseParseError(f"Failed to plan presentation: {last_error}")
+        logger.warning(
+            "presentation degraded after parse retries | trace_id=%s error=%s",
+            trace_id,
+            last_error,
+        )
+        return PresentationPlan(
+            title="Presentation unavailable",
+            goal=goal,
+            slides=[],
+            metadata={
+                "status": "failed",
+                "degraded": True,
+                "error": str(last_error) if last_error else "parse failed",
+            },
+        )
 
 
 def parse_presentation_plan(raw: str) -> PresentationPlan:

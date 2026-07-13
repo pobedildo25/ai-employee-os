@@ -3,7 +3,7 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
-**Прогресс (2026-07-13):** Sprint A выполнен (`1edbb65`). Sprint B: P0-C / P0-D / P0-E landed (незакоммичено); follow-up — Redis session bindings + persist API keys.
+**Прогресс (2026-07-13):** Sprint A выполнен (`1edbb65`). Sprint B: P0-C / P0-D / P0-E landed (незакоммичено); follow-up — Redis session bindings + persist API keys. Sprint C: P1-A…P1-I highest-impact landed (незакоммичено); full Render Contract / Knowledge persist / Decision eval live — partial / follow-up.
 
 ---
 
@@ -401,65 +401,64 @@ Readiness определяется **обязательными** сервиса
 
 #### P1-A. Approval только когда нужен сложный multi-stage plan
 
-- Простые `EXECUTE` (в т.ч. линейный multi-skill pipeline) — без лишних подтверждений.
-- Approve = resume checkpoint, не full re-run с нуля.
-- Persist execution / checkpoint (не process memory как source of truth).
+- [x] Простые `EXECUTE` (в т.ч. линейный multi-skill pipeline) — без лишних подтверждений.
+- [x] Approve = resume from stored plan/decision (`skip_executive_llm` + `resume_task_plan`), не full re-run Executive.
+- [ ] Persist execution / checkpoint Redis (LangGraph) — optional follow-up.
 
 #### P1-B. Context Builder
 
-- Merge transport context ∪ built context.
-- Никогда не изменять смысл пользовательского запроса — только агрегировать.
-- Не удалять transport context вне политики truncation.
-- Relevant recall; пустой knowledge search → пусто (не dump).
-- Truncate history по явной политике.
-- Learning inject только preference-слой с confidence filter.
+- [x] Merge transport context ∪ built context (Sprint B).
+- [x] Никогда не изменять смысл пользовательского запроса — только агрегировать.
+- [x] Не удалять transport context вне политики truncation.
+- [ ] Relevant recall; пустой knowledge search → пусто (не dump) — partial / follow-up.
+- [ ] Truncate history по явной политике — follow-up.
+- [x] Learning inject только preference-слой с confidence filter.
 
 #### P1-C. Planner только по решению Executive и правильному критерию
 
-- Planner только после Product Decision `CREATE_PLAN`.
-- Критерий: зависимости / ветвление / объективно сложная многоэтапная работа — **не** «число capabilities ≥ N».
-- «Создай КП» с линейной цепочкой skills → без Planner.
-- Никаких самостоятельных запусков Planner из adapter / skills / Runtime.
+- [x] Planner только после Product Decision `CREATE_PLAN`.
+- [x] Критерий: зависимости / ветвление / `requires_llm_plan` — **не** «число capabilities ≥ N».
+- [x] «Создай КП» с линейной цепочкой skills → без LLM Planner (`build_direct_execution_plan`).
+- [x] Никаких самостоятельных запусков Planner из adapter / skills / Runtime.
 
 #### P1-D. Capability Resolver + Skills + Render Contract + Orchestrator
 
-- После `EXECUTE` capability graph строит Capability Resolver, не Executive.
-- Skill не знает, какая Skill будет следующей.
-- Orchestrator знает только DAG и зависимости/статусы; не знает бизнес-смысл capability.
-- Убрать capability-specific if из Orchestrator.
-- Единый Render Contract (один вход); реализации форматов могут быть разными классами.
-- Dead dual document nodes удалить или не использовать.
-- PDF: реализовать позже или не предлагать в surface.
+- [x] После `EXECUTE`/`CREATE_PLAN` capability graph валидирует/упорядочивает Capability Resolver (Executive hints temporary).
+- [x] Skill не знает, какая Skill будет следующей.
+- [x] Orchestrator знает только DAG; убраны capability-specific if (`presentation_design` / `document_rendering`).
+- [ ] Единый Render Contract (один вход) — partial (skills supply defaults; full contract follow-up).
+- [ ] Dead dual document nodes удалить или не использовать — follow-up.
+- [ ] PDF: реализовать позже или не предлагать в surface — follow-up.
 
 #### P1-E. Learning строго по контракту
 
-- Только стиль / формат / язык / оформление / предпочтения.
-- Не меняет стратегию выполнения.
-- **Никогда не влияет на DecisionType Executive.**
-- Убрать fragile markers (`once`, one-off revision words как durable learning).
-- Confidence filter на read path.
-- Не auto-learn one-off правок документа как durable rules.
+- [x] Только стиль / формат / язык / оформление / предпочтения (durable markers).
+- [x] Не меняет стратегию выполнения.
+- [x] **Никогда не влияет на DecisionType Executive.**
+- [x] Убрать fragile markers (`короче` one-off revision → не durable learning).
+- [x] Confidence filter на read path (`get_applicable_rules` / `apply_rules`).
+- [x] Не auto-learn one-off правок документа как durable rules.
 
 #### P1-F. Knowledge
 
-- Не auto-remember на низком пороге.
-- Persist только при достаточном confidence и / или явном confirm / review queue.
+- [ ] Не auto-remember на низком пороге — follow-up.
+- [ ] Persist только при достаточном confidence и / или явном confirm / review queue — follow-up.
 
 #### P1-G. LLM degrade
 
-- Strategy / Presentation / Quality (document): controlled fail + понятный retry пользователю.
-- OpenRouter: retry / backoff на 429 / 5xx.
+- [x] Strategy / Presentation / Quality (document): controlled fail + degraded metadata.
+- [x] OpenRouter: retry / backoff на 429 / 5xx (3 attempts).
 
 #### P1-H. Decision eval
 
-- Golden + spot live: Executive реально выбирает Product Decision как ассистент.
-- Policy catalog ≠ доказательство live поведения — документировать честно.
-- Проверять, что Runtime не мутирует DecisionType.
+- [x] Policy catalog / scenario fixtures (existing).
+- [ ] Golden + spot live Executive — follow-up.
+- [x] Runtime не мутирует DecisionType (инвариант сохранён).
 
 #### P1-I. Telegram ops hygiene
 
-- Короткие DB-транзакции в polling (не держать session на весь LLM).
-- При RUNNING — сообщение «ещё работаю», не параллельный второй pipeline без политики.
+- [ ] Короткие DB-транзакции в polling — follow-up.
+- [x] При RUNNING — сообщение «ещё работаю», не параллельный второй pipeline.
 
 ---
 
@@ -492,7 +491,7 @@ Readiness определяется **обязательными** сервиса
 |--------|--------|-------------------------|--------|
 | **A** | **DONE** (`1edbb65`, 2026-07-13) | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A, P0-B, P0-E (clarify fix), P0-F, P0-G |
 | **B** | **DONE** (код landed; commit pending) | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C, P0-D, P0-E; bindings follow-up |
-| **C** | pending | Пилот: Context / Resolver / Skills / Orchestrator / Render Contract / Learning / Planner criterion | P1-A … P1-I |
+| **C** | **IN PROGRESS** (highest-impact P1 landed; commit pending) | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate | P1-A … P1-I (partial) |
 | **D** | pending | Production ops | Этап 3 (P2) |
 | **E** | pending | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
 
@@ -521,15 +520,16 @@ Follow-up вне DoD: Redis session bindings; persist API keys/audit (P0-G).
 
 ### Sprint C — Definition of Done
 
-- Executive = только Product Decision; capability graph строит Capability Resolver.
-- Context Builder только агрегирует и merge transport; не меняет смысл; не удаляет transport context вне truncation policy.
-- Planner по зависимостям/ветвлению/сложности, не по count(capabilities).
-- Orchestrator знает только DAG / зависимости / статусы.
-- Skills независимы; skill не знает следующего.
-- Единый Render Contract (не обязательно один класс).
-- Learning не влияет на DecisionType и стратегию выполнения.
-- Простые EXECUTE без лишнего approve; сложный multi-stage approval = resume.
-- Controlled degrade на LLM outage для strategy / presentation / quality.
+- [x] Executive = только Product Decision; capability graph валидирует Capability Resolver (hints temporary).
+- [x] Context Builder только агрегирует и merge transport; не меняет смысл; не удаляет transport context вне truncation policy.
+- [x] Planner по зависимостям/ветвлению/`requires_llm_plan`, не по count(capabilities).
+- [x] Orchestrator знает только DAG / зависимости / статусы (нет capability-name ifs).
+- [x] Skills независимы; skill не знает следующего.
+- [ ] Единый Render Contract (не обязательно один класс) — partial.
+- [x] Learning не влияет на DecisionType и стратегию выполнения; confidence filter + no one-off revision learn.
+- [x] Простые EXECUTE без лишнего approve; multi-stage approval = resume stored plan (skip Executive).
+- [x] Controlled degrade на LLM outage для strategy / presentation / quality.
+- [x] RUNNING busy gate в ConversationService.
 
 ### Sprint D — Definition of Done
 

@@ -46,7 +46,7 @@ async def test_learning_rule_persists_and_reaches_context_builder(settings, clie
         execution_id="e2e-learn-1",
         trace_id="trace-learn-1",
         user_input="Revise document",
-        metadata={"client_id": str(client_id), "user_feedback": "Сделай документ короче"},
+        metadata={"client_id": str(client_id), "user_feedback": "Всегда делай документ короче"},
     )
     state["review_result"] = {
         "status": "revise",

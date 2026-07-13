@@ -2,10 +2,11 @@ import logging
 from typing import Any
 
 from app.agents.parsers.response_parser import ResponseParseError
+from app.llm.exceptions import LLMProviderError
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMMessage
 from app.quality.interfaces.reviewer import ReviewerInterface
-from app.quality.models import ReviewResult, ReviewStatus
+from app.quality.models import IssueSeverity, QualityIssue, ReviewResult, ReviewStatus
 from app.quality.parsers.review_parser import parse_review_response
 from app.quality.prompt import REVIEWER_SYSTEM_PROMPT, build_reviewer_user_message
 
@@ -42,6 +43,27 @@ class ReviewerAgent(ReviewerInterface):
                     attempt,
                 )
                 return result
+            except LLMProviderError as exc:
+                logger.warning(
+                    "reviewer llm degraded | trace_id=%s attempt=%d error=%s",
+                    trace_id,
+                    attempt,
+                    exc,
+                )
+                return ReviewResult(
+                    status=ReviewStatus.ESCALATE,
+                    score=0.0,
+                    summary="Quality review skipped: LLM unavailable",
+                    issues=[
+                        QualityIssue(
+                            category="system",
+                            description=str(exc),
+                            severity=IssueSeverity.CRITICAL,
+                        )
+                    ],
+                    recommendations=["Retry the review when the LLM is available."],
+                    metadata={"degraded": True, "status": "failed", "error": str(exc)},
+                )
             except ResponseParseError as exc:
                 last_error = exc
                 logger.warning(
@@ -57,8 +79,28 @@ class ReviewerAgent(ReviewerInterface):
                     )
                 )
 
-        raise ReviewerAgentError(
-            f"Failed to obtain valid review after {self._max_retries} attempts: {last_error}"
+        logger.warning(
+            "reviewer degraded after parse retries | trace_id=%s error=%s",
+            trace_id,
+            last_error,
+        )
+        return ReviewResult(
+            status=ReviewStatus.ESCALATE,
+            score=0.0,
+            summary="Quality review skipped: invalid LLM response",
+            issues=[
+                QualityIssue(
+                    category="system",
+                    description=str(last_error) if last_error else "parse failed",
+                    severity=IssueSeverity.CRITICAL,
+                )
+            ],
+            recommendations=["Retry the review."],
+            metadata={
+                "degraded": True,
+                "status": "failed",
+                "error": str(last_error) if last_error else "parse failed",
+            },
         )
 
     def build_non_document_review(self, *, summary: str) -> ReviewResult:

@@ -1,6 +1,7 @@
 from app.learning.models import LearningRule, LearningSignal, RuleExtractionResult
 
 MIN_SAVE_CONFIDENCE = 0.6
+REVISION_SAVE_CONFIDENCE = 0.75
 CONFIDENCE_BOOST = 0.08
 MAX_CONFIDENCE = 0.98
 
@@ -15,27 +16,50 @@ ONE_OFF_MARKERS = (
     "once",
 )
 
-LEARNING_MARKERS = (
+# Durable preference markers — required for looks_like_preference.
+DURABLE_PREFERENCE_MARKERS = (
     "всегда",
     "никогда",
     "предпочитаю",
     "предпочтение",
     "обычно",
     "по умолчанию",
+    "always",
+    "never",
+    "prefer",
+    "preference",
+    "from now on",
+)
+
+# Soft style preferences that may appear with durable markers.
+STYLE_PREFERENCE_MARKERS = (
     "меньше текста",
     "короче",
     "без длинных",
     "убирай",
     "не делай",
-    "always",
-    "never",
-    "prefer",
-    "preference",
     "less text",
     "shorter",
     "concise",
-    "from now on",
 )
+
+# One-shot document edit phrasing — alone must NOT become durable learning.
+DOCUMENT_EDIT_MARKERS = (
+    "короче",
+    "длиннее",
+    "добавь",
+    "убери",
+    "исправь",
+    "перефразируй",
+    "перепиши",
+    "shorter",
+    "longer",
+    "add",
+    "remove",
+    "fix",
+)
+
+LEARNING_MARKERS = DURABLE_PREFERENCE_MARKERS + STYLE_PREFERENCE_MARKERS
 
 
 class LearningPolicy:
@@ -46,26 +70,43 @@ class LearningPolicy:
         *,
         min_confidence: float = MIN_SAVE_CONFIDENCE,
         confidence_boost: float = CONFIDENCE_BOOST,
+        revision_min_confidence: float = REVISION_SAVE_CONFIDENCE,
     ) -> None:
         self.min_confidence = min_confidence
         self.confidence_boost = confidence_boost
+        self.revision_min_confidence = revision_min_confidence
 
     def is_one_off(self, text: str) -> bool:
         lowered = text.lower().strip()
         return any(marker in lowered for marker in ONE_OFF_MARKERS)
 
+    def looks_like_document_edit(self, text: str) -> bool:
+        """One-off revision phrasing without durable preference markers."""
+        lowered = text.lower().strip()
+        if any(marker in lowered for marker in DURABLE_PREFERENCE_MARKERS):
+            return False
+        return any(marker in lowered for marker in DOCUMENT_EDIT_MARKERS)
+
     def looks_like_preference(self, text: str) -> bool:
         lowered = text.lower().strip()
         if len(lowered) < 8:
             return False
-        return any(marker in lowered for marker in LEARNING_MARKERS)
+        if self.looks_like_document_edit(lowered):
+            return False
+        # Require an explicit durable preference marker (always/prefer/…).
+        return any(marker in lowered for marker in DURABLE_PREFERENCE_MARKERS)
 
     def should_save(self, result: RuleExtractionResult, signal: LearningSignal) -> bool:
         if not result.should_learn or result.rule is None:
             return False
         if self.is_one_off(signal.text):
             return False
-        return result.confidence >= self.min_confidence
+        if self.looks_like_document_edit(signal.text):
+            return False
+        threshold = self.min_confidence
+        if signal.source.value == "revision_request":
+            threshold = self.revision_min_confidence
+        return result.confidence >= threshold
 
     def merge_confidence(self, existing: LearningRule, incoming_confidence: float) -> float:
         boosted = max(existing.confidence, incoming_confidence) + self.confidence_boost

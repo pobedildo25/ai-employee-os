@@ -51,6 +51,16 @@ class PresentationDesigner(PresentationDesignerInterface):
             presentation_type=presentation_type or context.get("presentation_type"),
             trace_id=trace_id,
         )
+        if (plan.metadata or {}).get("degraded") or (plan.metadata or {}).get("status") == "failed":
+            err = plan.metadata.get("error")
+            warnings = [str(err)] if err else []
+            return PresentationDesignResult(
+                plan=plan,
+                document_ast=None,
+                analysis_warnings=warnings,
+                missing_information=["LLM unavailable for presentation design"],
+                metadata={"status": "failed", "degraded": True, "error": err},
+            )
         if brand_dict and brand_dict.get("id") and plan.brand_profile_id is None:
             plan.brand_profile_id = brand_dict.get("id")
 

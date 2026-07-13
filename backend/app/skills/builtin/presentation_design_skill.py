@@ -89,12 +89,15 @@ class PresentationDesignSkill(BaseSkill):
             project_id=payload.get("project_id"),
             session_id=payload.get("session_id"),
         )
+        meta = result.metadata or {}
+        failed = meta.get("status") == "failed" or meta.get("degraded") is True
         return {
-            "status": "completed" if result.document_ast else "incomplete",
+            "status": "failed" if failed or not result.document_ast else "completed",
             "skill": self.name(),
             "presentation_plan": result.plan.model_dump(mode="json") if result.plan else None,
             "document_ast": result.document_ast,
             "analysis_warnings": result.analysis_warnings,
             "memory_candidates": [item.model_dump(mode="json") for item in memory_items],
             "metadata": result.metadata,
+            "message": "presentation design failed" if failed or not result.document_ast else None,
         }

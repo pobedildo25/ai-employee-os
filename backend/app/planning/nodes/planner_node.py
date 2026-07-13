@@ -8,8 +8,12 @@ from app.context.models import ExecutionContext
 from app.planning.direct_plan import build_direct_execution_plan
 from app.planning.planner import TaskPlanner
 from app.planning.policies.execution_policy import (
-    capabilities_require_llm_planner,
     normalize_capabilities,
+    should_invoke_llm_planner,
+)
+from app.skills.capability_resolver import (
+    CapabilityResolutionError,
+    resolve_capability_graph,
 )
 from app.skills.registry import CapabilityRegistry
 
@@ -30,7 +34,36 @@ class PlannerNode:
         decision = state.get("decision") or {}
         action = decision.get("action")
         understanding = AgentUnderstanding.model_validate(state.get("understanding") or {})
-        capabilities = normalize_capabilities(list(understanding.required_capabilities))
+        metadata = state.get("metadata") or {}
+
+        # Approval resume: reuse READY/APPROVED plan — skip re-planning / Executive re-analysis.
+        resume_plan = metadata.get("resume_task_plan")
+        if metadata.get("auto_approve") and isinstance(resume_plan, dict) and resume_plan.get("steps"):
+            status_value = str(resume_plan.get("status") or "").upper()
+            if status_value in {"READY", "APPROVED", "DRAFT"} or not status_value:
+                steps = resume_plan.get("steps") or []
+                update = {
+                    "current_step": self.name,
+                    "task_plan": resume_plan,
+                    "status": "planned" if len(steps) > 1 else "direct_plan_ready",
+                }
+                _log_node({**state, **update}, self.name, "resumed_plan")
+                return update
+
+        try:
+            capabilities = resolve_capability_graph(decision, understanding, self._registry)
+        except CapabilityResolutionError as exc:
+            update = {
+                "current_step": self.name,
+                "status": "planning_failed",
+                "task_plan": None,
+                "error": str(exc),
+            }
+            _log_node({**state, **update}, self.name, "failed")
+            return update
+
+        # Keep understanding hint aligned with Resolver-owned ordered list.
+        understanding = understanding.model_copy(update={"required_capabilities": capabilities})
 
         # EXECUTE → direct plan, never LLM Planner.
         if should_direct_execute(action):
@@ -45,14 +78,21 @@ class PlannerNode:
             _log_node({**state, **update}, self.name, "skipped")
             return update
 
-        # CREATE_PLAN with 0–1 capabilities is not multi-stage — demote to direct plan.
-        if not capabilities_require_llm_planner(capabilities):
-            return self._direct_plan_update(
-                state,
-                understanding,
-                capabilities,
-                reason="demoted_single_capability",
+        # CREATE_PLAN demotion / direct path: LLM only when branching / explicit flag.
+        # Single capability OR linear known ordered caps → direct sequenced plan (no LLM).
+        if not should_invoke_llm_planner(
+            action,
+            capabilities,
+            decision=decision,
+            understanding=understanding,
+            metadata=metadata,
+        ):
+            reason = (
+                "demoted_single_capability"
+                if len(normalize_capabilities(capabilities)) <= 1
+                else "direct_linear_create_plan"
             )
+            return self._direct_plan_update(state, understanding, capabilities, reason=reason)
 
         execution_context = ExecutionContext.model_validate(
             state.get("execution_context") or {"user_input": state.get("user_input", "")}

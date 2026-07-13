@@ -374,3 +374,30 @@ async def test_langgraph_orchestration_integration(
     assert result["telegram_progress"] is not None
     assert result["quality_check"]["passed"] is True
     assert result["result"]["task_plan"]["goal"] == "Подготовить КП"
+
+
+def test_orchestrator_enrichment_has_no_capability_name_switches() -> None:
+    """Orchestrator must not branch on capability business names (P1-D)."""
+    orch = Orchestrator(store=ExecutionStore())
+    step_a = PlanStep(description="Design", capability="presentation_design")
+    step_b = PlanStep(
+        description="Render",
+        capability="document_rendering",
+        dependencies=[step_a.id],
+        status=StepStatus.PENDING,
+    )
+    step_a.status = StepStatus.COMPLETED
+    step_a.result = {
+        "document_ast": {"root": {}},
+        "metadata": {"document_type": "pptx"},
+    }
+    plan = TaskPlan(goal="deck", summary="s", steps=[step_a, step_b])
+    payload = orch._enrich_payload_from_plan(
+        step_b,
+        plan,
+        {"client_id": "c", "project_id": "p"},
+    )
+    # Format comes from prior-step metadata, not capability ifs.
+    assert payload["output_format"] == "pptx"
+    assert "store_artifact" not in payload
+    assert "presentation_design" not in str(payload.get("capability", ""))

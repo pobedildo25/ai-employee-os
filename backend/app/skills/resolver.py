@@ -3,7 +3,11 @@ from typing import Any
 
 from app.agent_runtime.state.models import AgentState
 from app.agents.executive.models import AgentUnderstanding
-from app.skills.models import RequiredCapabilities
+from app.skills.capability_resolver import (
+    CapabilityResolutionError,
+    build_required_capabilities,
+    resolve_capability_graph,
+)
 from app.skills.registry import CapabilityRegistry
 
 logger = logging.getLogger(__name__)
@@ -12,7 +16,7 @@ SKILL_RESOLVER_NODE = "skill_resolver"
 
 
 class SkillResolverNode:
-    """Resolves AgentUnderstanding.required_capabilities against the registry."""
+    """Owns final capability list: validates Executive hints against the registry."""
 
     name = SKILL_RESOLVER_NODE
 
@@ -23,20 +27,33 @@ class SkillResolverNode:
         _log_node(state, self.name, "started")
         understanding_data = state.get("understanding") or {}
         understanding = AgentUnderstanding.model_validate(understanding_data)
-        requested = understanding.required_capabilities
+        decision = state.get("decision") or {}
 
-        resolved = self._registry.find_capabilities(requested)
-        resolved_names = {capability.name for capability in resolved}
-        unknown = [name for name in requested if name not in resolved_names]
+        try:
+            ordered = resolve_capability_graph(decision, understanding, self._registry)
+            required = build_required_capabilities(decision, understanding, self._registry)
+        except CapabilityResolutionError as exc:
+            update = {
+                "current_step": self.name,
+                "required_capabilities": {
+                    "requested": list(understanding.required_capabilities),
+                    "resolved": [],
+                    "unknown": [str(exc)],
+                },
+                "status": "capabilities_failed",
+                "error": str(exc),
+            }
+            _log_node({**state, **update}, self.name, "failed")
+            return update
 
-        required = RequiredCapabilities(
-            requested=requested,
-            resolved=resolved,
-            unknown=unknown,
-        )
+        # Resolver owns the ordered list that enters the plan / understanding.
+        updated_understanding = understanding.model_copy(
+            update={"required_capabilities": ordered}
+        ).model_dump(mode="json")
 
         update = {
             "current_step": self.name,
+            "understanding": updated_understanding,
             "required_capabilities": required.model_dump(),
             "status": "capabilities_resolved",
         }

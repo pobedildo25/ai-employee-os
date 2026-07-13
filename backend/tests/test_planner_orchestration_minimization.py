@@ -13,8 +13,8 @@ from app.planning.direct_plan import build_direct_execution_plan
 from app.planning.nodes.planner_node import PlannerNode
 from app.planning.planner import TaskPlanner
 from app.planning.policies.execution_policy import (
-    capabilities_require_llm_planner,
     plan_requires_orchestration,
+    should_invoke_llm_planner,
     should_plan,
 )
 from app.skills.registry import create_capability_registry
@@ -29,10 +29,21 @@ def settings() -> Settings:
     return Settings(skills_enabled=True)
 
 
-def test_llm_planner_requires_at_least_two_capabilities() -> None:
-    assert capabilities_require_llm_planner([]) is False
-    assert capabilities_require_llm_planner(["strategy_analysis"]) is False
-    assert capabilities_require_llm_planner(["research", "strategy_analysis"]) is True
+def test_llm_planner_not_triggered_by_capability_count() -> None:
+    assert should_invoke_llm_planner("CREATE_PLAN", []) is False
+    assert should_invoke_llm_planner("CREATE_PLAN", ["strategy_analysis"]) is False
+    # Linear multi-skill is NOT enough for LLM TaskPlanner.
+    assert should_invoke_llm_planner(
+        "CREATE_PLAN", ["strategy_analysis", "presentation_design"]
+    ) is False
+    assert should_invoke_llm_planner(
+        "CREATE_PLAN",
+        ["strategy_analysis", "presentation_design"],
+        metadata={"requires_llm_plan": True},
+    ) is True
+    assert should_invoke_llm_planner(
+        "EXECUTE", ["strategy_analysis", "presentation_design"]
+    ) is False
     assert should_plan("EXECUTE") is False
     assert should_plan("CREATE_PLAN") is True
 
@@ -48,7 +59,7 @@ def test_single_step_plan_skips_orchestration() -> None:
     multi = build_direct_execution_plan(
         goal="pack",
         summary="multi",
-        required_capabilities=["research", "strategy_analysis"],
+        required_capabilities=["strategy_analysis", "presentation_design"],
     )
     assert plan_requires_orchestration(multi) is True
 
@@ -74,6 +85,63 @@ async def test_create_plan_with_one_capability_does_not_call_llm_planner(setting
     assert update["status"] == "direct_plan_ready"
     assert len(update["task_plan"]["steps"]) == 1
     assert provider.calls == []
+
+
+@pytest.mark.asyncio
+async def test_create_plan_linear_caps_uses_direct_plan_without_llm(settings: Settings) -> None:
+    registry = create_capability_registry(settings)
+    gateway, provider = _mock_gateway(settings, _plan_json())
+    node = PlannerNode(TaskPlanner(gateway), registry)
+
+    state = create_initial_state(execution_id="e1", trace_id="t1", user_input="Strategy and deck")
+    state["decision"] = {"action": "CREATE_PLAN"}
+    state["understanding"] = {
+        "goal": "pack",
+        "summary": "linear multi-skill",
+        "required_capabilities": ["strategy_analysis", "presentation_design"],
+        "missing_information": [],
+        "next_action": "create_plan",
+    }
+
+    update = await node(state)
+
+    assert update["status"] == "direct_plan_ready"
+    assert len(update["task_plan"]["steps"]) == 2
+    assert provider.calls == []
+
+
+@pytest.mark.asyncio
+async def test_create_plan_with_requires_llm_plan_calls_planner(settings: Settings) -> None:
+    registry = create_capability_registry(settings)
+    gateway, provider = _mock_gateway(
+        settings,
+        _plan_json(
+            goal="Branching work",
+            steps=[
+                {"description": "Strategy", "capability": "strategy_analysis", "dependencies": []},
+                {"description": "Deck", "capability": "presentation_design", "dependencies": [0]},
+                {"description": "Render", "capability": "document_rendering", "dependencies": [1]},
+            ],
+        ),
+    )
+    node = PlannerNode(TaskPlanner(gateway), registry)
+
+    state = create_initial_state(execution_id="e1", trace_id="t1", user_input="complex")
+    state["decision"] = {"action": "CREATE_PLAN"}
+    state["metadata"] = {"requires_llm_plan": True}
+    state["understanding"] = {
+        "goal": "Branching work",
+        "summary": "needs planner",
+        "required_capabilities": ["strategy_analysis", "presentation_design", "document_rendering"],
+        "missing_information": [],
+        "next_action": "create_plan",
+    }
+
+    update = await node(state)
+
+    assert update["status"] == "planned"
+    assert len(update["task_plan"]["steps"]) == 3
+    assert len(provider.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -125,24 +193,43 @@ async def test_execute_single_skill_avoids_graph_and_llm_planner(settings: Setti
 
 
 @pytest.mark.asyncio
-async def test_create_plan_multi_capability_builds_graph(settings: Settings) -> None:
-    registry = create_capability_registry(settings)
+async def test_create_plan_multi_capability_builds_graph_without_llm_planner(
+    settings: Settings,
+) -> None:
+    """CREATE_PLAN with known linear caps → direct plan + graph; no LLM TaskPlanner."""
+    from app.skills.base.skill import BaseSkill
+    from app.skills.models import Capability, SkillMetadata
+    from app.skills.registry import CapabilityRegistry
+
+    class _OkSkill(BaseSkill):
+        def __init__(self, skill_id: str, capability: str) -> None:
+            super().__init__(
+                metadata=SkillMetadata(
+                    id=skill_id,
+                    name=skill_id,
+                    description="ok",
+                    capabilities=[capability],
+                    enabled=True,
+                ),
+                capabilities=[Capability(name=capability, description="ok", category="test")],
+            )
+
+        async def execute(self, payload: dict) -> dict:
+            return {"status": "completed", "skill": self.name()}
+
+    registry = CapabilityRegistry(settings)
+    registry.register(_OkSkill("document_skill", "document_generation"))
+    registry.register(_OkSkill("document_analysis_skill", "document_analysis"))
+    registry.register(_OkSkill("analysis_skill", "data_analysis"))
+
     gateway, provider = _mock_gateway(
         settings,
         _executive_json(
-            goal="Research then strategy then deck",
+            goal="Doc then analysis then data",
             summary="multi-stage",
             action="CREATE_PLAN",
-            required_capabilities=["research", "strategy_analysis", "presentation_design"],
+            required_capabilities=["document_generation", "document_analysis", "data_analysis"],
             next_action="create_plan",
-        ),
-        _plan_json(
-            goal="Research then strategy then deck",
-            steps=[
-                {"description": "Research", "capability": "research", "dependencies": []},
-                {"description": "Strategy", "capability": "strategy_analysis", "dependencies": [0]},
-                {"description": "Deck", "capability": "presentation_design", "dependencies": [1]},
-            ],
         ),
         _review_json(),
     )
@@ -152,11 +239,12 @@ async def test_create_plan_multi_capability_builds_graph(settings: Settings) -> 
     )
 
     result = await runtime.execute(
-        "Исследуй рынок, подготовь стратегию и презентацию",
+        "Подготовь документ, анализ и данные",
         metadata={"auto_approve": True},
     )
 
     assert result["task_plan"] is not None
     assert len(result["task_plan"]["steps"]) == 3
     assert result["execution_graph"] is not None
-    assert len(provider.calls) == 3  # executive + planner + review
+    # executive + review only — no LLM TaskPlanner for linear known caps
+    assert len(provider.calls) == 2

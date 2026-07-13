@@ -44,7 +44,12 @@ async def test_marketing_strategy_flow_with_presentation(
     result = await runtime.execute(
         "Исследуй рынок AI маркетинга и подготовь стратегию с презентацией",
         context={"client_id": str(client_id), "project_id": str(project_id)},
-        metadata={"auto_approve": True, "client_id": str(client_id), "project_id": str(project_id)},
+        metadata={
+            "auto_approve": True,
+            "client_id": str(client_id),
+            "project_id": str(project_id),
+            "requires_llm_plan": True,
+        },
     )
 
     assert result["task_execution"]["status"] == "COMPLETED"

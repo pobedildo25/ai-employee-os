@@ -123,23 +123,33 @@ class RevisionNode:
         learning_result = None
         if self._learning_manager is not None and user_feedback:
             from app.learning.models import LearningSource
+            from app.learning.policies.learning_policy import LearningPolicy
 
-            try:
-                learned = await self._learning_manager.learn(
-                    str(user_feedback),
-                    source=LearningSource.REVISION_REQUEST,
-                    client_id=client_id,
-                    project_id=project_id,
-                    context=execution_context,
-                    trace_id=state.get("trace_id", "-"),
-                )
-                learning_result = learned.model_dump(mode="json") if learned else None
-            except Exception as exc:
-                logger.warning(
-                    "learning from revision skipped | trace_id=%s error=%s",
+            # One-off document edits ("короче", …) are not durable preferences.
+            policy = getattr(self._learning_manager, "_policy", None) or LearningPolicy()
+            feedback_text = str(user_feedback)
+            if not policy.looks_like_preference(feedback_text):
+                logger.info(
+                    "revision auto-learn skipped (not durable preference) | trace_id=%s",
                     state.get("trace_id", "-"),
-                    exc,
                 )
+            else:
+                try:
+                    learned = await self._learning_manager.learn(
+                        feedback_text,
+                        source=LearningSource.REVISION_REQUEST,
+                        client_id=client_id,
+                        project_id=project_id,
+                        context=execution_context,
+                        trace_id=state.get("trace_id", "-"),
+                    )
+                    learning_result = learned.model_dump(mode="json") if learned else None
+                except Exception as exc:
+                    logger.warning(
+                        "learning from revision skipped | trace_id=%s error=%s",
+                        state.get("trace_id", "-"),
+                        exc,
+                    )
 
         render_meta = (result.metadata or {}).get("render_result") or {}
         update: dict[str, Any] = {

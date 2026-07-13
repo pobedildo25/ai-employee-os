@@ -33,11 +33,17 @@ def client_id():
 def test_detector_feedback_signal() -> None:
     detector = LearningDetector()
     signal = detector.detect(
-        "Сделай меньше текста в презентациях",
+        "Всегда делай меньше текста в презентациях",
         source=LearningSource.USER_FEEDBACK,
     )
     assert signal is not None
     assert "меньше текста" in signal.text.lower()
+
+
+def test_detector_rejects_document_edit_as_preference() -> None:
+    detector = LearningDetector()
+    assert detector.detect("Сделай короче", source=LearningSource.REVISION_REQUEST) is None
+    assert detector.detect("сделай меньше текста", source=LearningSource.USER_FEEDBACK) is None
 
 
 def test_detector_rejects_ordinary_question() -> None:
@@ -70,7 +76,7 @@ async def test_rule_extraction_mock(settings: Settings) -> None:
     gateway, _ = mock_gateway(settings, learning_rule_json())
     extractor = LearningExtractor(gateway)
     signal = LearningDetector().detect(
-        "Убирай длинные вступления",
+        "Всегда убирай длинные вступления",
         source=LearningSource.USER_FEEDBACK,
     )
     assert signal is not None
@@ -116,7 +122,7 @@ async def test_duplicate_merging(settings: Settings, client_id) -> None:
     manager = LearningManager(InMemoryLearningStore(), llm_gateway=gateway)
 
     first = await manager.learn(
-        "Убирай длинные вступления",
+        "Всегда убирай длинные вступления",
         source=LearningSource.USER_FEEDBACK,
         client_id=client_id,
     )
@@ -124,7 +130,7 @@ async def test_duplicate_merging(settings: Settings, client_id) -> None:
     first_confidence = first.confidence
 
     second = await manager.learn(
-        "Убирай длинные вступления всегда",
+        "Всегда убирай длинные вступления",
         source=LearningSource.USER_FEEDBACK,
         client_id=client_id,
     )
@@ -213,7 +219,7 @@ async def test_apply_rules(settings: Settings, client_id) -> None:
     gateway, _ = mock_gateway(settings, learning_rule_json())
     manager = LearningManager(InMemoryLearningStore(), llm_gateway=gateway)
     await manager.learn(
-        "меньше текста в презентациях",
+        "Всегда меньше текста в презентациях",
         source=LearningSource.USER_FEEDBACK,
         client_id=client_id,
     )
@@ -238,7 +244,7 @@ async def test_revision_integration_learns_from_feedback(settings: Settings, cli
         user_input="Revise deck",
         metadata={
             "client_id": str(client_id),
-            "user_feedback": "Сделай меньше текста в презентациях",
+            "user_feedback": "Всегда делай меньше текста в презентациях",
         },
     )
     state["review_result"] = {
@@ -275,7 +281,7 @@ async def test_revision_skips_learning_without_durable_signal(settings: Settings
         user_input="Revise",
         metadata={
             "client_id": str(client_id),
-            "user_feedback": "Исправь опечатку в заголовке",
+            "user_feedback": "Сделай короче",
         },
     )
     state["review_result"] = {"status": "revise", "issues": [], "recommendations": []}
@@ -284,6 +290,40 @@ async def test_revision_skips_learning_without_durable_signal(settings: Settings
     update = await node(state)
     assert update.get("learning_result") is None
     assert await learning.get_rules(client_id=client_id) == []
+
+
+@pytest.mark.asyncio
+async def test_learning_provider_uses_confidence_filter(settings: Settings, client_id) -> None:
+    from app.context.models import ContextRequest
+    from app.learning.providers.learning_provider import LearningContextProvider
+
+    store = InMemoryLearningStore()
+    await store.save(
+        LearningRule(
+            scope=LearningScope.CLIENT,
+            category="writing_style",
+            key="tone",
+            value="short",
+            confidence=0.3,
+            source=LearningSource.USER_FEEDBACK,
+            client_id=client_id,
+        )
+    )
+    await store.save(
+        LearningRule(
+            scope=LearningScope.CLIENT,
+            category="writing_style",
+            key="intro",
+            value="brief",
+            confidence=0.9,
+            source=LearningSource.USER_FEEDBACK,
+            client_id=client_id,
+        )
+    )
+    provider = LearningContextProvider(LearningManager(store))
+    fetched = await provider.fetch(ContextRequest(user_input="hi", client_id=client_id))
+    assert len(fetched["learning_context"]) == 1
+    assert fetched["learning_context"][0]["key"] == "intro"
 
 
 def test_priority_includes_learning_context() -> None:

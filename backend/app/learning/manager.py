@@ -139,6 +139,17 @@ class LearningManager:
         rule.confidence = max(0.0, min(1.0, confidence))
         return await self._store.save(rule)
 
+    async def get_applicable_rules(
+        self,
+        *,
+        client_id: UUID | None = None,
+        project_id: UUID | None = None,
+        limit: int = 20,
+    ) -> list[LearningRule]:
+        """Return rules that pass the confidence filter (read-path isolation)."""
+        rules = await self.get_rules(client_id=client_id, project_id=project_id, limit=limit)
+        return [rule for rule in rules if rule.confidence >= self._policy.min_confidence]
+
     async def apply_rules(
         self,
         *,
@@ -146,7 +157,9 @@ class LearningManager:
         project_id: UUID | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        rules = await self.get_rules(client_id=client_id, project_id=project_id, limit=limit)
+        rules = await self.get_applicable_rules(
+            client_id=client_id, project_id=project_id, limit=limit
+        )
         return [
             {
                 "id": str(rule.id),
@@ -159,5 +172,4 @@ class LearningManager:
                 "source": rule.source.value,
             }
             for rule in rules
-            if rule.confidence >= self._policy.min_confidence
         ]

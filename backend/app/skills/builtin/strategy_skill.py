@@ -117,11 +117,12 @@ class StrategySkill(BaseSkill):
         result.memory_candidates = [item.model_dump(mode="json") for item in memory_items]
 
         return {
-            "status": "completed" if result.document_ast else "incomplete",
+            "status": "completed" if result.document_ast else "failed",
             "skill": self.name(),
             "strategy_result": result.model_dump(mode="json"),
             "document_ast": result.document_ast,
             "memory_candidates": result.memory_candidates,
             "analysis_warnings": result.analysis_warnings,
             "metadata": result.metadata,
+            "message": result.summary if not result.document_ast else None,
         }

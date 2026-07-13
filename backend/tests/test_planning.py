@@ -338,32 +338,16 @@ async def test_langgraph_execute_uses_direct_plan_without_llm_planner(settings: 
 
 
 @pytest.mark.asyncio
-async def test_langgraph_create_plan_invokes_llm_planner(settings: Settings) -> None:
-    registry = create_capability_registry(settings)
+async def test_langgraph_create_plan_linear_caps_skip_llm_planner(settings: Settings) -> None:
+    registry = _ok_registry()
     gateway, provider = _mock_gateway(
         settings,
         _executive_json(
-            goal="Исследовать рынок и подготовить стратегию с презентацией",
+            goal="Подготовить документ и анализ",
             summary="Многоэтапная задача",
             action="CREATE_PLAN",
-            required_capabilities=["research", "strategy_analysis", "presentation_design"],
+            required_capabilities=["document_generation", "document_analysis"],
             next_action="create_plan",
-        ),
-        _plan_json(
-            goal="Исследовать рынок и подготовить стратегию с презентацией",
-            steps=[
-                {"description": "Research market", "capability": "research", "dependencies": []},
-                {
-                    "description": "Build strategy",
-                    "capability": "strategy_analysis",
-                    "dependencies": [0],
-                },
-                {
-                    "description": "Design presentation",
-                    "capability": "presentation_design",
-                    "dependencies": [1],
-                },
-            ],
         ),
         _review_json(summary="Multi-step plan executed"),
     )
@@ -373,11 +357,12 @@ async def test_langgraph_create_plan_invokes_llm_planner(settings: Settings) -> 
     )
 
     result = await runtime.execute(
-        "Исследуй рынок, подготовь стратегию и сделай презентацию",
+        "Подготовь документ и анализ",
         metadata={"auto_approve": True},
     )
 
     assert result["task_plan"] is not None
-    assert len(result["task_plan"]["steps"]) == 3
+    assert len(result["task_plan"]["steps"]) == 2
     assert result["execution_graph"] is not None
-    assert len(provider.calls) == 3
+    # executive + review — no LLM TaskPlanner for known linear caps
+    assert len(provider.calls) == 2

@@ -370,12 +370,14 @@ class Orchestrator(OrchestratorInterface):
                     payload[key] = result[key]
             if "representation" in result and payload.get("document_representation") is None:
                 payload["document_representation"] = result["representation"]
-
-        if payload.get("client_id") and payload.get("project_id"):
-            if step.capability == "document_rendering":
-                payload["store_artifact"] = True
-            if step.capability == "presentation_design" and not payload.get("output_format"):
-                payload["output_format"] = "pptx"
+            # Generic metadata from prior steps (skills own format/store defaults).
+            dep_meta = result.get("metadata") if isinstance(result.get("metadata"), dict) else {}
+            if dep_meta.get("document_type") and not payload.get("output_format"):
+                payload["output_format"] = dep_meta["document_type"]
+            if dep_meta.get("output_format") and not payload.get("output_format"):
+                payload["output_format"] = dep_meta["output_format"]
+            if "store_artifact" in dep_meta and "store_artifact" not in payload:
+                payload["store_artifact"] = dep_meta["store_artifact"]
 
         return payload
 

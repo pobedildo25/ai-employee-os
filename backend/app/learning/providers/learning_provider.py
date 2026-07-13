@@ -15,7 +15,8 @@ class LearningContextProvider(ContextProvider):
         self._manager = manager
 
     async def fetch(self, request: ContextRequest) -> dict[str, Any]:
-        rules = await self._manager.get_rules(
+        # Confidence-filtered rules only — never inject raw get_rules dump.
+        rules = await self._manager.get_applicable_rules(
             client_id=request.client_id,
             project_id=request.project_id,
             limit=20,

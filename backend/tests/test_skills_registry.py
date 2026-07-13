@@ -155,6 +155,33 @@ def test_skill_resolver_node(registry: CapabilityRegistry) -> None:
         trace_id="trace-1",
         user_input="Create a document",
     )
+    state["decision"] = {"action": "EXECUTE"}
+    state["understanding"] = {
+        "goal": "create document",
+        "summary": "Need document generation",
+        "required_capabilities": ["document_generation"],
+        "missing_information": [],
+        "next_action": "execute",
+    }
+
+    update = node(state)
+    required = update["required_capabilities"]
+
+    assert required["requested"] == ["document_generation"]
+    assert len(required["resolved"]) == 1
+    assert required["resolved"][0]["name"] == "document_generation"
+    assert required["unknown"] == []
+    assert update["understanding"]["required_capabilities"] == ["document_generation"]
+
+
+def test_skill_resolver_rejects_unknown_capability(registry: CapabilityRegistry) -> None:
+    node = SkillResolverNode(registry)
+    state = create_initial_state(
+        execution_id="exec-1",
+        trace_id="trace-1",
+        user_input="Create a document",
+    )
+    state["decision"] = {"action": "EXECUTE"}
     state["understanding"] = {
         "goal": "create document",
         "summary": "Need document generation",
@@ -164,12 +191,8 @@ def test_skill_resolver_node(registry: CapabilityRegistry) -> None:
     }
 
     update = node(state)
-    required = update["required_capabilities"]
-
-    assert required["requested"] == ["document_generation", "unknown_capability"]
-    assert len(required["resolved"]) == 1
-    assert required["resolved"][0]["name"] == "document_generation"
-    assert required["unknown"] == ["unknown_capability"]
+    assert update["status"] == "capabilities_failed"
+    assert "unknown_capability" in str(update.get("error") or "")
 
 
 def test_skills_disabled(settings: Settings) -> None:

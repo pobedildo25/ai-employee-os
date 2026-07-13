@@ -53,3 +53,46 @@ async def test_openrouter_provider_auth_error(settings: Settings) -> None:
     provider = OpenRouterProvider(settings)
     with pytest.raises(LLMAuthenticationError):
         await provider.chat(LLMRequest(messages=[LLMMessage(role="user", content="Hello")]))
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_openrouter_retries_on_429_then_succeeds(settings: Settings, monkeypatch) -> None:
+    async def _no_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.llm.providers.openrouter.asyncio.sleep", _no_sleep)
+
+    route = respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        side_effect=[
+            httpx.Response(429, json={"error": "rate limit"}),
+            httpx.Response(429, json={"error": "rate limit"}),
+            httpx.Response(
+                200,
+                json={
+                    "model": "anthropic/claude-sonnet-4",
+                    "choices": [{"message": {"role": "assistant", "content": "ok"}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                },
+            ),
+        ]
+    )
+    provider = OpenRouterProvider(settings)
+    response = await provider.chat(LLMRequest(messages=[LLMMessage(role="user", content="Hi")]))
+    assert response.content == "ok"
+    assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_openrouter_raises_after_retry_exhaustion(settings: Settings, monkeypatch) -> None:
+    async def _no_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr("app.llm.providers.openrouter.asyncio.sleep", _no_sleep)
+    respx.post("https://openrouter.ai/api/v1/chat/completions").mock(
+        return_value=httpx.Response(503, json={"error": "unavailable"})
+    )
+    provider = OpenRouterProvider(settings)
+    with pytest.raises(LLMProviderError):
+        await provider.chat(LLMRequest(messages=[LLMMessage(role="user", content="Hi")]))

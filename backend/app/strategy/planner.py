@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from app.agents.parsers.response_parser import ResponseParseError, extract_json_content
+from app.llm.exceptions import LLMProviderError
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMMessage
 from app.strategy.frameworks import normalize_framework
@@ -57,6 +58,20 @@ class StrategyPlanner(StrategyPlannerInterface):
                     attempt,
                 )
                 return result
+            except LLMProviderError as exc:
+                logger.warning(
+                    "strategy llm degraded | trace_id=%s attempt=%d error=%s",
+                    trace_id,
+                    attempt,
+                    exc,
+                )
+                return StrategyResult(
+                    strategy_type=request.strategy_type or StrategyType.MARKETING_STRATEGY,
+                    summary="Strategy skipped: LLM unavailable",
+                    missing_information=[str(exc)],
+                    analysis_warnings=[str(exc)],
+                    metadata={"status": "failed", "degraded": True, "error": str(exc)},
+                )
             except (ResponseParseError, ValueError) as exc:
                 last_error = exc
                 messages.append(
@@ -65,7 +80,22 @@ class StrategyPlanner(StrategyPlannerInterface):
                         content="Return ONLY valid JSON for StrategyResult schema.",
                     )
                 )
-        raise ResponseParseError(f"Failed to plan strategy: {last_error}")
+        logger.warning(
+            "strategy degraded after parse retries | trace_id=%s error=%s",
+            trace_id,
+            last_error,
+        )
+        return StrategyResult(
+            strategy_type=request.strategy_type or StrategyType.MARKETING_STRATEGY,
+            summary="Strategy skipped: invalid LLM response",
+            missing_information=[str(last_error) if last_error else "parse failed"],
+            analysis_warnings=[str(last_error) if last_error else "parse failed"],
+            metadata={
+                "status": "failed",
+                "degraded": True,
+                "error": str(last_error) if last_error else "parse failed",
+            },
+        )
 
 
 def parse_strategy_result(
@@ -118,7 +148,6 @@ def parse_strategy_result(
 
     framework_raw = data.get("framework_data") if isinstance(data.get("framework_data"), dict) else {}
     if not framework_raw:
-        # Accept top-level framework keys as soft input
         framework_raw = {
             k: data[k]
             for k in (

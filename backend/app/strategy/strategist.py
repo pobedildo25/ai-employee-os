@@ -29,6 +29,8 @@ class StrategyStrategist(StrategyStrategistInterface):
             )
 
         result = await self._planner.plan(request, trace_id=trace_id)
+        if (result.metadata or {}).get("degraded") or (result.metadata or {}).get("status") == "failed":
+            return result
         # Brand is passed through only — never applied here.
         if request.brand_profile:
             result.metadata["brand_profile"] = request.brand_profile

@@ -71,7 +71,12 @@ class DocumentRenderSkill(BaseSkill):
                 brand_raw if isinstance(brand_raw, BrandProfile) else BrandProfile.model_validate(brand_raw)
             )
 
-        output_format_raw = payload.get("output_format", "docx")
+        output_format_raw = (
+            payload.get("output_format")
+            or (payload.get("metadata") or {}).get("document_type")
+            or (payload.get("context") or {}).get("document_type")
+            or "docx"
+        )
         try:
             output_format = OutputFormat(str(output_format_raw).lower())
         except ValueError:
@@ -97,7 +102,11 @@ class DocumentRenderSkill(BaseSkill):
             else (brand_profile.id if brand_profile else None),
         )
 
-        if payload.get("store_artifact") and request.client_id and request.project_id:
+        # Skill owns store default: persist when workspace ids are present unless explicitly disabled.
+        store_artifact = payload.get("store_artifact")
+        if store_artifact is None:
+            store_artifact = bool(request.client_id and request.project_id)
+        if store_artifact and request.client_id and request.project_id:
             try:
                 render_result = await self._artifact_service.render_and_store(request)
             except Exception as exc:

@@ -362,3 +362,28 @@ async def test_workspace_history_appended_for_dialogue(
     roles = [message.get("role") for message in conv.messages]
     assert "user" in roles
     assert "assistant" in roles
+
+
+@pytest.mark.asyncio
+async def test_running_busy_gate_blocks_second_pipeline(
+    session_manager: TelegramSessionManager,
+    sender: InMemoryTelegramSender,
+    conversation_store: TelegramConversationStore,
+) -> None:
+    runtime = StreamableFakeRuntime(final_state={"execution_id": "e", "status": "completed"})
+    flow = build_flow(
+        runtime,
+        session_manager,
+        sender,
+        conversation_store,
+        executive_agent=FakeExecutiveAgent(action="EXECUTE"),
+    )
+    convo = await conversation_store.get_or_create(777, 555)
+    convo.flow_mode = TelegramFlowMode.RUNNING
+    await conversation_store.save(convo)
+
+    result = await flow.handle_message(_request("ещё одна задача"))
+
+    assert result["status"] == "busy"
+    assert "Ещё работаю" in result["reply"]
+    assert runtime.calls == []
