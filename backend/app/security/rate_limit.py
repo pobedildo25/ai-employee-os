@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Protocol
+
+logger = logging.getLogger(__name__)
 
 
 class RateLimiterProtocol(Protocol):
@@ -39,7 +42,10 @@ class RateLimiter:
 
 
 class RedisRateLimiter:
-    """Shared fixed-window rate limiter backed by Redis INCR + EXPIRE."""
+    """Shared fixed-window rate limiter backed by Redis INCR + EXPIRE.
+
+    Fail-closed: Redis errors deny the request (no silent in-memory fallback).
+    """
 
     def __init__(
         self,
@@ -55,7 +61,6 @@ class RedisRateLimiter:
         self.limit = limit
         self.window_seconds = window_seconds
         self._key_prefix = key_prefix
-        self._fallback = RateLimiter(limit=limit, window_seconds=window_seconds)
 
     def _window_key(self, identifier: str) -> str:
         window_id = int(datetime.now().timestamp()) // self.window_seconds
@@ -68,8 +73,9 @@ class RedisRateLimiter:
             if count == 1:
                 await self._redis.expire(key, self.window_seconds)
             return int(count) <= self.limit
-        except Exception:
-            return await self._fallback.allow(identifier)
+        except Exception as exc:
+            logger.error("Redis rate limiter unavailable — denying request | error=%s", exc)
+            return False
 
     async def remaining(self, identifier: str) -> int:
         key = self._window_key(identifier)
@@ -77,8 +83,9 @@ class RedisRateLimiter:
             raw = await self._redis.get(key)
             count = int(raw) if raw is not None else 0
             return max(0, self.limit - count)
-        except Exception:
-            return await self._fallback.remaining(identifier)
+        except Exception as exc:
+            logger.error("Redis rate limiter remaining unavailable | error=%s", exc)
+            return 0
 
 
 def create_rate_limiter(

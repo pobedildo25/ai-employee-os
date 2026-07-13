@@ -387,3 +387,113 @@ async def test_running_busy_gate_blocks_second_pipeline(
     assert result["status"] == "busy"
     assert "Ещё работаю" in result["reply"]
     assert runtime.calls == []
+
+
+@pytest.mark.asyncio
+async def test_allowlist_none_accepts_all(
+    session_manager: TelegramSessionManager,
+    sender: InMemoryTelegramSender,
+    conversation_store: TelegramConversationStore,
+) -> None:
+    runtime = StreamableFakeRuntime(
+        final_state={
+            "execution_id": "e",
+            "status": "completed",
+            "decision": {"action": "RESPOND", "response_message": "ok"},
+            "result": {"message": "ok"},
+        }
+    )
+    flow = TelegramProductFlow(
+        runtime=runtime,  # type: ignore[arg-type]
+        session_manager=session_manager,
+        sender=sender,
+        conversation_store=conversation_store,
+        progress_messenger=TelegramProgressMessenger(sender),
+        continuation=FakeContinuation(),
+        artifact_delivery=FakeArtifactDelivery(),
+        executive_agent=FakeExecutiveAgent(action="RESPOND"),
+        allowed_user_ids=None,
+    )
+    result = await flow.handle_message(_request("привет"))
+    assert result["status"] != "forbidden"
+
+
+@pytest.mark.asyncio
+async def test_allowlist_empty_set_denies_all(
+    session_manager: TelegramSessionManager,
+    sender: InMemoryTelegramSender,
+    conversation_store: TelegramConversationStore,
+) -> None:
+    runtime = StreamableFakeRuntime(final_state={"execution_id": "e", "status": "completed"})
+    flow = TelegramProductFlow(
+        runtime=runtime,  # type: ignore[arg-type]
+        session_manager=session_manager,
+        sender=sender,
+        conversation_store=conversation_store,
+        progress_messenger=TelegramProgressMessenger(sender),
+        continuation=FakeContinuation(),
+        artifact_delivery=FakeArtifactDelivery(),
+        executive_agent=FakeExecutiveAgent(action="RESPOND"),
+        allowed_user_ids=set(),
+    )
+    result = await flow.handle_message(_request("привет"))
+    assert result["status"] == "forbidden"
+    assert "Доступ ограничен" in result["reply"]
+    assert runtime.calls == []
+
+
+@pytest.mark.asyncio
+async def test_allowlist_nonempty_filters_users(
+    session_manager: TelegramSessionManager,
+    sender: InMemoryTelegramSender,
+    conversation_store: TelegramConversationStore,
+) -> None:
+    runtime = StreamableFakeRuntime(final_state={"execution_id": "e", "status": "completed"})
+    flow = TelegramProductFlow(
+        runtime=runtime,  # type: ignore[arg-type]
+        session_manager=session_manager,
+        sender=sender,
+        conversation_store=conversation_store,
+        progress_messenger=TelegramProgressMessenger(sender),
+        continuation=FakeContinuation(),
+        artifact_delivery=FakeArtifactDelivery(),
+        executive_agent=FakeExecutiveAgent(action="RESPOND"),
+        allowed_user_ids={111},
+    )
+    denied = await flow.handle_message(_request("привет"))
+    assert denied["status"] == "forbidden"
+    assert runtime.calls == []
+
+
+def test_factory_production_empty_allowlist_is_deny_all(workspace_service: WorkspaceService) -> None:
+    settings = Settings(
+        app_env="production",
+        telegram_enabled=True,
+        telegram_bot_token="",
+        telegram_allowed_user_ids="",
+    )
+    adapter = create_telegram_adapter(
+        runtime=StreamableFakeRuntime(final_state={}),  # type: ignore[arg-type]
+        workspace_service=workspace_service,
+        settings=settings,
+        sender=InMemoryTelegramSender(),
+        redis_client=object(),
+    )
+    assert adapter._allowed_user_ids == set()
+
+
+def test_factory_dev_empty_allowlist_is_none(workspace_service: WorkspaceService) -> None:
+    settings = Settings(
+        app_env="development",
+        telegram_enabled=True,
+        telegram_bot_token="",
+        telegram_allowed_user_ids="",
+    )
+    adapter = create_telegram_adapter(
+        runtime=StreamableFakeRuntime(final_state={}),  # type: ignore[arg-type]
+        workspace_service=workspace_service,
+        settings=settings,
+        sender=InMemoryTelegramSender(),
+        redis_client=object(),
+    )
+    assert adapter._allowed_user_ids is None

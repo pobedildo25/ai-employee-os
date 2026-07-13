@@ -166,3 +166,39 @@ def test_create_security_store_uses_in_memory_outside_production() -> None:
 
     store = create_security_store(Settings(app_env="development"))
     assert isinstance(store, InMemorySecurityProvider)
+
+
+def test_create_security_store_raises_in_production_when_redis_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.config import Settings
+    from app.main import create_security_store
+
+    def _boom(_settings: Settings):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr("app.database.redis.get_redis_client", _boom)
+
+    with pytest.raises(RuntimeError, match="Redis security store is required"):
+        create_security_store(Settings(app_env="production"))
+
+
+def test_build_rate_limiter_raises_in_production_when_redis_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.core.config import Settings
+    from app.main import _build_rate_limiter
+
+    def _boom(_settings: Settings):
+        raise ConnectionError("redis down")
+
+    monkeypatch.setattr("app.database.redis.get_redis_client", _boom)
+
+    with pytest.raises(RuntimeError, match="Redis rate limiter is required"):
+        _build_rate_limiter(Settings(app_env="production"))
+
+
+def test_stage_zero_contract_files_exist() -> None:
+    from pathlib import Path
+
+    docs = Path(__file__).resolve().parents[2] / "docs"
+    for name in ("PRODUCTION_CONTRACT.md", "DECISION_CONTRACT.md", "CAPABILITY_MATRIX.md"):
+        path = docs / name
+        assert path.is_file(), f"missing Stage 0 contract: {name}"
+        assert path.stat().st_size > 0

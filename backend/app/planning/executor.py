@@ -184,12 +184,15 @@ _SUCCESS_SKILL_STATUSES = frozenset({"completed", "success", "ok"})
 
 
 def _skill_result_succeeded(result: object) -> bool:
-    """Treat missing status as success; explicit non-success status as failure."""
+    """Dict results require an explicit success status; missing status is failure.
+
+    Non-dict results are treated as success (legacy / non-structured skills).
+    """
     if not isinstance(result, dict):
         return True
     status = result.get("status")
     if status is None:
-        return True
+        return False
     return str(status).strip().lower() in _SUCCESS_SKILL_STATUSES
 
 

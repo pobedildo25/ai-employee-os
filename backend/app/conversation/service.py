@@ -62,10 +62,16 @@ class ConversationService:
         self._artifacts = artifact_delivery or TelegramArtifactDelivery(None, None)
         self._orchestrator = orchestrator or Orchestrator()
         self._executive_agent = executive_agent
-        self._allowed_user_ids = allowed_user_ids or set()
+        # None = no filter (dev); empty set = deny all; non-empty = allowlist.
+        self._allowed_user_ids = allowed_user_ids
+
+    def _user_allowed(self, telegram_user_id: int) -> bool:
+        if self._allowed_user_ids is None:
+            return True
+        return telegram_user_id in self._allowed_user_ids
 
     async def handle_message(self, request: TelegramExecutionRequest) -> dict[str, Any]:
-        if self._allowed_user_ids and request.telegram_user_id not in self._allowed_user_ids:
+        if not self._user_allowed(request.telegram_user_id):
             text = "Доступ ограничен."
             send_result = await self._sender.send_message(request.telegram_chat_id, text)
             return {"status": "forbidden", "reply": text, "send_result": send_result}
@@ -313,7 +319,7 @@ class ConversationService:
         }
 
     async def handle_callback(self, request: TelegramCallbackRequest) -> dict[str, Any]:
-        if self._allowed_user_ids and request.telegram_user_id not in self._allowed_user_ids:
+        if not self._user_allowed(request.telegram_user_id):
             text = "Доступ ограничен."
             send_result = await self._sender.send_message(request.telegram_chat_id, text)
             return {"status": "forbidden", "reply": text, "send_result": send_result}

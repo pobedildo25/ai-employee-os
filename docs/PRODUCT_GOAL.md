@@ -3,7 +3,7 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
-**Прогресс (2026-07-13):** Sprint A выполнен (`1edbb65`). Sprint B: P0-C / P0-D / P0-E landed (незакоммичено). Sprint C tails landed (незакоммичено): P1-I short DB txns, P1-F knowledge gate (≥0.7 / persist=False), dead document nodes removed from executive graph, Redis session bindings. Sprint D (P2) production hardening landed (незакоммичено): Redis AUTH, Qdrant key wiring, MinIO pin, migration advisory lock, Telegram worker + idempotency, Redis rate limit, tenant ACL, artifact sanitize/compensation, LLM metrics + Sentry, readiness healthchecks.
+**Прогресс (2026-07-13):** Sprint A — **PARTIAL** (`1edbb65` + leftovers in this PR: P0-G fail-closed Redis/allowlist, P0-B missing `status` → FAIL, Stage 0 contracts). Sprint B — **PARTIAL**: P0-D/P0-E DONE; P0-C PARTIAL (ConversationService still Telegram-coupled; multi-channel ports not done). Sprint C — **PARTIAL** (Resolver validates hints; approval = stored plan re-run; Render Contract / MemorySaver / PDF / history truncate / live eval open). Sprint D — **PARTIAL** (landed: Redis AUTH, Qdrant key, MinIO pin, migration lock, Telegram worker, tenant ACL, Sentry/metrics, readiness; open: TLS / backups schedule / rollback playbook / Celery; Redis security+rate-limit InMemory fallback fixed as Sprint A/P0-G leftover this PR).
 
 ---
 
@@ -324,14 +324,14 @@ Readiness определяется **обязательными** сервиса
 Цель плана: привести код к Product Goal.  
 Порядок: сначала убрать ложную готовность и side-channels, затем устойчивость пилота, затем production ops, затем assistant-grade UX.
 
-### 11.1 Этап 0 — Зафиксировать контракт
+### 11.1 Этап 0 — Зафиксировать контракт — DONE (this PR)
 
 **Добавить / обновить**
 
-- Этот документ (`PRODUCT_GOAL.md`) — уже источник правды.
-- `docs/PRODUCTION_CONTRACT.md` — что гарантируем / не умеем (live news, research, semantic memory, PDF…).
-- `docs/DECISION_CONTRACT.md` — Executive = единственный owner Product Decision; запрет keyword / document routing; Runtime Invariants.
-- Матрица capabilities: `enabled` / `stub` / `prod` / `pilot` / `off` (+ правило: off ⇒ нет в prompt и registry).
+- [x] Этот документ (`PRODUCT_GOAL.md`) — уже источник правды.
+- [x] `docs/PRODUCTION_CONTRACT.md` — что гарантируем / не умеем (live news, research, semantic memory, PDF…) — **added this PR**.
+- [x] `docs/DECISION_CONTRACT.md` — Executive = единственный owner Product Decision; запрет keyword / document routing; Runtime Invariants — **added this PR**.
+- [x] `docs/CAPABILITY_MATRIX.md` — матрица capabilities: `prod` / `pilot` / `off` / `stub` (+ правило: off ⇒ нет в prompt и registry) — **added this PR**.
 
 **Критерий:** любой PR можно отклонить ссылкой на раздел этого документа.
 
@@ -350,27 +350,27 @@ Readiness определяется **обязательными** сервиса
 5. [x] Создание артефакта → задача.
 6. [x] Объективно сложная многоэтапная работа (зависимости / ветвление) → план, и только тогда.
 
-#### P0-B. Stub skills и silent success — DONE (Sprint A)
+#### P0-B. Stub skills и silent success — DONE (Sprint A; missing-status honesty this PR)
 
 - [x] Убрать stubs из prod registry / prompt (`DocumentSkill` / `AnalysisSkill` / `FileSkill` не регистрируются).
-- [x] Executor / Orchestrator: `status != completed` → FAIL, не COMPLETED.
+- [x] Executor / Orchestrator: `status != completed` → FAIL, не COMPLETED; **dict без `status` → FAIL** (this PR).
 - [x] Нет артефакта → пользователю не писать «Готово».
 - [x] Неизвестная / disabled capability → fail на resolve (и отсутствует в prompt/registry).
 
-#### P0-C. Один ConversationService (без rewrite Runtime) — DONE (Sprint B)
+#### P0-C. Один ConversationService (без rewrite Runtime) — PARTIAL (Sprint B)
 
-- Перенести orchestration пользовательского диалога в application layer.
-- **Не** переписывать Runtime. **Не** переписывать LangGraph.
-- Telegram (и любой канал) = map / send only.
-- Любой новый канал использует тот же ConversationService без дублирования логики.
-- Runtime остаётся исполнителем уже принятого Product Decision (см. Runtime Invariants).
+- [x] Перенести orchestration пользовательского диалога в application layer (`app.conversation`).
+- [x] **Не** переписывать Runtime. **Не** переписывать LangGraph.
+- [ ] Telegram (и любой канал) = map / send only — **PARTIAL**: ConversationService ещё Telegram-coupled (DTO/session); multi-channel ports не сделаны.
+- [ ] Любой новый канал использует тот же ConversationService без дублирования логики — blocked on ports.
+- [x] Runtime остаётся исполнителем уже принятого Product Decision (см. Runtime Invariants).
 
-#### P0-D. Состояние диалога — DONE (Sprint B; bindings follow-up)
+#### P0-D. Состояние диалога — DONE (Sprint B)
 
 - [x] Async ConversationStore API + per-user lock (`user_lock`).
 - [x] RedisConversationStore (`conversation:fsm:{user_id}`, TTL `conversation_fsm_ttl_seconds`).
 - [x] Production bootstrap → Redis store; tests → InMemory singleton.
-- [ ] Session bindings (`conversation:binding:{user_id}`) — follow-up; durable workspace lookup by client_id уже есть.
+- [x] Session bindings (`conversation:binding:{user_id}`) — Redis; durable workspace lookup by client_id уже есть.
 - [x] Restart и `workers > 1` не ломают clarify / approval / revision (при Redis FSM).
 
 #### P0-E. Clarification — DONE (Sprint B)
@@ -387,10 +387,11 @@ Readiness определяется **обязательными** сервиса
 - [x] Убрать document-type routing (`_wants_presentation` — только capability `presentation_design`).
 - [x] Runtime / Telegram не превращают Revision ↔ New Task самостоятельно.
 
-#### P0-G. Security + honesty + readiness — MOSTLY DONE (Sprint A)
+#### P0-G. Security + honesty + readiness — PARTIAL (Sprint A leftovers this PR)
 
-- [x] Нельзя создавать ADMIN anonymously; Telegram allowlist при непустом списке; закрыть `/docs` в prod.
-- [x] Persist API keys / audit (не process memory как источник истины) — Redis provider (Sprint D starter); InMemory в tests/dev.
+- [x] Нельзя создавать ADMIN anonymously; Telegram allowlist: `None` = no filter (dev), empty set = deny all, non-empty = allowlist; **production + empty → deny all + error log** (this PR).
+- [x] Persist API keys / audit (не process memory как источник истины) — Redis provider; InMemory в tests/dev.
+- [x] Production: Redis security store / rate limiter **fail-closed** (no InMemory fallback) — this PR.
 - [x] `/ready`: обязательные сервисы определяют readiness; optional → **DEGRADED**, не **NOT READY**.
 - [x] Research: feature flag OFF (`research_enabled=False`); нет в prompt и registry.
 - [x] Semantic memory: feature flag OFF (`semantic_memory_enabled=False`); нет в product surface.
@@ -402,8 +403,8 @@ Readiness определяется **обязательными** сервиса
 #### P1-A. Approval только когда нужен сложный multi-stage plan
 
 - [x] Простые `EXECUTE` (в т.ч. линейный multi-skill pipeline) — без лишних подтверждений.
-- [x] Approve = resume from stored plan/decision (`skip_executive_llm` + `resume_task_plan`), не full re-run Executive.
-- [ ] Persist execution / checkpoint Redis (LangGraph) — optional follow-up.
+- [x] Approve = resume from stored plan/decision (`skip_executive_llm` + `resume_task_plan`), **не** LangGraph checkpoint / MemorySaver.
+- [ ] Persist execution / checkpoint Redis (LangGraph MemorySaver) — open.
 
 #### P1-B. Context Builder
 
@@ -411,7 +412,7 @@ Readiness определяется **обязательными** сервиса
 - [x] Никогда не изменять смысл пользовательского запроса — только агрегировать.
 - [x] Не удалять transport context вне политики truncation.
 - [ ] Relevant recall; пустой knowledge search → пусто (не dump) — partial / follow-up.
-- [ ] Truncate history по явной политике — follow-up.
+- [ ] Truncate history по явной политике — open.
 - [x] Learning inject только preference-слой с confidence filter.
 
 #### P1-C. Planner только по решению Executive и правильному критерию
@@ -423,12 +424,12 @@ Readiness определяется **обязательными** сервиса
 
 #### P1-D. Capability Resolver + Skills + Render Contract + Orchestrator
 
-- [x] После `EXECUTE`/`CREATE_PLAN` capability graph валидирует/упорядочивает Capability Resolver (Executive hints temporary).
+- [x] После `EXECUTE`/`CREATE_PLAN` Capability Resolver **валидирует hints** Executive (не полный owner graph construction from scratch).
 - [x] Skill не знает, какая Skill будет следующей.
 - [x] Orchestrator знает только DAG; убраны capability-specific if (`presentation_design` / `document_rendering`).
-- [ ] Единый Render Contract (один вход) — partial (skills supply defaults; full contract follow-up).
+- [ ] Единый Render Contract (один вход) — open.
 - [x] Dead dual document nodes удалить или не использовать — unregistered from `build_executive_graph` (skills path intact).
-- [ ] PDF: реализовать позже или не предлагать в surface — follow-up.
+- [ ] PDF: реализовать позже или не предлагать в surface — open (stub).
 
 #### P1-E. Learning строго по контракту
 
@@ -452,7 +453,7 @@ Readiness определяется **обязательными** сервиса
 #### P1-H. Decision eval
 
 - [x] Policy catalog / scenario fixtures (existing).
-- [ ] Golden + spot live Executive — follow-up.
+- [ ] Golden + spot live Executive — open.
 - [x] Runtime не мутирует DecisionType (инвариант сохранён).
 
 #### P1-I. Telegram ops hygiene
@@ -465,12 +466,12 @@ Readiness определяется **обязательными** сервиса
 ### 11.4 Этап 3 (P2) — Production hardening
 
 - [x] Redis AUTH, Qdrant key, MinIO pinned tags / deps (edge TLS external; MinIO plain inside network).
-- [x] Resource limits (modest mem/cpus on prod compose); [ ] TLS at edge / backups / rollback deploy — ops playbook deferred.
+- [x] Resource limits (modest mem/cpus on prod compose); [ ] TLS at edge — open; [ ] backups schedule — open; [ ] rollback deploy playbook — open.
 - [x] Migrations не на каждый multi-worker startup race (advisory lock + one-shot recommendation).
 - [x] Sentry + metrics; wire LLM latency / tokens.
 - [x] Tenant ACL на CRUD; safe artifact object keys; compensation MinIO ↔ DB.
-- [x] Отдельный Telegram worker; shared rate limit; idempotent update handling.
-- [ ] Реальный task queue только если нужны длинные background jobs (deferred).
+- [x] Отдельный Telegram worker; shared Redis rate limit (**fail-closed**, no InMemory fallback in prod — this PR); idempotent update handling.
+- [ ] Реальный task queue / Celery — open (только если нужны длинные background jobs).
 - [x] Readiness: required vs degraded — закрепить в health контракте и compose/Dockerfile healthchecks.
 
 ---
@@ -489,63 +490,65 @@ Readiness определяется **обязательными** сервиса
 
 | Sprint | Статус | Фокус относительно Goal | Состав |
 |--------|--------|-------------------------|--------|
-| **A** | **DONE** (`1edbb65`, 2026-07-13) | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A, P0-B, P0-E (clarify fix), P0-F, P0-G |
-| **B** | **DONE** (код landed; commit pending) | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C, P0-D, P0-E; bindings follow-up |
-| **C** | **DONE** (tails landed; commit pending) | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate + P1-F/I + dead nodes | P1-A … P1-I |
-| **D** | **DONE** (код landed; commit pending) | Production ops | Этап 3 (P2): secrets, workers, ACL, observability, readiness |
+| **A** | **PARTIAL** (`1edbb65` + leftovers this PR) | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A/B/F mostly done; P0-G fail-closed this PR; Stage 0 contracts this PR |
+| **B** | **PARTIAL** | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C PARTIAL; P0-D DONE (incl. bindings); P0-E DONE |
+| **C** | **PARTIAL** | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate | P1-A…P1-I; open: Render Contract, MemorySaver, PDF, history truncate, live eval |
+| **D** | **PARTIAL** | Production ops | Landed: secrets, workers, ACL, observability, readiness; open: TLS, backups schedule, rollback playbook, Celery |
 | **E** | pending | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
 
-### Sprint A — Definition of Done — DONE
+### Sprint A — Definition of Done — PARTIAL (closing leftovers this PR)
 
 - [x] Вопрос / консультация / анализ не уходят в task/plan.
 - [x] «Курс доллара» / «Сделай КП» / уточнение КП ведут себя как ассистент, не как движок.
 - [x] «Сделай КП» не запускает Planner только из-за числа skills.
-- [x] Нет silent «Готово» без результата.
+- [x] Нет silent «Готово» без результата; dict skill result без `status` → FAIL.
 - [x] Keyword / document routing убраны из decision path.
 - [x] Research и semantic memory: flag OFF → нет в prompt и registry; не mock/stub в product surface.
 - [x] `/ready`: optional deps = DEGRADED, не NOT READY.
-- [x] Security hard gate (allowlist, keys, docs) закрыт для prod-конфига.
+- [x] Security hard gate (allowlist deny-all when empty in prod; Redis store/rate-limit fail-closed) — this PR.
+- [x] Stage 0 contracts (`PRODUCTION_CONTRACT` / `DECISION_CONTRACT` / `CAPABILITY_MATRIX`) — this PR.
 
-Известный остаток Sprint A → перенесён: durable persist API keys/audit (P0-G) — **Sprint D starter landed** (`RedisSecurityProvider`). Context Builder transport merge (P0-E) — done в Sprint B. Session bindings Redis — **done** (`conversation:binding:{user_id}`).
+### Sprint B — Definition of Done — PARTIAL
 
-### Sprint B — Definition of Done — DONE
-
-- [x] Один ConversationService (`app.conversation`); Telegram = facade / transport.
+- [x] ConversationService (`app.conversation`); Telegram = facade — **PARTIAL**: ещё Telegram-coupled; ports не done.
 - [x] Process memory не источник истины для FSM (Redis в bootstrap; InMemory для тестов).
 - [x] Clarification с повторной оценкой Executive; transport context не теряется Builder-ом.
+- [x] Session bindings Redis (`conversation:binding:{user_id}`).
 - [x] Runtime / LangGraph не переписаны «заодно».
 - [x] Runtime не мутирует DecisionType и не запускает Planner сам (инвариант Sprint A сохранён).
 
-Follow-up вне DoD: ~~Redis session bindings~~ done; ~~persist API keys/audit (P0-G)~~ Redis provider landed (Sprint D starter).
+### Sprint C — Definition of Done — PARTIAL
 
-### Sprint C — Definition of Done
-
-- [x] Executive = только Product Decision; capability graph валидирует Capability Resolver (hints temporary).
+- [x] Executive = только Product Decision; Capability Resolver **валидирует hints** (не полный owner graph).
 - [x] Context Builder только агрегирует и merge transport; не меняет смысл; не удаляет transport context вне truncation policy.
 - [x] Planner по зависимостям/ветвлению/`requires_llm_plan`, не по count(capabilities).
 - [x] Orchestrator знает только DAG / зависимости / статусы (нет capability-name ifs).
 - [x] Skills независимы; skill не знает следующего.
-- [ ] Единый Render Contract (не обязательно один класс) — partial.
+- [ ] Единый Render Contract — open.
 - [x] Learning не влияет на DecisionType и стратегию выполнения; confidence filter + no one-off revision learn.
-- [x] Простые EXECUTE без лишнего approve; multi-stage approval = resume stored plan (skip Executive).
+- [x] Простые EXECUTE без лишнего approve; multi-stage approval = **stored plan re-run** (не LangGraph checkpoint).
+- [ ] LangGraph MemorySaver / checkpoint Redis — open.
 - [x] Controlled degrade на LLM outage для strategy / presentation / quality.
 - [x] RUNNING busy gate в ConversationService.
 - [x] P1-F knowledge auto-remember gate; P1-I short DB txns; dead document nodes unregistered.
+- [ ] PDF / history truncate / live eval — open.
 
-### Sprint D — Definition of Done
+### Sprint D — Definition of Done — PARTIAL
 
-- [x] Persist API keys / audit (Redis starter: `security:apikey:*`, `security:audit`); InMemory в tests/dev.
+- [x] Persist API keys / audit (Redis starter: `security:apikey:*`, `security:audit`); InMemory **только** tests/dev; prod fail-closed.
 - [x] Redis AUTH (`REDIS_PASSWORD` / `--requirepass`); Qdrant API key wired in compose + env examples.
 - [x] MinIO pinned image tag; `MINIO_SECURE=false` inside docker network (edge TLS external).
 - [x] Migrations race-safe: Postgres advisory lock in entrypoint; prod recommends one-shot + `RUN_MIGRATIONS_ON_STARTUP=false`.
 - [x] Separate Telegram worker (`python -m app.adapters.telegram.worker`); `TELEGRAM_INLINE_POLLING` gate in API lifespan.
-- [x] Idempotent Telegram updates (`telegram:update:{id}` SET NX); Redis shared rate limit with in-memory fallback.
+- [x] Idempotent Telegram updates (`telegram:update:{id}` SET NX); Redis shared rate limit **fail-closed** (no InMemory fallback in prod).
 - [x] Tenant ACL via API key `metadata.client_id` / `tenant_client_id` on clients/projects/artifacts (fail closed 403).
 - [x] Safe artifact object keys + MinIO compensation on DB create failure; best-effort delete logged.
 - [x] LLMGateway → `record_llm_call` (tokens/latency); Sentry init when `SENTRY_DSN` set.
 - [x] Readiness: compose + Dockerfile HEALTHCHECK → `/ready`; qdrant healthcheck; modest prod resource limits.
-- [ ] Backups/rollback deploy playbook (partial: backup scripts/volume exist; formal rollback DoD deferred).
-- [ ] Real task queue for long background jobs — deferred (not required without long jobs).
+- [ ] TLS at edge — open.
+- [ ] Backups schedule — open.
+- [ ] Rollback deploy playbook — open.
+- [ ] Real task queue / Celery — open.
 
 ### Sprint E — Definition of Done
 
@@ -588,3 +591,6 @@ Pilot + resilience / security / ops (Sprint D).
 - `docs/ARCHITECTURE.md` — техническая архитектура
 - `docs/ROADMAP.md` — этапы развития
 - `docs/RELEASE_CANDIDATE_REPORT.md` — статус RC / staging gates
+- `docs/PRODUCTION_CONTRACT.md` — production guarantees / non-goals (Stage 0)
+- `docs/DECISION_CONTRACT.md` — Product Decision owner + Runtime Invariants (Stage 0)
+- `docs/CAPABILITY_MATRIX.md` — capability status matrix (Stage 0)

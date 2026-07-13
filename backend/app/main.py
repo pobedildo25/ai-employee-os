@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def create_security_store(settings: Settings) -> SecurityStore:
-    """Production prefers Redis-backed keys/audit; tests/dev keep InMemory."""
+    """Production requires Redis-backed keys/audit; tests/dev keep InMemory."""
     if not settings.is_production:
         return InMemorySecurityProvider()
     try:
@@ -34,8 +34,9 @@ def create_security_store(settings: Settings) -> SecurityStore:
 
         return RedisSecurityProvider(get_redis_client(settings))
     except Exception as exc:
-        logger.warning("Redis security store unavailable, using in-memory | error=%s", exc)
-        return InMemorySecurityProvider()
+        raise RuntimeError(
+            "Redis security store is required in production; refusing InMemory fallback"
+        ) from exc
 
 
 def _build_rate_limiter(settings: Settings):
@@ -46,7 +47,9 @@ def _build_rate_limiter(settings: Settings):
 
             redis_client = get_redis_client(settings)
         except Exception as exc:
-            logger.warning("Redis rate limiter unavailable, using in-memory | error=%s", exc)
+            raise RuntimeError(
+                "Redis rate limiter is required in production; refusing InMemory fallback"
+            ) from exc
     return create_rate_limiter(
         limit=settings.security_rate_limit,
         window_seconds=settings.security_rate_window_seconds,

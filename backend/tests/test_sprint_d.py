@@ -75,7 +75,7 @@ async def test_redis_rate_limiter_fixed_window() -> None:
 
 
 @pytest.mark.asyncio
-async def test_redis_rate_limiter_falls_back_on_error() -> None:
+async def test_redis_rate_limiter_denies_on_error() -> None:
     class BrokenRedis:
         async def incr(self, key: str) -> int:
             raise RuntimeError("down")
@@ -83,9 +83,12 @@ async def test_redis_rate_limiter_falls_back_on_error() -> None:
         async def expire(self, key: str, seconds: int) -> bool:
             raise RuntimeError("down")
 
+        async def get(self, key: str) -> str | None:
+            raise RuntimeError("down")
+
     limiter = RedisRateLimiter(BrokenRedis(), limit=1, window_seconds=60)
-    assert await limiter.allow("x")
-    assert not await limiter.allow("x")
+    assert await limiter.allow("x") is False
+    assert await limiter.remaining("x") == 0
 
 
 def test_tenant_scope_helpers() -> None:

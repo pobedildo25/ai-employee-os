@@ -153,6 +153,51 @@ async def test_task_executor_handles_missing_capability(settings: Settings) -> N
     assert plan.steps[0].status == StepStatus.FAILED
 
 
+class _NoStatusSkill(BaseSkill):
+    def __init__(self) -> None:
+        super().__init__(
+            metadata=SkillMetadata(
+                id="no_status_skill",
+                name="no_status_skill",
+                description="missing status",
+                capabilities=["document_analysis"],
+                enabled=True,
+            ),
+            capabilities=[
+                Capability(name="document_analysis", description="ok", category="test"),
+            ],
+        )
+
+    async def execute(self, payload: dict) -> dict:
+        return {"skill": self.name(), "payload_keys": list(payload.keys())}
+
+
+@pytest.mark.asyncio
+async def test_task_executor_fails_when_skill_dict_missing_status() -> None:
+    registry = CapabilityRegistry(Settings(skills_enabled=True))
+    registry.register(_NoStatusSkill())
+    plan = TaskPlan(
+        goal="fail missing status",
+        summary="dict without status must fail",
+        steps=[PlanStep(description="Analyze", capability="document_analysis")],
+    )
+    executor = TaskExecutor()
+
+    execution = await executor.execute(plan, registry)
+
+    assert execution.status == TaskExecutionStatus.FAILED
+    assert plan.steps[0].status == StepStatus.FAILED
+
+
+def test_skill_result_succeeded_missing_status_is_failure() -> None:
+    from app.planning.executor import _skill_result_succeeded
+
+    assert _skill_result_succeeded({"skill": "x"}) is False
+    assert _skill_result_succeeded({"status": "completed"}) is True
+    assert _skill_result_succeeded("ok") is True
+    assert _skill_result_succeeded(None) is True
+
+
 @pytest.mark.asyncio
 async def test_executor_node_waiting_approval(settings: Settings) -> None:
     registry = create_capability_registry(settings)

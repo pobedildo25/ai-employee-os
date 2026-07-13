@@ -44,11 +44,17 @@ def create_telegram_adapter(
         else:
             sender = InMemoryTelegramSender()
 
-    allowed_user_ids = settings.parsed_telegram_allowed_user_ids()
-    if settings.is_production and not allowed_user_ids:
-        logger.warning(
-            "telegram allowlist empty in production — all users accepted until configured"
-        )
+    parsed_allowlist = settings.parsed_telegram_allowed_user_ids()
+    if settings.is_production:
+        # Empty set → deny all (hard gate). Non-empty → allowlist.
+        allowed_user_ids: set[int] | None = parsed_allowlist
+        if not parsed_allowlist:
+            logger.error(
+                "telegram allowlist empty in production — denying all users until configured"
+            )
+    else:
+        # None → no filter (dev). Non-empty set → allowlist.
+        allowed_user_ids = parsed_allowlist if parsed_allowlist else None
 
     if redis_client is None:
         try:

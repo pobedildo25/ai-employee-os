@@ -47,7 +47,8 @@ class TelegramAdapter(TelegramAdapterInterface):
         self.enabled = enabled
         self._mapper = mapper or TelegramMapper()
         self._conversation_store = conversation_store or TelegramConversationStore()
-        self._allowed_user_ids = allowed_user_ids or set()
+        # None = no filter (dev); empty set = deny all; non-empty = allowlist.
+        self._allowed_user_ids = allowed_user_ids
         self._product_flow = product_flow or self._build_product_flow(
             runtime=runtime,
             session_manager=session_manager,
