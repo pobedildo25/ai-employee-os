@@ -189,8 +189,9 @@ async def test_telegram_adapter(
     result = await adapter.handle_update(SAMPLE_UPDATE)
     assert result is not None
     assert result["execution_id"] == "exec-tg-1"
-    assert sender.sent[0]["text"] == "Думаю…" or sender.sent[-1]["text"].startswith("Ответ на:")
-    assert any(item.get("reply_to_message_id") == 42 for item in sender.sent)
+    # Single-step EXECUTE: no progress theater; final reply only.
+    assert all(item["text"] != "Думаю…" for item in sender.sent)
+    assert any(item["text"].startswith("Ответ на:") for item in sender.sent)
 
     disabled = TelegramAdapter(
         runtime=runtime,  # type: ignore[arg-type]

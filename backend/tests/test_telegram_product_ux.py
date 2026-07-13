@@ -164,6 +164,25 @@ def _task_executive_agent() -> Any:
     return TaskExecutive()
 
 
+def _plan_executive_agent() -> Any:
+    class PlanExecutive:
+        async def analyze(self, state):
+            return ExecutiveAgentResult(
+                understanding=AgentUnderstanding(
+                    goal=state.get("user_input", ""),
+                    summary="multi-stage plan",
+                    next_action="create_plan",
+                    required_capabilities=["research", "strategy", "document_generation"],
+                ),
+                decision=AgentDecision(
+                    action=DecisionType.CREATE_PLAN,
+                    reasoning="multi-stage work",
+                ),
+            )
+
+    return PlanExecutive()
+
+
 def _revision_executive_agent() -> Any:
     class RevisionExecutive:
         async def analyze(self, state):
@@ -218,7 +237,14 @@ async def test_progress_update_edits_single_message(
             }
         ],
     )
-    flow = build_flow(runtime, session_manager, sender, conversation_store, continuation=FakeContinuation())
+    flow = build_flow(
+        runtime,
+        session_manager,
+        sender,
+        conversation_store,
+        continuation=FakeContinuation(),
+        executive_agent=_plan_executive_agent(),
+    )
     request = TelegramMapper().map_update(SAMPLE_UPDATE)
     assert request is not None
 
@@ -281,6 +307,7 @@ async def test_approval_buttons_and_resume(
         sender,
         conversation_store,
         continuation=FakeContinuation(),
+        executive_agent=_plan_executive_agent(),
     )
     request = TelegramMapper().map_update(SAMPLE_UPDATE)
     assert request is not None

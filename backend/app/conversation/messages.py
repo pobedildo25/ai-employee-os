@@ -1,8 +1,59 @@
 from typing import Any
 
+from app.conversation.models import ConversationState, FlowMode
+
 
 def format_progress_header() -> str:
     return "Думаю…"
+
+
+_FLOW_MODE_LABELS: dict[FlowMode, str] = {
+    FlowMode.IDLE: "свободен",
+    FlowMode.RUNNING: "выполняю задачу",
+    FlowMode.WAITING_APPROVAL: "жду подтверждения плана",
+    FlowMode.REVISION_PROMPTED: "жду правки",
+    FlowMode.PENDING_CLARIFICATION: "жду уточнение",
+    FlowMode.COMPLETED: "есть готовый результат",
+    FlowMode.FAILED: "последняя задача не удалась",
+    FlowMode.CANCELLED: "последняя задача отменена",
+}
+
+
+def format_slash_start() -> str:
+    return (
+        "Я NOVA — AI-сотрудник маркетингового агентства.\n\n"
+        "Команды:\n"
+        "/new — начать диалог заново\n"
+        "/status — короткий статус\n"
+        "/cancel — отменить текущую задачу\n\n"
+        "Пока без живого web/research (включится отдельно). "
+        "Могу готовить черновики документов и презентаций (docx/pptx)."
+    )
+
+
+def format_slash_new_confirm() -> str:
+    return "Диалог сброшен. Можно начать заново."
+
+
+def format_slash_nothing_to_cancel() -> str:
+    return "Сейчас нечего отменять."
+
+
+def format_slash_cancelled() -> str:
+    return "Выполнение отменено."
+
+
+def format_slash_status(convo: ConversationState) -> str:
+    mode = _FLOW_MODE_LABELS.get(convo.flow_mode, str(convo.flow_mode.value))
+    has_artifacts = "да" if convo.artifact_ids else "нет"
+    last_id = convo.last_execution_id or "—"
+    return (
+        f"Сейчас: {mode}\n"
+        f"Артефакты в диалоге: {has_artifacts}\n"
+        f"Последний запрос: {last_id}"
+    )
+
+
 
 
 def format_progress(progress: dict[str, Any] | None, *, header: str | None = None) -> str:

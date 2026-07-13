@@ -3,7 +3,7 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
-**Прогресс (2026-07-13):** Sprint A — **DONE** (P0 honesty / no silent success / allowlist+Redis security fail-closed / Stage 0 contracts). Sprint B — **DONE** (ConversationService channel-neutral; Redis FSM + session bindings fail-closed in production; no InMemory SoT in prod). Sprint C — **PARTIAL** (Resolver / Render Contract / history truncate / Redis app-level + LangGraph interrupt checkpointer done; PDF off product surface; live Executive eval harness exists but opt-in/`LIVE_EXECUTIVE_EVAL=1` — catalog ≠ live proof). Sprint D — **DONE** for ops DoD (TLS edge profile, backup schedule profile, rollback playbook in `docs/OPS_RUNBOOK.md`; Celery deferred N/A — internal Postgres task queue).
+**Прогресс (2026-07-13):** Sprint A — **DONE** (P0 honesty / no silent success / allowlist+Redis security fail-closed / Stage 0 contracts). Sprint B — **DONE** (ConversationService channel-neutral; Redis FSM + session bindings fail-closed in production; no InMemory SoT in prod). Sprint C — **PARTIAL** (Resolver / Render Contract / history truncate / Redis app-level + LangGraph interrupt checkpointer done; PDF off product surface; live Executive eval harness exists but opt-in/`LIVE_EXECUTIVE_EVAL=1` — catalog ≠ live proof). Sprint D — **DONE** for ops DoD (TLS edge profile, backup schedule profile, rollback playbook in `docs/OPS_RUNBOOK.md`; Celery deferred N/A — internal Postgres task queue). Sprint E — **DONE** for assistant UX DoD (slash `/new` `/status` `/cancel` `/start`; less progress theater on single-step EXECUTE; `/cancel` during RUNNING; research/embeddings stack still open — flags remain OFF).
 
 ---
 
@@ -497,7 +497,7 @@ Readiness определяется **обязательными** сервиса
 | **B** | **DONE** | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C/D/E; Redis FSM + bindings fail-closed in prod |
 | **C** | **PARTIAL** | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate | P1-A…P1-I; LangGraph Redis interrupt checkpointer DONE; live eval harness DONE (opt-in); live proof still open |
 | **D** | **DONE** (ops DoD) | Production ops | Secrets, workers, ACL, observability, readiness; TLS profile, backup profile, rollback playbook (`docs/OPS_RUNBOOK.md`); Celery deferred N/A |
-| **E** | pending | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
+| **E** | **DONE** (UX; research/embeddings deferred) | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
 
 ### Sprint A — Definition of Done — DONE
 
@@ -555,10 +555,13 @@ Readiness определяется **обязательными** сервиса
 - [x] Rollback deploy playbook — `docs/OPS_RUNBOOK.md` Release/Rollback; `deploy/rollback.sh` + `deploy/tag_release.sh`.
 - [x] Real task queue / Celery — **deferred / N/A** (internal Postgres `app.task_queue`; no broker-needed jobs yet).
 
-### Sprint E — Definition of Done
+### Sprint E — Definition of Done — DONE (UX; research/embeddings deferred)
 
-- Ощущение современного ассистента на типовых диалогах агентства.
-- Research / embeddings включаются только после выбора стека и оценки стоимости; при включении — одновременно registry + prompt.
+- [x] Меньше progress theater на простых задачах (single-step `EXECUTE` без ephemeral «Думаю…»; `CREATE_PLAN` / multi-step — с progress).
+- [x] Continuity: `/cancel` работает при `RUNNING` (команды до busy gate; lock released на время stream); natural edits остаются через Executive (без расширения forced revision mode).
+- [x] Команды `/new`, `/status`, `/cancel` (+ `/start` help) — channel-neutral `conversation/commands.py`; не замена естественного диалога.
+- [x] Честные ограничения в `/start` (нет live web/research до отдельного включения; docx/pptx drafts OK).
+- [ ] Research / embeddings — **deferred**: выбор стека и оценка стоимости ещё открыты; flags остаются OFF; при включении — одновременно registry + prompt.
 
 ---
 

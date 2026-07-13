@@ -126,13 +126,14 @@ async def test_pipeline_exception_sends_friendly_error_message(
     assert result["status"] == "failed"
     assert result["trace_id"] == "trace-err"
     assert result["execution_id"] == "exec-err"
-    assert sender.edited
-    error_text = sender.edited[-1]["text"]
-    assert "Не удалось выполнить задачу" in error_text
+    # EXECUTE skips progress — error is a new message (not an edit of «Думаю…»).
+    error_bubbles = [item for item in sender.sent if "Не удалось выполнить задачу" in item["text"]]
+    assert error_bubbles
+    error_text = error_bubbles[-1]["text"]
     assert "trace_id" not in error_text.lower()
     assert "execution_id" not in error_text.lower()
     assert "Traceback" not in error_text
-    assert "Попробовать снова" in str(sender.edited[-1].get("reply_markup"))
+    assert "Попробовать снова" in str(error_bubbles[-1].get("reply_markup"))
 
 
 @pytest.mark.asyncio

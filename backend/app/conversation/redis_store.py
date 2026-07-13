@@ -64,6 +64,21 @@ class RedisConversationStore:
         state.revision_prompted_at = None
         await self.save(state)
 
+    async def reset_dialog(self, user_id: int) -> None:
+        """Reset conversation FSM for /new — keep workspace/session bindings."""
+        state = await self.get(user_id)
+        if state is None:
+            return
+        state.flow_mode = FlowMode.IDLE
+        state.pending_clarification = None
+        state.revision_prompted_at = None
+        state.last_agent_state = None
+        state.progress_message_id = None
+        state.artifact_ids = []
+        state.last_user_input = None
+        state.last_execution_id = None
+        await self.save(state)
+
     @asynccontextmanager
     async def user_lock(self, user_id: int) -> AsyncIterator[None]:
         key = LOCK_KEY.format(user_id=user_id)

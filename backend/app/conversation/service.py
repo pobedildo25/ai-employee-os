@@ -1,13 +1,15 @@
 from typing import Any
 import uuid
+from dataclasses import dataclass
 
 from app.agent_runtime.exceptions import GraphExecutionError
 from app.agent_runtime.runtime import AgentRuntime
 from app.agent_runtime.state.models import create_initial_state
-from app.agents.decision.policy import is_clarification, is_respond
+from app.agents.decision.policy import is_clarification, is_respond, should_direct_execute
 from app.agents.executive.agent import ExecutiveAgent
 from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
 from app.conversation.clarification import build_pending_clarification, merge_clarification_answer
+from app.conversation.commands import SlashCommand, parse_slash_command
 from app.conversation.messages import (
     INCOMPLETE_REASON,
     extract_failure_reason,
@@ -19,6 +21,11 @@ from app.conversation.messages import (
     format_error_message,
     format_revision_prompt,
     format_runtime_error_message,
+    format_slash_cancelled,
+    format_slash_new_confirm,
+    format_slash_nothing_to_cancel,
+    format_slash_start,
+    format_slash_status,
     has_real_result_message,
 )
 from app.conversation.models import ConversationState, FlowMode, PendingClarification
@@ -30,6 +37,17 @@ from app.conversation.ports import (
 )
 from app.conversation.requests import CallbackRequest, UserMessageRequest
 from app.orchestration.orchestrator import Orchestrator
+
+
+@dataclass
+class _DeferredExecution:
+    """Payload for long-running execute outside user_lock so /cancel can acquire it."""
+
+    request: UserMessageRequest
+    context: dict[str, Any]
+    metadata: dict[str, Any]
+    progress_message_id: int | None
+    result_extras: dict[str, Any] | None = None
 
 
 class ConversationService:
@@ -70,10 +88,18 @@ class ConversationService:
             send_result = await self._notifier.send_text(request.chat_id, text)
             return {"status": "forbidden", "reply": text, "send_result": send_result}
 
+        deferred: _DeferredExecution | None = None
         async with self._store.user_lock(request.user_id):
-            return await self._handle_message_locked(request)
+            result = await self._handle_message_locked(request)
+            if isinstance(result, _DeferredExecution):
+                deferred = result
+            else:
+                return result
+        return await self._run_deferred_execution(deferred)
 
-    async def _handle_message_locked(self, request: UserMessageRequest) -> dict[str, Any]:
+    async def _handle_message_locked(
+        self, request: UserMessageRequest
+    ) -> dict[str, Any] | _DeferredExecution:
         convo = await self._store.get_or_create(request.user_id, request.chat_id)
         snapshot = await self._sessions.resolve(request.user_id)
         convo.workspace_id = snapshot.get("workspace_id")
@@ -83,6 +109,10 @@ class ConversationService:
         await self._sessions.append_history(snapshot, role="user", content=request.text)
         # P1-I: release DB session after short persistence before LLM/classify.
         await self._sessions.release_db()
+
+        command = parse_slash_command(request.text)
+        if command is not None:
+            return await self._handle_slash_command(command, request, convo, snapshot)
 
         if convo.flow_mode == FlowMode.RUNNING:
             text = "Ещё работаю над предыдущим запросом. Подождите немного."
@@ -281,12 +311,14 @@ class ConversationService:
             convo.flow_mode = FlowMode.IDLE
             await self._store.save(convo)
             merged_request = request.model_copy(update={"text": merged_input})
-            result = await self._run_execution(
+            deferred = await self._run_execution(
                 merged_request, convo, snapshot, classification=classification
             )
-            result["resumed_from_clarification"] = True
-            result["merged_input"] = merged_input
-            return result
+            deferred.result_extras = {
+                "resumed_from_clarification": True,
+                "merged_input": merged_input,
+            }
+            return deferred
 
         # None or unexpected action: keep pending and ask again.
         missing = ", ".join(item for item in pending.missing_information if item)
@@ -318,10 +350,18 @@ class ConversationService:
             send_result = await self._notifier.send_text(request.chat_id, text)
             return {"status": "forbidden", "reply": text, "send_result": send_result}
 
+        deferred: _DeferredExecution | None = None
         async with self._store.user_lock(request.user_id):
-            return await self._handle_callback_locked(request)
+            result = await self._handle_callback_locked(request)
+            if isinstance(result, _DeferredExecution):
+                deferred = result
+            else:
+                return result
+        return await self._run_deferred_execution(deferred)
 
-    async def _handle_callback_locked(self, request: CallbackRequest) -> dict[str, Any]:
+    async def _handle_callback_locked(
+        self, request: CallbackRequest
+    ) -> dict[str, Any] | _DeferredExecution:
         convo = await self._store.get_or_create(request.user_id, request.chat_id)
         snapshot = await self._sessions.resolve(request.user_id)
         await self._sessions.release_db()
@@ -344,7 +384,7 @@ class ConversationService:
         snapshot: dict[str, Any],
         *,
         classification=None,
-    ) -> dict[str, Any]:
+    ) -> _DeferredExecution:
         context, metadata = self._build_runtime_payload(request, snapshot)
         if classification is not None:
             metadata["preclassified_decision"] = classification.decision.model_dump(mode="json")
@@ -356,38 +396,97 @@ class ConversationService:
         convo.last_user_input = request.text
         await self._store.save(convo)
 
-        progress_message_id = await self._notifier.start_progress(
-            request.chat_id,
-            reply_to_message_id=request.message_id,
-        )
-        convo.progress_message_id = progress_message_id
-        await self._store.save(convo)
+        progress_message_id: int | None = None
+        if self._should_show_progress(classification, convo):
+            progress_message_id = await self._notifier.start_progress(
+                request.chat_id,
+                reply_to_message_id=request.message_id,
+            )
+            convo.progress_message_id = progress_message_id
+            await self._store.save(convo)
 
+        return _DeferredExecution(
+            request=request,
+            context=context,
+            metadata=metadata,
+            progress_message_id=progress_message_id,
+        )
+
+    async def _run_deferred_execution(self, deferred: _DeferredExecution) -> dict[str, Any]:
+        request = deferred.request
+        progress_message_id = deferred.progress_message_id
         try:
             state = await self._execute_with_progress(
                 request.text,
                 chat_id=request.chat_id,
                 progress_message_id=progress_message_id,
-                context=context,
-                metadata=metadata,
+                context=deferred.context,
+                metadata=deferred.metadata,
             )
         except GraphExecutionError as exc:
-            return await self._handle_execution_failure(
-                request,
-                convo,
-                progress_message_id,
-                exc,
-            )
+            async with self._store.user_lock(request.user_id):
+                convo = await self._store.get_or_create(request.user_id, request.chat_id)
+                if convo.flow_mode in {FlowMode.IDLE, FlowMode.CANCELLED}:
+                    await self._notifier.clear_progress(request.chat_id, progress_message_id)
+                    return {
+                        "status": "cancelled",
+                        "reply": format_slash_cancelled(),
+                        "execution_id": convo.last_execution_id,
+                    }
+                return await self._handle_execution_failure(
+                    request,
+                    convo,
+                    progress_message_id,
+                    exc,
+                )
         except Exception as exc:
-            return await self._handle_execution_failure(
-                request,
-                convo,
-                progress_message_id,
-                GraphExecutionError(str(exc)),
-            )
+            async with self._store.user_lock(request.user_id):
+                convo = await self._store.get_or_create(request.user_id, request.chat_id)
+                if convo.flow_mode in {FlowMode.IDLE, FlowMode.CANCELLED}:
+                    await self._notifier.clear_progress(request.chat_id, progress_message_id)
+                    return {
+                        "status": "cancelled",
+                        "reply": format_slash_cancelled(),
+                        "execution_id": convo.last_execution_id,
+                    }
+                return await self._handle_execution_failure(
+                    request,
+                    convo,
+                    progress_message_id,
+                    GraphExecutionError(str(exc)),
+                )
 
         state_dict = dict(state) if not isinstance(state, dict) else state
-        return await self._deliver_outcome(request, convo, state_dict, progress_message_id)
+        async with self._store.user_lock(request.user_id):
+            convo = await self._store.get_or_create(request.user_id, request.chat_id)
+            if convo.flow_mode in {FlowMode.IDLE, FlowMode.CANCELLED}:
+                await self._notifier.clear_progress(request.chat_id, progress_message_id)
+                return {
+                    "status": "cancelled",
+                    "reply": format_slash_cancelled(),
+                    "execution_id": state_dict.get("execution_id") or convo.last_execution_id,
+                }
+            result = await self._deliver_outcome(
+                request, convo, state_dict, progress_message_id
+            )
+            if deferred.result_extras:
+                result = {**result, **deferred.result_extras}
+            return result
+
+    @staticmethod
+    def _should_show_progress(classification, convo: ConversationState) -> bool:
+        """Skip ephemeral progress for single-step EXECUTE; keep for CREATE_PLAN / unknown."""
+        action: str | None = None
+        if classification is not None:
+            action = classification.decision.action.value
+        else:
+            prior = (convo.last_agent_state or {}).get("decision") or {}
+            if isinstance(prior, dict):
+                raw = prior.get("action")
+                action = raw.value if hasattr(raw, "value") else raw
+        if should_direct_execute(action):
+            return False
+        return True
 
     async def _handle_execution_failure(
         self,
@@ -429,6 +528,8 @@ class ConversationService:
     ) -> dict[str, Any]:
         final_state: dict[str, Any] | None = None
         last_progress: dict[str, Any] | None = None
+        # None means progress was intentionally skipped (single-step EXECUTE) — do not late-start.
+        progress_enabled = progress_message_id is not None
 
         async for event in self._runtime.stream(
             user_input,
@@ -442,15 +543,19 @@ class ConversationService:
                     continue
                 if update.get("telegram_progress"):
                     last_progress = update["telegram_progress"]
-                    progress_message_id = await self._notifier.update_progress(
-                        chat_id,
-                        progress_message_id,
-                        last_progress,
-                    )
+                    if progress_enabled:
+                        progress_message_id = await self._notifier.update_progress(
+                            chat_id,
+                            progress_message_id,
+                            last_progress,
+                        )
                 final_state = self._merge_state(final_state, update)
 
         if final_state is not None:
-            await self._notifier.finalize_progress(chat_id, progress_message_id, last_progress)
+            if progress_enabled:
+                await self._notifier.finalize_progress(
+                    chat_id, progress_message_id, last_progress
+                )
             return final_state
 
         state = await self._runtime.execute(
@@ -459,9 +564,10 @@ class ConversationService:
             metadata=metadata,
         )
         state_dict = dict(state) if not isinstance(state, dict) else state
-        await self._notifier.finalize_progress(
-            chat_id, progress_message_id, state_dict.get("telegram_progress")
-        )
+        if progress_enabled:
+            await self._notifier.finalize_progress(
+                chat_id, progress_message_id, state_dict.get("telegram_progress")
+            )
         return state_dict
 
     async def _deliver_outcome(
@@ -564,11 +670,95 @@ class ConversationService:
             "progress_message_id": progress_message_id,
         }
 
+    async def _handle_slash_command(
+        self,
+        command: SlashCommand,
+        request: UserMessageRequest,
+        convo: ConversationState,
+        snapshot: dict[str, Any],
+    ) -> dict[str, Any]:
+        if command == SlashCommand.START:
+            text = format_slash_start()
+            await self._sessions.append_history(snapshot, role="assistant", content=text)
+            send_result = await self._notifier.send_text(
+                request.chat_id,
+                text,
+                reply_to_message_id=request.message_id,
+            )
+            return {"status": "command", "command": "start", "reply": text, "send_result": send_result}
+
+        if command == SlashCommand.STATUS:
+            text = format_slash_status(convo)
+            send_result = await self._notifier.send_text(
+                request.chat_id,
+                text,
+                reply_to_message_id=request.message_id,
+            )
+            return {"status": "command", "command": "status", "reply": text, "send_result": send_result}
+
+        if command == SlashCommand.NEW:
+            await self._notifier.clear_progress(request.chat_id, convo.progress_message_id)
+            await self._store.reset_dialog(request.user_id)
+            text = format_slash_new_confirm()
+            await self._sessions.append_history(snapshot, role="assistant", content=text)
+            send_result = await self._notifier.send_text(
+                request.chat_id,
+                text,
+                reply_to_message_id=request.message_id,
+            )
+            return {"status": "command", "command": "new", "reply": text, "send_result": send_result}
+
+        if command == SlashCommand.CANCEL:
+            return await self._handle_slash_cancel(request, convo)
+
+        text = format_slash_start()
+        send_result = await self._notifier.send_text(request.chat_id, text)
+        return {"status": "command", "command": "unknown", "reply": text, "send_result": send_result}
+
+    async def _handle_slash_cancel(
+        self,
+        request: UserMessageRequest,
+        convo: ConversationState,
+    ) -> dict[str, Any]:
+        cancellable = {FlowMode.RUNNING, FlowMode.WAITING_APPROVAL}
+        if convo.flow_mode not in cancellable:
+            text = format_slash_nothing_to_cancel()
+            send_result = await self._notifier.send_text(
+                request.chat_id,
+                text,
+                reply_to_message_id=request.message_id,
+            )
+            return {
+                "status": "command",
+                "command": "cancel",
+                "reply": text,
+                "send_result": send_result,
+            }
+
+        if convo.last_execution_id:
+            self._orchestrator.cancel_execution(convo.last_execution_id)
+        await self._notifier.clear_progress(request.chat_id, convo.progress_message_id)
+        convo.flow_mode = FlowMode.IDLE
+        convo.progress_message_id = None
+        await self._store.save(convo)
+        text = format_slash_cancelled()
+        send_result = await self._notifier.send_text(
+            request.chat_id,
+            text,
+            reply_to_message_id=request.message_id,
+        )
+        return {
+            "status": "cancelled",
+            "command": "cancel",
+            "reply": text,
+            "send_result": send_result,
+        }
+
     async def _handle_approval_resume(
         self,
         convo: ConversationState,
         snapshot: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | _DeferredExecution:
         if convo.flow_mode != FlowMode.WAITING_APPROVAL or not convo.last_user_input:
             text = "Сейчас нет плана, ожидающего подтверждения."
             send_result = await self._notifier.send_text(convo.chat_id, text)
@@ -604,9 +794,11 @@ class ConversationService:
     ) -> dict[str, Any]:
         if convo.last_execution_id:
             self._orchestrator.cancel_execution(convo.last_execution_id)
+        await self._notifier.clear_progress(convo.chat_id, convo.progress_message_id)
         convo.flow_mode = FlowMode.CANCELLED
+        convo.progress_message_id = None
         await self._store.save(convo)
-        text = "Выполнение отменено."
+        text = format_slash_cancelled()
         send_result = await self._notifier.send_text(convo.chat_id, text)
         return {"status": "cancelled", "reply": text, "send_result": send_result}
 
@@ -683,7 +875,7 @@ class ConversationService:
         convo: ConversationState,
         snapshot: dict[str, Any],
         request: CallbackRequest,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | _DeferredExecution:
         if not convo.last_user_input:
             text = "Нечего повторить. Опишите задачу текстом."
             send_result = await self._notifier.send_text(convo.chat_id, text)

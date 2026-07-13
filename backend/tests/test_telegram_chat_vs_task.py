@@ -145,7 +145,8 @@ async def test_task_request_starts_execution_pipeline(
     assert len(runtime.calls) == 1
     assert runtime.calls[0]["mode"] == "stream"
     assert runtime.calls[0]["user_input"] == "Создай презентацию"
-    assert sender.sent[0]["text"] == "Думаю…"
+    # Single-step EXECUTE skips ephemeral progress theater.
+    assert all(item["text"] != "Думаю…" for item in sender.sent)
 
 
 @pytest.mark.asyncio

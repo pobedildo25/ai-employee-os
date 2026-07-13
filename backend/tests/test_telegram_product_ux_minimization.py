@@ -112,12 +112,11 @@ async def test_successful_task_clears_progress_and_sends_one_reply(
     result = await flow.handle_message(request)
 
     assert result["status"] == "completed"
-    assert sender.sent[0]["text"] == "Думаю…"
-    assert sender.deleted
-    # Final user-visible text message after progress start:
-    user_texts = [item["text"] for item in sender.sent if item["text"] != "Думаю…"]
+    # EXECUTE (default task executive) skips progress bubble.
+    assert all(item["text"] != "Думаю…" for item in sender.sent)
+    user_texts = [item["text"] for item in sender.sent]
     assert user_texts == ["Краткий ответ по стратегии."]
-    assert all(item.get("reply_markup") is None for item in sender.sent if item["text"] != "Думаю…")
+    assert all(item.get("reply_markup") is None for item in sender.sent)
 
 
 @pytest.mark.asyncio
@@ -166,14 +165,22 @@ async def test_error_is_single_edited_bubble(
         async def execute(self, *args, **kwargs):
             raise GraphExecutionError("boom")
 
-    flow = build_flow(FailingRuntime(), session_manager, sender, conversation_store)  # type: ignore[arg-type]
+    from tests.test_telegram_chat_vs_task import FakeExecutiveAgent
+
+    flow = build_flow(
+        FailingRuntime(),  # type: ignore[arg-type]
+        session_manager,
+        sender,
+        conversation_store,
+        executive_agent=FakeExecutiveAgent(action="CREATE_PLAN"),
+    )
     from app.adapters.telegram.mapper import TelegramMapper
 
     request = TelegramMapper().map_update(SAMPLE_UPDATE)
     assert request is not None
     await flow.handle_message(request)
 
-    assert len(sender.sent) == 1  # only progress start
+    assert len(sender.sent) == 1  # progress start (multi-step / CREATE_PLAN)
     assert len(sender.edited) == 1  # progress replaced with error
     assert "Не удалось выполнить задачу" in sender.edited[0]["text"]
     assert "trace_id" not in sender.edited[0]["text"].lower()

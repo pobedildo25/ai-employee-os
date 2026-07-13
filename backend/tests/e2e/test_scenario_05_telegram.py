@@ -14,6 +14,7 @@ from tests.test_telegram_product_ux import (
     FakeContinuation,
     SAMPLE_CALLBACK_APPROVE,
     build_flow,
+    _plan_executive_agent,
 )
 
 
@@ -66,6 +67,7 @@ async def test_telegram_full_flow_with_progress_approval_and_delivery(settings, 
         store,
         continuation=FakeContinuation(),
         orchestrator=Orchestrator(store=ExecutionStore()),
+        executive_agent=_plan_executive_agent(),
     )
     adapter = TelegramAdapter(
         runtime=runtime,  # type: ignore[arg-type]
