@@ -22,6 +22,7 @@ COPY alembic ./alembic
 COPY alembic.ini .
 COPY scripts ./scripts
 COPY docker/entrypoint.sh /entrypoint.sh
+COPY docker/migrate_with_lock.py /app/docker/migrate_with_lock.py
 
 RUN chmod +x /entrypoint.sh \
     && sed -i 's/\r$//' /entrypoint.sh \
@@ -32,7 +33,7 @@ USER app
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8000/ready || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

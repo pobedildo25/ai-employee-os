@@ -84,3 +84,5 @@ class SecurityPrincipal(BaseModel):
     api_key_id: UUID | None = None
     role: Role = Role.USER
     permissions: list[str] = Field(default_factory=list)
+    # From API key metadata.client_id / tenant_client_id; None = unscoped.
+    client_id: UUID | None = None

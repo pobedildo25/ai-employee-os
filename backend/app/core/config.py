@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_enabled: bool = False
     telegram_allowed_user_ids: str = ""
+    # When True, FastAPI lifespan starts polling in-process (dev default).
+    # Production with a separate telegram worker should set False.
+    telegram_inline_polling: bool = True
 
     security_enabled: bool = False
     security_rate_limit: int = 120
@@ -53,6 +56,8 @@ class Settings(BaseSettings):
 
     research_enabled: bool = False
     semantic_memory_enabled: bool = False
+
+    sentry_dsn: str | None = None
 
     db_pool_size: int = 5
     db_max_overflow: int = 10

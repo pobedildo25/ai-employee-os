@@ -47,7 +47,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         raw_key = request.headers.get(self._header_name)
         identifier = raw_key or request.client.host if request.client else "unknown"
 
-        if not manager.rate_limiter.allow(str(identifier)):
+        if not await manager.rate_limiter.allow(str(identifier)):
             await manager.record_audit(
                 actor="anonymous",
                 action="rate_limited",

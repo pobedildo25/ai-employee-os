@@ -22,6 +22,8 @@ class InMemoryObservabilityProvider(ObservabilityProvider):
         self._failed_count = 0
         self._duration_total_ms = 0.0
         self._llm_calls = 0
+        self._llm_failed_calls = 0
+        self._llm_latency_total_ms = 0.0
         self._tokens = 0
         self._queue_size = 0
 
@@ -74,11 +76,16 @@ class InMemoryObservabilityProvider(ObservabilityProvider):
         average = (
             self._duration_total_ms / self._execution_count if self._execution_count else 0.0
         )
+        llm_avg = (
+            self._llm_latency_total_ms / self._llm_calls if self._llm_calls else 0.0
+        )
         return MetricsSnapshot(
             execution_count=self._execution_count,
             failed_count=self._failed_count,
             average_duration_ms=average,
             llm_calls=self._llm_calls,
+            llm_failed_calls=self._llm_failed_calls,
+            llm_average_latency_ms=llm_avg,
             tokens=self._tokens,
             queue_size=self._queue_size,
             active_traces=len(active),
@@ -91,9 +98,18 @@ class InMemoryObservabilityProvider(ObservabilityProvider):
         if failed:
             self._failed_count += 1
 
-    def record_llm_call(self, *, tokens: int = 0) -> None:
+    def record_llm_call(
+        self,
+        *,
+        tokens: int = 0,
+        latency_ms: float = 0.0,
+        failed: bool = False,
+    ) -> None:
         self._llm_calls += 1
         self._tokens += max(0, tokens)
+        self._llm_latency_total_ms += max(0.0, latency_ms)
+        if failed:
+            self._llm_failed_calls += 1
 
     def set_queue_size(self, size: int) -> None:
         self._queue_size = max(0, size)

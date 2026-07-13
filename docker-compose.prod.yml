@@ -2,6 +2,12 @@
 # Usage:
 #   cp .env.production.example .env.production
 #   docker compose -f docker-compose.prod.yml --env-file .env.production up -d --build
+#
+# Migrations (recommended for scaled API):
+#   docker compose -f docker-compose.prod.yml --env-file .env.production run --rm backend \
+#     python /app/docker/migrate_with_lock.py
+# then set RUN_MIGRATIONS_ON_STARTUP=false on API replicas.
+# Single-replica default may keep RUN_MIGRATIONS_ON_STARTUP=true (advisory lock safe).
 
 services:
   backend:
@@ -16,11 +22,15 @@ services:
     environment:
       APP_ENV: production
       APP_DEBUG: "false"
-      RUN_MIGRATIONS_ON_STARTUP: "true"
+      # Prefer one-shot migrate for multi-replica; advisory lock protects if true.
+      RUN_MIGRATIONS_ON_STARTUP: ${RUN_MIGRATIONS_ON_STARTUP:-false}
+      TELEGRAM_INLINE_POLLING: "false"
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
       QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       MINIO_ENDPOINT: minio:9000
+      # Edge TLS terminates outside the docker network; MinIO stays plain inside.
       MINIO_SECURE: "false"
     ports:
       - "${API_PORT:-8000}:8000"
@@ -30,7 +40,7 @@ services:
       redis:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_healthy
     networks:
@@ -41,9 +51,42 @@ services:
       timeout: 5s
       retries: 5
       start_period: 40s
+    mem_limit: 1g
+    cpus: 1.0
     volumes:
       - backend_backups:/app/backups
       - ${AGENCY_ARCHIVE_PATH}:/data/agency_archive:ro
+
+  telegram:
+    image: ai-employee-os-backend:prod
+    container_name: ai-employee-telegram-prod
+    restart: always
+    env_file:
+      - .env.production
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      RUN_MIGRATIONS_ON_STARTUP: "false"
+      TELEGRAM_ENABLED: "true"
+      TELEGRAM_INLINE_POLLING: "false"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_SECURE: "false"
+    command: ["python", "-m", "app.adapters.telegram.worker"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    networks:
+      - ai-employee-prod
+    mem_limit: 512m
+    cpus: 0.5
 
   postgres:
     image: postgres:16-alpine
@@ -63,34 +106,52 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    mem_limit: 1g
+    cpus: 1.0
 
   redis:
     image: redis:7-alpine
     container_name: ai-employee-redis-prod
     restart: always
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
       - redis_prod_data:/data
     networks:
       - ai-employee-prod
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 10s
+    mem_limit: 256m
+    cpus: 0.5
 
   qdrant:
     image: qdrant/qdrant:v1.12.5
     container_name: ai-employee-qdrant-prod
     restart: always
+    environment:
+      # When set, must match backend QDRANT_API_KEY.
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
     volumes:
       - qdrant_prod_data:/qdrant/storage
     networks:
       - ai-employee-prod
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    mem_limit: 512m
+    cpus: 0.5
 
   minio:
-    image: minio/minio:latest
+    # Pinned release tag (not :latest). Edge TLS is external to this network.
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
     container_name: ai-employee-minio-prod
     restart: always
     command: server /data --console-address ":9001"
@@ -107,6 +168,8 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    mem_limit: 512m
+    cpus: 0.5
 
 networks:
   ai-employee-prod:

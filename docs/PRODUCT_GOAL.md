@@ -3,7 +3,7 @@
 **Статус:** источник правды для продукта, архитектуры и плана исправлений.  
 Любой PR, который нарушает этот документ, отклоняется — даже при зелёных тестах.
 
-**Прогресс (2026-07-13):** Sprint A выполнен (`1edbb65`). Sprint B: P0-C / P0-D / P0-E landed (незакоммичено). Sprint C tails landed (незакоммичено): P1-I short DB txns, P1-F knowledge gate (≥0.7 / persist=False), dead document nodes removed from executive graph, Redis session bindings. Sprint D starter: Redis `SecurityStore` (API keys + audit) wired for production.
+**Прогресс (2026-07-13):** Sprint A выполнен (`1edbb65`). Sprint B: P0-C / P0-D / P0-E landed (незакоммичено). Sprint C tails landed (незакоммичено): P1-I short DB txns, P1-F knowledge gate (≥0.7 / persist=False), dead document nodes removed from executive graph, Redis session bindings. Sprint D (P2) production hardening landed (незакоммичено): Redis AUTH, Qdrant key wiring, MinIO pin, migration advisory lock, Telegram worker + idempotency, Redis rate limit, tenant ACL, artifact sanitize/compensation, LLM metrics + Sentry, readiness healthchecks.
 
 ---
 
@@ -464,14 +464,14 @@ Readiness определяется **обязательными** сервиса
 
 ### 11.4 Этап 3 (P2) — Production hardening
 
-- Redis AUTH, Qdrant key, MinIO secure + pinned tags / deps.
-- Resource limits, TLS, backups, rollback deploy.
-- Migrations не на каждый multi-worker startup race.
-- Sentry + metrics; wire LLM latency / tokens.
-- Tenant ACL на CRUD; safe artifact object keys; compensation MinIO ↔ DB.
-- Отдельный Telegram worker; shared rate limit; idempotent update handling.
-- Реальный task queue только если нужны длинные background jobs.
-- Readiness: required vs degraded — закрепить в health контракте и compose healthchecks.
+- [x] Redis AUTH, Qdrant key, MinIO pinned tags / deps (edge TLS external; MinIO plain inside network).
+- [x] Resource limits (modest mem/cpus on prod compose); [ ] TLS at edge / backups / rollback deploy — ops playbook deferred.
+- [x] Migrations не на каждый multi-worker startup race (advisory lock + one-shot recommendation).
+- [x] Sentry + metrics; wire LLM latency / tokens.
+- [x] Tenant ACL на CRUD; safe artifact object keys; compensation MinIO ↔ DB.
+- [x] Отдельный Telegram worker; shared rate limit; idempotent update handling.
+- [ ] Реальный task queue только если нужны длинные background jobs (deferred).
+- [x] Readiness: required vs degraded — закрепить в health контракте и compose/Dockerfile healthchecks.
 
 ---
 
@@ -492,7 +492,7 @@ Readiness определяется **обязательными** сервиса
 | **A** | **DONE** (`1edbb65`, 2026-07-13) | Не врать + убрать router side-channels + ChatGPT vs workflow | P0-A, P0-B, P0-E (clarify fix), P0-F, P0-G |
 | **B** | **DONE** (код landed; commit pending) | Один мозг + один FSM (без rewrite Runtime/LangGraph) + Runtime Invariants | P0-C, P0-D, P0-E; bindings follow-up |
 | **C** | **DONE** (tails landed; commit pending) | Пилот: Resolver / Orchestrator / Learning / Planner criterion / LLM degrade / RUNNING gate + P1-F/I + dead nodes | P1-A … P1-I |
-| **D** | **STARTED** (Redis security persist) | Production ops | Этап 3 (P2) partial: API keys/audit Redis |
+| **D** | **DONE** (код landed; commit pending) | Production ops | Этап 3 (P2): secrets, workers, ACL, observability, readiness |
 | **E** | pending | Assistant-grade + осознанный research/embeddings | Этап 4 (P3) |
 
 ### Sprint A — Definition of Done — DONE
@@ -535,7 +535,17 @@ Follow-up вне DoD: ~~Redis session bindings~~ done; ~~persist API keys/audit 
 ### Sprint D — Definition of Done
 
 - [x] Persist API keys / audit (Redis starter: `security:apikey:*`, `security:audit`); InMemory в tests/dev.
-- [ ] Tenant ACL, observability, idempotency, infra secrets, workers-safe FSM, backups/rollback, readiness contract закреплён в ops.
+- [x] Redis AUTH (`REDIS_PASSWORD` / `--requirepass`); Qdrant API key wired in compose + env examples.
+- [x] MinIO pinned image tag; `MINIO_SECURE=false` inside docker network (edge TLS external).
+- [x] Migrations race-safe: Postgres advisory lock in entrypoint; prod recommends one-shot + `RUN_MIGRATIONS_ON_STARTUP=false`.
+- [x] Separate Telegram worker (`python -m app.adapters.telegram.worker`); `TELEGRAM_INLINE_POLLING` gate in API lifespan.
+- [x] Idempotent Telegram updates (`telegram:update:{id}` SET NX); Redis shared rate limit with in-memory fallback.
+- [x] Tenant ACL via API key `metadata.client_id` / `tenant_client_id` on clients/projects/artifacts (fail closed 403).
+- [x] Safe artifact object keys + MinIO compensation on DB create failure; best-effort delete logged.
+- [x] LLMGateway → `record_llm_call` (tokens/latency); Sentry init when `SENTRY_DSN` set.
+- [x] Readiness: compose + Dockerfile HEALTHCHECK → `/ready`; qdrant healthcheck; modest prod resource limits.
+- [ ] Backups/rollback deploy playbook (partial: backup scripts/volume exist; formal rollback DoD deferred).
+- [ ] Real task queue for long background jobs — deferred (not required without long jobs).
 
 ### Sprint E — Definition of Done
 

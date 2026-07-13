@@ -108,6 +108,11 @@ class LLMGateway:
                 response.usage.completion_tokens,
                 response.usage.total_tokens,
             )
+            self._record_metrics(
+                tokens=response.usage.total_tokens,
+                latency_ms=latency_ms,
+                failed=False,
+            )
             response.metadata = {
                 **request.metadata,
                 **response.metadata,
@@ -127,6 +132,7 @@ class LLMGateway:
                 str(exc),
                 extra=log_extra,
             )
+            self._record_metrics(tokens=0, latency_ms=latency_ms, failed=True)
             raise
         except Exception as exc:
             latency_ms = (time.perf_counter() - started) * 1000
@@ -138,7 +144,21 @@ class LLMGateway:
                 str(exc),
                 extra=log_extra,
             )
+            self._record_metrics(tokens=0, latency_ms=latency_ms, failed=True)
             raise LLMProviderError(str(exc)) from exc
+
+    @staticmethod
+    def _record_metrics(*, tokens: int, latency_ms: float, failed: bool) -> None:
+        try:
+            from app.api.deps import get_observability_manager
+
+            get_observability_manager().record_llm_call(
+                tokens=tokens,
+                latency_ms=latency_ms,
+                failed=failed,
+            )
+        except Exception as exc:  # noqa: BLE001 — metrics must not break LLM path
+            logger.debug("LLM metrics recording skipped: %s", exc)
 
 
 def _build_model_chain(primary: str, *fallbacks: str | None) -> list[str]:

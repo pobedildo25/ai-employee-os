@@ -51,6 +51,16 @@ class SQLAlchemyArtifactRepository(ArtifactRepository):
         )
         return list(result.scalars().all())
 
+    async def list_by_client(self, client_id: UUID, skip: int = 0, limit: int = 100) -> list[Artifact]:
+        result = await self._session.execute(
+            select(Artifact)
+            .where(Artifact.client_id == client_id)
+            .offset(skip)
+            .limit(limit)
+            .order_by(Artifact.created_at.desc())
+        )
+        return list(result.scalars().all())
+
     async def list_all(self, skip: int = 0, limit: int = 100) -> list[Artifact]:
         result = await self._session.execute(
             select(Artifact).offset(skip).limit(limit).order_by(Artifact.created_at.desc())

@@ -11,11 +11,15 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ai_employee}:${POSTGRES_PASSWORD:-change-me}@postgres:5432/${POSTGRES_DB:-ai_employee_os}
-      REDIS_URL: redis://redis:6379/0
+      # Set REDIS_PASSWORD in .env for AUTH; leave empty for local open Redis.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       QDRANT_URL: http://qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
+      # Edge TLS terminates outside the docker network; MinIO stays plain inside.
       MINIO_SECURE: "false"
     depends_on:
       postgres:
@@ -23,13 +27,13 @@ services:
       redis:
         condition: service_healthy
       qdrant:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_started
     networks:
       - ai-employee-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -60,7 +64,18 @@ services:
     image: redis:7-alpine
     container_name: ai-employee-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    # No --requirepass when REDIS_PASSWORD is unset (dev convenience).
+    command:
+      - sh
+      - -c
+      - |
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+        else
+          exec redis-server --appendonly yes
+        fi
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:
       - "${REDIS_PORT:-6380}:6379"
     volumes:
@@ -68,7 +83,11 @@ services:
     networks:
       - ai-employee-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+        [
+          "CMD-SHELL",
+          'if [ -n "$$REDIS_PASSWORD" ]; then redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG; else redis-cli ping | grep PONG; fi',
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -78,6 +97,9 @@ services:
     image: qdrant/qdrant:v1.12.5
     container_name: ai-employee-qdrant
     restart: unless-stopped
+    environment:
+      # When set, must match backend QDRANT_API_KEY.
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-}
     ports:
       - "${QDRANT_PORT:-6335}:6333"
       - "6336:6334"
@@ -85,9 +107,16 @@ services:
       - qdrant_data:/qdrant/storage
     networks:
       - ai-employee-network
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   minio:
-    image: minio/minio:latest
+    # Pinned release tag (not :latest). Edge TLS is external to this network.
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
     container_name: ai-employee-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"

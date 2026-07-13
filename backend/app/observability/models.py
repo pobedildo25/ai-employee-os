@@ -53,6 +53,8 @@ class MetricsSnapshot(BaseModel):
     failed_count: int = 0
     average_duration_ms: float = 0.0
     llm_calls: int = 0
+    llm_failed_calls: int = 0
+    llm_average_latency_ms: float = 0.0
     tokens: int = 0
     queue_size: int = 0
     active_traces: int = 0

@@ -95,8 +95,8 @@ class ObservabilityManager:
     def get_metrics(self) -> MetricsSnapshot:
         return self.metrics.snapshot()
 
-    def record_llm_call(self, *, tokens: int = 0) -> None:
-        self.metrics.record_llm_call(tokens=tokens)
+    def record_llm_call(self, *, tokens: int = 0, latency_ms: float = 0.0, failed: bool = False) -> None:
+        self.metrics.record_llm_call(tokens=tokens, latency_ms=latency_ms, failed=failed)
 
     def set_queue_size(self, size: int) -> None:
         self.metrics.set_queue_size(size)

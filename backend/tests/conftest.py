@@ -62,6 +62,9 @@ class FakeArtifactRepository:
     async def list_by_project(self, project_id: UUID, skip: int = 0, limit: int = 100) -> list[Artifact]:
         return [a for a in self._artifacts.values() if a.project_id == project_id]
 
+    async def list_by_client(self, client_id: UUID, skip: int = 0, limit: int = 100) -> list[Artifact]:
+        return [a for a in self._artifacts.values() if a.client_id == client_id]
+
     async def list_all(self, skip: int = 0, limit: int = 100) -> list[Artifact]:
         return list(self._artifacts.values())
 

@@ -14,8 +14,9 @@ from app.security.permissions import permissions_for_role
 from app.security.policies.access_policy import AccessPolicy
 from app.security.providers.api_key_provider import APIKeyProvider
 from app.security.providers.in_memory_provider import InMemorySecurityProvider
-from app.security.rate_limit import RateLimiter
+from app.security.rate_limit import RateLimiter, RateLimiterProtocol
 from app.security.secrets import SecretsManager
+from app.security.tenant import parse_client_id_from_metadata
 
 
 class SecurityManager:
@@ -25,12 +26,12 @@ class SecurityManager:
         self,
         store: SecurityStore | None = None,
         *,
-        rate_limiter: RateLimiter | None = None,
+        rate_limiter: RateLimiterProtocol | None = None,
         secrets: SecretsManager | None = None,
         access_policy: AccessPolicy | None = None,
     ) -> None:
         self._store = store or InMemorySecurityProvider()
-        self.rate_limiter = rate_limiter or RateLimiter()
+        self.rate_limiter: RateLimiterProtocol = rate_limiter or RateLimiter()
         self.secrets = secrets or SecretsManager()
         self.access_policy = access_policy or AccessPolicy()
         self._keys = APIKeyProvider()
@@ -78,6 +79,7 @@ class SecurityManager:
             api_key_id=record.id,
             role=record.role,
             permissions=record.permissions,
+            client_id=parse_client_id_from_metadata(record.metadata),
         )
 
     async def revoke_api_key(self, key_id: UUID) -> APIKeyInfo | None:

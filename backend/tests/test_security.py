@@ -78,12 +78,13 @@ async def test_audit_events(manager: SecurityManager) -> None:
     assert len(events) == 1
 
 
-def test_rate_limiter() -> None:
+@pytest.mark.asyncio
+async def test_rate_limiter() -> None:
     limiter = RateLimiter(limit=2, window_seconds=60)
-    assert limiter.allow("user-a")
-    assert limiter.allow("user-a")
-    assert not limiter.allow("user-a")
-    assert limiter.allow("user-b")
+    assert await limiter.allow("user-a")
+    assert await limiter.allow("user-a")
+    assert not await limiter.allow("user-a")
+    assert await limiter.allow("user-b")
 
 
 def test_secrets_redaction() -> None:

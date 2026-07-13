@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import logging
+import re
 from uuid import UUID, uuid4
 
 from app.models.enums import ArtifactStatus
@@ -13,6 +17,22 @@ from app.schemas.artifact import (
     ArtifactVersionRead,
 )
 from app.storage.storage_interface import StorageInterface
+
+logger = logging.getLogger(__name__)
+
+_UNSAFE_CHARS = re.compile(r"[^a-zA-Z0-9._-]+")
+
+
+def sanitize_storage_name(name: str) -> str:
+    """Strip path traversal and unsafe characters for object storage keys."""
+    if name is None:
+        return "artifact"
+    cleaned = str(name).replace("\x00", "")
+    cleaned = cleaned.replace("\\", "_").replace("/", "_")
+    while ".." in cleaned:
+        cleaned = cleaned.replace("..", "_")
+    cleaned = _UNSAFE_CHARS.sub("_", cleaned).strip("._-")
+    return (cleaned or "artifact").lower()[:200]
 
 
 class ArtifactService:
@@ -52,15 +72,18 @@ class ArtifactService:
             metadata=request.metadata,
             created_by=request.created_by,
         )
-        artifact = await self._repository.create(artifact_data)
-
-        version_data = ArtifactVersionCreate(
-            storage_path=storage_path,
-            metadata=request.metadata,
-            created_by=request.created_by,
-            change_description="Initial upload",
-        )
-        await self._version_repository.create_version(artifact.id, 1, version_data)
+        try:
+            artifact = await self._repository.create(artifact_data)
+            version_data = ArtifactVersionCreate(
+                storage_path=storage_path,
+                metadata=request.metadata,
+                created_by=request.created_by,
+                change_description="Initial upload",
+            )
+            await self._version_repository.create_version(artifact.id, 1, version_data)
+        except Exception:
+            await self._compensate_storage_delete(storage_path)
+            raise
 
         refreshed = await self._repository.get_by_id(artifact.id)
         return ArtifactRead.model_validate(refreshed)
@@ -93,18 +116,21 @@ class ArtifactService:
             created_by=request.created_by,
             change_description=request.change_description,
         )
-        version = await self._version_repository.create_version(artifact_id, next_version, version_data)
-
-        await self._repository.update(
-            artifact_id,
-            ArtifactUpdate(
-                storage_path=storage_path,
-                mime_type=mime_type,
-                size=len(file_data),
-                status=ArtifactStatus.COMPLETED,
-                metadata=request.metadata,
-            ),
-        )
+        try:
+            version = await self._version_repository.create_version(artifact_id, next_version, version_data)
+            await self._repository.update(
+                artifact_id,
+                ArtifactUpdate(
+                    storage_path=storage_path,
+                    mime_type=mime_type,
+                    size=len(file_data),
+                    status=ArtifactStatus.COMPLETED,
+                    metadata=request.metadata,
+                ),
+            )
+        except Exception:
+            await self._compensate_storage_delete(storage_path)
+            raise
 
         return ArtifactVersionRead.model_validate(version)
 
@@ -124,6 +150,10 @@ class ArtifactService:
         artifacts = await self._repository.list_by_project(project_id, skip=skip, limit=limit)
         return [ArtifactRead.model_validate(artifact) for artifact in artifacts]
 
+    async def list_by_client(self, client_id: UUID, skip: int = 0, limit: int = 100) -> list[ArtifactRead]:
+        artifacts = await self._repository.list_by_client(client_id, skip=skip, limit=limit)
+        return [ArtifactRead.model_validate(artifact) for artifact in artifacts]
+
     async def list_all(self, skip: int = 0, limit: int = 100) -> list[ArtifactRead]:
         artifacts = await self._repository.list_all(skip=skip, limit=limit)
         return [ArtifactRead.model_validate(artifact) for artifact in artifacts]
@@ -139,14 +169,40 @@ class ArtifactService:
 
         versions = await self._version_repository.get_history(artifact_id)
         for version in versions:
-            await self._storage.delete(version.storage_path)
+            await self._best_effort_storage_delete(version.storage_path)
         if artifact.storage_path:
-            await self._storage.delete(artifact.storage_path)
+            await self._best_effort_storage_delete(artifact.storage_path)
 
         return await self._repository.delete(artifact_id)
 
+    async def _compensate_storage_delete(self, storage_path: str) -> None:
+        try:
+            deleted = await self._storage.delete(storage_path)
+            if deleted:
+                logger.info("compensated MinIO object after DB failure | path=%s", storage_path)
+            else:
+                logger.warning("compensation delete returned false | path=%s", storage_path)
+        except Exception as exc:
+            logger.exception(
+                "compensation storage delete failed | path=%s error=%s",
+                storage_path,
+                exc,
+            )
+
+    async def _best_effort_storage_delete(self, storage_path: str) -> None:
+        try:
+            deleted = await self._storage.delete(storage_path)
+            if not deleted:
+                logger.warning("best-effort storage delete returned false | path=%s", storage_path)
+        except Exception as exc:
+            logger.warning(
+                "best-effort storage delete failed | path=%s error=%s",
+                storage_path,
+                exc,
+            )
+
     def _build_storage_path(self, client_id: UUID, project_id: UUID, name: str) -> str:
-        safe_name = name.replace(" ", "_").lower()
+        safe_name = sanitize_storage_name(name)
         return f"{client_id}/{project_id}/{safe_name}/{uuid4()}"
 
     def _build_version_storage_path(
@@ -156,5 +212,5 @@ class ArtifactService:
         name: str,
         version_number: int,
     ) -> str:
-        safe_name = name.replace(" ", "_").lower()
+        safe_name = sanitize_storage_name(name)
         return f"{client_id}/{project_id}/{safe_name}/v{version_number}/{uuid4()}"

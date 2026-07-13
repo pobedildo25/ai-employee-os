@@ -20,6 +20,10 @@ class ArtifactRepository(ABC):
         ...
 
     @abstractmethod
+    async def list_by_client(self, client_id: UUID, skip: int = 0, limit: int = 100) -> list[Artifact]:
+        ...
+
+    @abstractmethod
     async def list_all(self, skip: int = 0, limit: int = 100) -> list[Artifact]:
         ...
 

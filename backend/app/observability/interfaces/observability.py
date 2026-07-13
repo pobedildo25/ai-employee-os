@@ -34,7 +34,13 @@ class ObservabilityProvider(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def record_llm_call(self, *, tokens: int = 0) -> None:
+    def record_llm_call(
+        self,
+        *,
+        tokens: int = 0,
+        latency_ms: float = 0.0,
+        failed: bool = False,
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod

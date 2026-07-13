@@ -18,7 +18,7 @@ from app.security.interfaces.security import SecurityStore
 from app.security.manager import SecurityManager
 from app.security.middleware import SecurityMiddleware
 from app.security.providers.in_memory_provider import InMemorySecurityProvider
-from app.security.rate_limit import RateLimiter
+from app.security.rate_limit import create_rate_limiter
 from app.security.secrets import SecretsManager
 
 logger = logging.getLogger(__name__)
@@ -38,33 +38,72 @@ def create_security_store(settings: Settings) -> SecurityStore:
         return InMemorySecurityProvider()
 
 
+def _build_rate_limiter(settings: Settings):
+    redis_client = None
+    if settings.is_production:
+        try:
+            from app.database.redis import get_redis_client
+
+            redis_client = get_redis_client(settings)
+        except Exception as exc:
+            logger.warning("Redis rate limiter unavailable, using in-memory | error=%s", exc)
+    return create_rate_limiter(
+        limit=settings.security_rate_limit,
+        window_seconds=settings.security_rate_window_seconds,
+        redis=redis_client,
+    )
+
+
 def _build_security_manager(settings: Settings) -> SecurityManager:
     return SecurityManager(
         create_security_store(settings),
-        rate_limiter=RateLimiter(
-            limit=settings.security_rate_limit,
-            window_seconds=settings.security_rate_window_seconds,
-        ),
+        rate_limiter=_build_rate_limiter(settings),
         secrets=SecretsManager(settings),
     )
+
+
+def _init_sentry(settings: Settings) -> None:
+    dsn = (settings.sentry_dsn or "").strip()
+    if not dsn:
+        return
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=dsn,
+            environment=settings.app_env,
+            traces_sample_rate=0.05 if settings.is_production else 0.0,
+        )
+        logger.info("Sentry initialized")
+    except Exception as exc:
+        logger.warning("Sentry init failed | error=%s", exc)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
     setup_logging(settings.log_level)
+    _init_sentry(settings)
     if not hasattr(app.state, "security_manager"):
         app.state.security_manager = _build_security_manager(settings)
     logger.info("Starting AI Employee OS backend (env=%s)", settings.app_env)
 
-    from app.adapters.telegram.polling import get_polling_service
+    polling = None
+    if settings.telegram_enabled and settings.telegram_inline_polling:
+        from app.adapters.telegram.polling import get_polling_service
 
-    polling = get_polling_service()
-    await polling.start()
+        polling = get_polling_service()
+        await polling.start()
+    elif settings.telegram_enabled and not settings.telegram_inline_polling:
+        logger.info(
+            "Telegram enabled but TELEGRAM_INLINE_POLLING=false — "
+            "expect a separate telegram worker process"
+        )
 
     yield
 
-    await polling.stop()
+    if polling is not None:
+        await polling.stop()
     await close_postgres()
     await close_redis()
     close_qdrant()
