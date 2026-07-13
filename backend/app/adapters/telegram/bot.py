@@ -42,10 +42,12 @@ class TelegramAdapter(TelegramAdapterInterface):
         orchestrator: Orchestrator | None = None,
         capability_registry: CapabilityRegistry | None = None,
         executive_agent: ExecutiveAgent | None = None,
+        allowed_user_ids: set[int] | None = None,
     ) -> None:
         self.enabled = enabled
         self._mapper = mapper or TelegramMapper()
         self._conversation_store = conversation_store or TelegramConversationStore()
+        self._allowed_user_ids = allowed_user_ids or set()
         self._product_flow = product_flow or self._build_product_flow(
             runtime=runtime,
             session_manager=session_manager,
@@ -55,6 +57,7 @@ class TelegramAdapter(TelegramAdapterInterface):
             orchestrator=orchestrator,
             capability_registry=capability_registry,
             executive_agent=executive_agent,
+            allowed_user_ids=self._allowed_user_ids,
         )
         self._handler = TelegramMessageHandler(
             runtime=runtime,
@@ -97,6 +100,7 @@ class TelegramAdapter(TelegramAdapterInterface):
         orchestrator: Orchestrator | None,
         capability_registry: CapabilityRegistry | None,
         executive_agent: ExecutiveAgent | None = None,
+        allowed_user_ids: set[int] | None = None,
     ) -> TelegramProductFlow:
         continuation = self._build_continuation(capability_registry)
         return TelegramProductFlow(
@@ -110,6 +114,7 @@ class TelegramAdapter(TelegramAdapterInterface):
             artifact_delivery=TelegramArtifactDelivery(artifact_service, storage),
             orchestrator=orchestrator,
             executive_agent=executive_agent,
+            allowed_user_ids=allowed_user_ids,
         )
 
     @staticmethod

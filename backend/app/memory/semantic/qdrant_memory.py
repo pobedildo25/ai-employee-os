@@ -21,50 +21,87 @@ def stub_embed(text: str, dimensions: int = VECTOR_SIZE) -> list[float]:
 
 
 class QdrantSemanticMemory(MemoryStore):
-    """Qdrant-backed semantic memory with stub embeddings."""
+    """Qdrant-backed semantic memory with stub embeddings and lazy init."""
 
-    def __init__(self, client: QdrantClient, settings: Settings) -> None:
+    def __init__(
+        self,
+        client: QdrantClient,
+        settings: Settings,
+        *,
+        ensure_on_init: bool = False,
+    ) -> None:
         self._client = client
+        self._settings = settings
         self._collection = settings.qdrant_collection
-        self._ensure_collection()
+        self._collection_ready: bool | None = None
+        if ensure_on_init:
+            self._ensure_collection_ready()
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self._settings.semantic_memory_enabled)
 
     async def save(self, item: MemoryItem) -> MemoryItem:
-        vector = stub_embed(item.content)
-        self._client.upsert(
-            collection_name=self._collection,
-            points=[
-                qmodels.PointStruct(
-                    id=str(item.id),
-                    vector=vector,
-                    payload=item.model_dump(mode="json"),
-                )
-            ],
-        )
+        if not self.enabled:
+            return item
+        if not self._ensure_collection_ready():
+            return item
+        try:
+            vector = stub_embed(item.content)
+            self._client.upsert(
+                collection_name=self._collection,
+                points=[
+                    qmodels.PointStruct(
+                        id=str(item.id),
+                        vector=vector,
+                        payload=item.model_dump(mode="json"),
+                    )
+                ],
+            )
+        except Exception as exc:
+            logger.warning("qdrant save degraded | id=%s error=%s", item.id, exc)
         return item
 
     async def get(self, memory_id: UUID) -> MemoryItem | None:
-        records = self._client.retrieve(
-            collection_name=self._collection,
-            ids=[str(memory_id)],
-            with_payload=True,
-        )
+        if not self.enabled:
+            return None
+        if not self._ensure_collection_ready():
+            return None
+        try:
+            records = self._client.retrieve(
+                collection_name=self._collection,
+                ids=[str(memory_id)],
+                with_payload=True,
+            )
+        except Exception as exc:
+            logger.warning("qdrant get degraded | id=%s error=%s", memory_id, exc)
+            return None
         if not records:
             return None
         payload = records[0].payload or {}
         return MemoryItem.model_validate(payload)
 
     async def search(self, query: MemorySearchQuery) -> list[MemoryItem]:
+        if not self.enabled:
+            return []
         if not query.query:
             return []
+        if not self._ensure_collection_ready():
+            return []
 
-        vector = stub_embed(query.query)
-        response = self._client.query_points(
-            collection_name=self._collection,
-            query=vector,
-            limit=query.limit,
-            query_filter=_build_filter(query),
-            with_payload=True,
-        )
+        try:
+            vector = stub_embed(query.query)
+            response = self._client.query_points(
+                collection_name=self._collection,
+                query=vector,
+                limit=query.limit,
+                query_filter=_build_filter(query),
+                with_payload=True,
+            )
+        except Exception as exc:
+            logger.warning("qdrant search degraded | error=%s", exc)
+            return []
+
         results: list[MemoryItem] = []
         for hit in response.points:
             if hit.payload:
@@ -74,19 +111,47 @@ class QdrantSemanticMemory(MemoryStore):
         return results
 
     async def delete(self, memory_id: UUID) -> bool:
-        self._client.delete(
-            collection_name=self._collection,
-            points_selector=qmodels.PointIdsList(points=[str(memory_id)]),
-        )
-        return True
+        if not self.enabled:
+            return False
+        if not self._ensure_collection_ready():
+            return False
+        try:
+            self._client.delete(
+                collection_name=self._collection,
+                points_selector=qmodels.PointIdsList(points=[str(memory_id)]),
+            )
+            return True
+        except Exception as exc:
+            logger.warning("qdrant delete degraded | id=%s error=%s", memory_id, exc)
+            return False
 
     async def update(self, memory_id: UUID, item: MemoryItem) -> MemoryItem | None:
+        if not self.enabled:
+            return None
         existing = await self.get(memory_id)
         if existing is None:
             return None
         updated = item.model_copy(update={"id": memory_id})
         await self.save(updated)
         return updated
+
+    def _ensure_collection_ready(self) -> bool:
+        if self._collection_ready is True:
+            return True
+        if self._collection_ready is False:
+            return False
+        try:
+            self._ensure_collection()
+            self._collection_ready = True
+            return True
+        except Exception as exc:
+            self._collection_ready = False
+            logger.warning(
+                "qdrant collection unavailable | collection=%s error=%s",
+                self._collection,
+                exc,
+            )
+            return False
 
     def _ensure_collection(self) -> None:
         collections = self._client.get_collections().collections
@@ -100,7 +165,7 @@ class QdrantSemanticMemory(MemoryStore):
 
 
 class InMemorySemanticMemory(MemoryStore):
-    """In-memory semantic memory for tests."""
+    """In-memory semantic memory for tests and Qdrant fallback."""
 
     def __init__(self) -> None:
         self._items: dict[UUID, MemoryItem] = {}
@@ -135,6 +200,21 @@ class InMemorySemanticMemory(MemoryStore):
         updated = item.model_copy(update={"id": memory_id})
         self._items[memory_id] = updated
         return updated
+
+
+def create_semantic_memory(settings: Settings, client: QdrantClient | None = None) -> MemoryStore:
+    """Build semantic store; fall back to in-memory if Qdrant client cannot be created."""
+    if not settings.semantic_memory_enabled:
+        logger.info("semantic memory disabled by feature flag")
+        return InMemorySemanticMemory()
+    try:
+        from app.database.qdrant import get_qdrant_client
+
+        qdrant = client or get_qdrant_client(settings)
+        return QdrantSemanticMemory(qdrant, settings, ensure_on_init=False)
+    except Exception as exc:
+        logger.warning("qdrant client unavailable, using in-memory semantic store | error=%s", exc)
+        return InMemorySemanticMemory()
 
 
 def _build_filter(query: MemorySearchQuery) -> qmodels.Filter | None:

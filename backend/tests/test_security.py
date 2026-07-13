@@ -102,13 +102,19 @@ async def test_security_api(manager: SecurityManager) -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         created = await client.post(
             "/api/v1/security/keys",
-            json={"name": "ci-key", "role": "ADMIN"},
+            json={"name": "ci-key", "role": "USER"},
         )
         assert created.status_code == 201
         body = created.json()
         assert body["api_key"].startswith("aeo_")
         raw = body["api_key"]
         key_id = body["id"]
+
+        admin_rejected = await client.post(
+            "/api/v1/security/keys",
+            json={"name": "admin-key", "role": "ADMIN"},
+        )
+        assert admin_rejected.status_code == 401
 
         listed = await client.get("/api/v1/security/keys")
         assert listed.status_code == 200

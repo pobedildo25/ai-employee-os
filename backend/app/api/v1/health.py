@@ -13,6 +13,6 @@ async def health_v1(request: Request) -> dict:
 @router.get("/ready")
 async def ready_v1(request: Request, response: Response) -> dict:
     payload = await build_readiness_payload(request)
-    if payload["status"] != "ready":
+    if payload["status"] == "not_ready":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return payload

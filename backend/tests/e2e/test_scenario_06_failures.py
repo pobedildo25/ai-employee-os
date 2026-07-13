@@ -27,12 +27,27 @@ from tests.test_telegram_product_ux import StreamableFakeRuntime
 
 @pytest.mark.asyncio
 async def test_llm_timeout_retries_then_friendly_error() -> None:
+    from app.agents.decision.models import AgentDecision, DecisionType
+    from app.agents.executive.models import AgentUnderstanding, ExecutiveAgentResult
+
+    class TaskExecutive:
+        async def analyze(self, state):
+            return ExecutiveAgentResult(
+                understanding=AgentUnderstanding(
+                    goal=state.get("user_input", ""),
+                    summary="task",
+                    next_action="execute",
+                ),
+                decision=AgentDecision(action=DecisionType.EXECUTE, reasoning="task"),
+            )
+
     sender = InMemoryTelegramSender()
     flow = TelegramProductFlow(
         runtime=StreamableFakeRuntime(final_state={"status": "completed"}),  # type: ignore[arg-type]
         session_manager=TelegramSessionManager(WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository()))),
         sender=sender,
         conversation_store=TelegramConversationStore(),
+        executive_agent=TaskExecutive(),  # type: ignore[arg-type]
     )
 
     class FailingRuntime:
@@ -48,8 +63,9 @@ async def test_llm_timeout_retries_then_friendly_error() -> None:
     request = TelegramMapper().map_update(SAMPLE_UPDATE)
     result = await flow.handle_message(request)
     assert result["status"] == "failed"
-    assert "traceback" not in sender.sent[-1]["text"].lower()
-    assert "Попробовать снова" in str(sender.sent[-1].get("reply_markup"))
+    error_payload = sender.edited[-1] if sender.edited else sender.sent[-1]
+    assert "traceback" not in error_payload["text"].lower()
+    assert "Попробовать снова" in str(error_payload.get("reply_markup"))
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,5 @@
 from uuid import UUID
+import logging
 
 from app.document_renderer.builders.document_builder import DocumentBuilder
 from app.document_renderer.exceptions import UnsupportedFormatError
@@ -12,6 +13,8 @@ from app.repositories.artifact_version_repository import ArtifactVersionReposito
 from app.schemas.artifact import ArtifactUploadRequest
 from app.services.artifact_service import ArtifactService
 from app.storage.storage_interface import StorageInterface
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentRendererService:
@@ -73,18 +76,34 @@ class RenderArtifactService:
             **request.metadata,
         }
 
-        artifact = await self._artifact_service.upload_artifact(
-            ArtifactUploadRequest(
-                client_id=request.client_id,
-                project_id=request.project_id,
-                name=artifact_name,
-                artifact_type=self.GENERATED_ARTIFACT_TYPE,
-                description="Generated document",
-                metadata=metadata,
-            ),
-            file_data=render_result.file_bytes,
-            mime_type=render_result.mime_type,
-        )
+        try:
+            artifact = await self._artifact_service.upload_artifact(
+                ArtifactUploadRequest(
+                    client_id=request.client_id,
+                    project_id=request.project_id,
+                    name=artifact_name,
+                    artifact_type=self.GENERATED_ARTIFACT_TYPE,
+                    description="Generated document",
+                    metadata=metadata,
+                ),
+                file_data=render_result.file_bytes,
+                mime_type=render_result.mime_type,
+            )
+        except Exception as exc:
+            logger.warning(
+                "artifact storage degraded | name=%s error=%s",
+                artifact_name,
+                exc,
+            )
+            return render_result.model_copy(
+                update={
+                    "metadata": {
+                        **metadata,
+                        "storage_degraded": True,
+                        "storage_error": str(exc),
+                    }
+                }
+            )
 
         return render_result.model_copy(
             update={

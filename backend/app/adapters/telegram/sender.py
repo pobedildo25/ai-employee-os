@@ -39,6 +39,10 @@ class TelegramSender(ABC):
     ) -> dict[str, Any]:
         raise NotImplementedError
 
+    @abstractmethod
+    async def delete_message(self, chat_id: int, message_id: int) -> dict[str, Any]:
+        raise NotImplementedError
+
 
 class HttpTelegramSender(TelegramSender):
     def __init__(self, token: str, *, api_base: str = "https://api.telegram.org") -> None:
@@ -98,6 +102,12 @@ class HttpTelegramSender(TelegramSender):
             response.raise_for_status()
             return response.json()
 
+    async def delete_message(self, chat_id: int, message_id: int) -> dict[str, Any]:
+        return await self._post(
+            "deleteMessage",
+            {"chat_id": chat_id, "message_id": message_id},
+        )
+
     async def _post(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
         import httpx
 
@@ -115,6 +125,7 @@ class InMemoryTelegramSender(TelegramSender):
         self.sent: list[dict[str, Any]] = []
         self.edited: list[dict[str, Any]] = []
         self.documents: list[dict[str, Any]] = []
+        self.deleted: list[dict[str, Any]] = []
         self._message_counter = 1000
 
     async def send_message(
@@ -170,4 +181,9 @@ class InMemoryTelegramSender(TelegramSender):
             "caption": caption,
         }
         self.documents.append(record)
+        return {"ok": True, "result": record}
+
+    async def delete_message(self, chat_id: int, message_id: int) -> dict[str, Any]:
+        record = {"chat_id": chat_id, "message_id": message_id}
+        self.deleted.append(record)
         return {"ok": True, "result": record}

@@ -30,6 +30,7 @@ class TaskExecutor(TaskExecutorInterface):
         *,
         task_id: UUID | None = None,
         trace_id: str = "-",
+        execution_context: dict | None = None,
     ) -> TaskExecution:
         execution = TaskExecution(
             task_id=task_id or plan.id,
@@ -39,6 +40,7 @@ class TaskExecutor(TaskExecutorInterface):
                 ExecutionLogEntry(message=f"Execution started for plan {plan.id}"),
             ],
         )
+        context = dict(execution_context or {})
 
         ordered_steps = _order_steps(plan.steps)
         plan.status = PlanStatus.READY
@@ -62,7 +64,7 @@ class TaskExecutor(TaskExecutorInterface):
                 ExecutionLogEntry(step_id=step.id, message=f"Step started: {step.description}")
             )
 
-            success = await self._run_step_with_retry(step, registry, execution, trace_id)
+            success = await self._run_step_with_retry(step, registry, execution, trace_id, context)
             if not success:
                 plan.status = PlanStatus.FAILED
                 execution.status = TaskExecutionStatus.FAILED
@@ -95,10 +97,36 @@ class TaskExecutor(TaskExecutorInterface):
         registry: CapabilityRegistry,
         execution: TaskExecution,
         trace_id: str,
+        execution_context: dict,
     ) -> bool:
         for attempt in range(1, MAX_STEP_RETRIES + 1):
             try:
-                result = await self._execute_step(step, registry)
+                result = await self._execute_step(step, registry, execution_context)
+                if not _skill_result_succeeded(result):
+                    status = result.get("status") if isinstance(result, dict) else None
+                    step.status = StepStatus.FAILED
+                    step.result = result
+                    execution.logs.append(
+                        ExecutionLogEntry(
+                            step_id=step.id,
+                            level="error",
+                            message=(
+                                f"Step failed (attempt {attempt}): "
+                                f"skill returned status={status!r}"
+                            ),
+                        )
+                    )
+                    logger.warning(
+                        "step skill incomplete | trace_id=%s step_id=%s attempt=%d status=%s",
+                        trace_id,
+                        step.id,
+                        attempt,
+                        status,
+                    )
+                    if not should_retry_step(step, attempt):
+                        return False
+                    step.status = StepStatus.PENDING
+                    continue
                 step.status = StepStatus.COMPLETED
                 step.result = result
                 execution.logs.append(
@@ -130,18 +158,39 @@ class TaskExecutor(TaskExecutorInterface):
 
         return False
 
-    async def _execute_step(self, step: PlanStep, registry: CapabilityRegistry) -> dict:
+    async def _execute_step(
+        self,
+        step: PlanStep,
+        registry: CapabilityRegistry,
+        execution_context: dict,
+    ) -> dict:
         skill = registry.get_skill_for_capability(step.capability)
         if skill is None:
             raise TaskExecutorError(f"No skill registered for capability: {step.capability}")
 
-        return await skill.execute(
-            {
-                "step_id": str(step.id),
-                "description": step.description,
-                "capability": step.capability,
-            }
-        )
+        payload = {
+            "step_id": str(step.id),
+            "description": step.description,
+            "capability": step.capability,
+            "goal": execution_context.get("user_goal") or execution_context.get("user_input"),
+            "user_goal": execution_context.get("user_goal") or execution_context.get("user_input"),
+            "context": execution_context,
+            **execution_context,
+        }
+        return await skill.execute(payload)
+
+
+_SUCCESS_SKILL_STATUSES = frozenset({"completed", "success", "ok"})
+
+
+def _skill_result_succeeded(result: object) -> bool:
+    """Treat missing status as success; explicit non-success status as failure."""
+    if not isinstance(result, dict):
+        return True
+    status = result.get("status")
+    if status is None:
+        return True
+    return str(status).strip().lower() in _SUCCESS_SKILL_STATUSES
 
 
 def _order_steps(steps: list[PlanStep]) -> list[PlanStep]:

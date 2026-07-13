@@ -155,10 +155,6 @@ def _log_node(state: AgentState, node_name: str, status: str) -> None:
 
 
 def _wants_presentation(state: AgentState) -> bool:
-    metadata = state.get("metadata") or {}
-    if metadata.get("document_type") == "pptx" or metadata.get("presentation_type"):
-        return True
-
     required = state.get("required_capabilities") or {}
     requested = list(required.get("requested") or [])
     resolved = required.get("resolved") or []

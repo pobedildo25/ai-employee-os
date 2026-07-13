@@ -46,14 +46,19 @@ class DocumentRenderNode:
             _log_node({**state, **update}, self.name, "skipped")
             return update
 
-        if requires_approval(decision.get("action")) and not metadata.get("auto_approve"):
-            update = {
-                "current_step": self.name,
-                "status": "waiting_render_approval",
-                "render_result": None,
-            }
-            _log_node({**state, **update}, self.name, "waiting_approval")
-            return update
+        if requires_approval(decision.get("action"), None) and not metadata.get("auto_approve"):
+            # Render gate only for multi-stage plans that still need human start.
+            # Single-step / demoted plans must not block document delivery.
+            task_plan = state.get("task_plan") or {}
+            steps = task_plan.get("steps") if isinstance(task_plan, dict) else None
+            if steps is None or len(steps) > 1:
+                update = {
+                    "current_step": self.name,
+                    "status": "waiting_render_approval",
+                    "render_result": None,
+                }
+                _log_node({**state, **update}, self.name, "waiting_approval")
+                return update
 
         execution_context = state.get("execution_context") or {}
         brand_profile = None
@@ -85,7 +90,22 @@ class DocumentRenderNode:
                 }
             )
 
-        skill_result = await self._render_skill.execute(payload)
+        try:
+            skill_result = await self._render_skill.execute(payload)
+        except Exception as exc:
+            logger.warning(
+                "document render degraded | execution_id=%s error=%s",
+                state.get("execution_id", "-"),
+                exc,
+            )
+            update = {
+                "current_step": self.name,
+                "status": "render_failed",
+                "render_result": {"status": "failed", "error": str(exc)},
+            }
+            _log_node({**state, **update}, self.name, "failed")
+            return update
+
         render_result = skill_result.get("render_result")
 
         update = {

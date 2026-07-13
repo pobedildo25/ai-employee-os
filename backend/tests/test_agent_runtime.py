@@ -81,11 +81,13 @@ async def test_runtime_stream_workflow() -> None:
     async for event in runtime.stream("stream me", trace_id="trace-stream"):
         events.append(event)
 
-    assert len(events) == 2
-    assert PROCESS_INPUT_NODE in events[0]
-    assert FINISH_NODE in events[1]
-    assert events[0][PROCESS_INPUT_NODE]["status"] == "processing"
-    assert events[1][FINISH_NODE]["status"] == "completed"
+    assert len(events) == 3
+    assert "_bootstrap" in events[0]
+    assert events[0]["_bootstrap"]["trace_id"] == "trace-stream"
+    assert PROCESS_INPUT_NODE in events[1]
+    assert FINISH_NODE in events[2]
+    assert events[1][PROCESS_INPUT_NODE]["status"] == "processing"
+    assert events[2][FINISH_NODE]["status"] == "completed"
 
 
 def test_checkpoint_save_and_load() -> None:

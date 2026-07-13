@@ -11,6 +11,7 @@ from app.analytics.analyzers.quality_analyzer import QualityAnalyzer
 from app.analytics.interfaces.analytics import AnalyticsAnalyzerInterface
 from app.analytics.models import AnalyticsDataset, AnalyticsInsight, AnalyticsRequest
 from app.analytics.prompt import ANALYTICS_SYSTEM_PROMPT, build_analytics_user_message
+from app.llm.exceptions import LLMProviderError
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMMessage
 
@@ -82,8 +83,8 @@ class AnalyticsAnalyzer(AnalyticsAnalyzerInterface):
         try:
             response = await self._gateway.complete(messages, temperature=0.2)
             return parse_analytics_interpretation(response.content)
-        except (ResponseParseError, ValueError, json.JSONDecodeError) as exc:
-            logger.warning("analytics llm interpret failed | trace_id=%s error=%s", trace_id, exc)
+        except (LLMProviderError, ResponseParseError, ValueError, json.JSONDecodeError, Exception) as exc:
+            logger.warning("analytics llm interpret degraded | trace_id=%s error=%s", trace_id, exc)
             return _fallback_interpretation(metrics, heuristic_insights, dataset)
 
 

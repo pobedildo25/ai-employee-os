@@ -26,9 +26,9 @@ async def test_marketing_strategy_flow_with_presentation(
         executive_json(
             goal="Исследуй рынок AI маркетинга и подготовь стратегию с презентацией",
             summary="Нужны research, strategy и deck",
-            action="EXECUTE",
+            action="CREATE_PLAN",
             required_capabilities=["research", "strategy_analysis", "presentation_design", "document_rendering"],
-            next_action="execute",
+            next_action="create_plan",
         ),
         plan_json(
             goal="Исследуй рынок AI маркетинга и подготовь стратегию с презентацией",
@@ -38,6 +38,7 @@ async def test_marketing_strategy_flow_with_presentation(
         strategy_result_json(summary="AI marketing focus for SMB"),
         presentation_plan_json(title="AI Marketing Strategy"),
         review_json(score=0.91, summary="Strategy deck is structured and on-brand"),
+        research_enabled=True,
     )
 
     result = await runtime.execute(

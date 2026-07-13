@@ -88,6 +88,9 @@ class WorkspaceManager:
             return None
         return await self._repository.get_conversation_by_session(workspace.active_session_id)
 
+    async def get_conversation_by_session(self, session_id: UUID) -> Conversation | None:
+        return await self._repository.get_conversation_by_session(session_id)
+
     async def ensure_conversation(self, session_id: UUID) -> Conversation:
         session = await self._repository.get_session(session_id)
         if session is None:

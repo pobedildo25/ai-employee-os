@@ -27,9 +27,42 @@ async def test_readiness_ready(client: AsyncClient) -> None:
     response = await client.get("/ready")
     assert response.status_code in {200, 503}
     body = response.json()
-    assert body["status"] in {"ready", "not_ready"}
+    assert body["status"] in {"ready", "degraded", "not_ready"}
     assert "services" in body
     assert set(body["services"]) >= {"postgres", "redis", "qdrant", "minio"}
+    if body["status"] == "not_ready":
+        assert response.status_code == 503
+    else:
+        assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_readiness_degraded_when_optional_down(monkeypatch) -> None:
+    from app.api import health as health_module
+
+    async def postgres_ok(_settings):
+        return True, "ok"
+
+    async def redis_ok(_settings):
+        return True, "ok"
+
+    def qdrant_down(_settings):
+        return False, "down"
+
+    def minio_down():
+        return False, "down"
+
+    monkeypatch.setattr(health_module, "check_postgres", postgres_ok)
+    monkeypatch.setattr(health_module, "check_redis", redis_ok)
+    monkeypatch.setattr(health_module, "check_qdrant", qdrant_down)
+    monkeypatch.setattr(health_module, "check_minio", minio_down)
+
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/ready")
+    assert response.status_code == 200
+    assert response.json()["status"] == "degraded"
 
 
 @pytest.mark.asyncio

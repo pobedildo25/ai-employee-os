@@ -174,7 +174,7 @@ def test_ast_conversion() -> None:
 
 @pytest.mark.asyncio
 async def test_skill_registry_and_strategy_handoff(settings: Settings) -> None:
-    registry = create_capability_registry()
+    registry = create_capability_registry(Settings(skills_enabled=True, research_enabled=True))
     assert registry.get_skill_for_capability("research") is not None
     assert registry.get_skill_for_capability("strategy_analysis") is not None
 

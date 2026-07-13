@@ -2,10 +2,6 @@ import pytest
 
 from app.adapters.telegram.bot import TelegramAdapter
 from app.adapters.telegram.conversation_store import TelegramConversationStore
-from app.adapters.telegram.continuation import TelegramArtifactDelivery
-from app.adapters.telegram.flow import TelegramProductFlow
-from app.adapters.telegram.mapper import TelegramMapper
-from app.adapters.telegram.progress import TelegramProgressMessenger
 from app.adapters.telegram.sender import InMemoryTelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.orchestration.orchestrator import Orchestrator
@@ -13,16 +9,16 @@ from app.orchestration.store import ExecutionStore
 from app.workspace.manager import WorkspaceManager
 from app.workspace.repositories.workspace_repository import InMemoryWorkspaceRepository
 from app.workspace.service import WorkspaceService
-from tests.e2e.helpers import build_e2e_runtime
-from tests.llm_fixtures import executive_json, plan_json, review_json
 from tests.test_telegram_adapter import SAMPLE_UPDATE
-from tests.test_telegram_product_ux import FakeArtifactDelivery, FakeContinuation, SAMPLE_CALLBACK_APPROVE, StreamableFakeRuntime
+from tests.test_telegram_product_ux import (
+    FakeContinuation,
+    SAMPLE_CALLBACK_APPROVE,
+    build_flow,
+)
 
 
 @pytest.mark.asyncio
 async def test_telegram_full_flow_with_progress_approval_and_delivery(settings, artifact_service) -> None:
-    from tests.llm_fixtures import mock_gateway
-
     waiting_state = {
         "execution_id": "tg-e2e-1",
         "status": "waiting_approval",
@@ -61,36 +57,38 @@ async def test_telegram_full_flow_with_progress_approval_and_delivery(settings, 
     sender = InMemoryTelegramSender()
     workspace = WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository()))
     store = TelegramConversationStore()
-    flow = TelegramProductFlow(
-        runtime=TelegramE2ERuntime(),  # type: ignore[arg-type]
-        session_manager=TelegramSessionManager(workspace_service=workspace),
-        sender=sender,
-        conversation_store=store,
-        progress_messenger=TelegramProgressMessenger(sender, min_interval_seconds=0.0),
+    sessions = TelegramSessionManager(workspace_service=workspace, bindings={})
+    runtime = TelegramE2ERuntime()
+    flow = build_flow(
+        runtime,  # type: ignore[arg-type]
+        sessions,
+        sender,
+        store,
         continuation=FakeContinuation(),
-        artifact_delivery=FakeArtifactDelivery(),
         orchestrator=Orchestrator(store=ExecutionStore()),
     )
     adapter = TelegramAdapter(
-        runtime=TelegramE2ERuntime(),  # type: ignore[arg-type]
-        session_manager=TelegramSessionManager(workspace_service=workspace),
+        runtime=runtime,  # type: ignore[arg-type]
+        session_manager=sessions,
         sender=sender,
         product_flow=flow,
         conversation_store=store,
     )
 
+    SAMPLE_CALLBACK_APPROVE["callback_query"]["data"] = "tg:approve"
+
     first = await adapter.handle_update(SAMPLE_UPDATE)
     assert first is not None
     assert first["status"] == "waiting_approval"
     assert "Начать выполнение" in sender.sent[-1]["text"]
-    assert sender.sent[0]["text"] == "🧠 NOVA анализирует задачу"
-    assert sender.edited
+    assert sender.sent[0]["text"] == "Думаю…"
+    assert sender.deleted
 
     approved = await adapter.handle_update(SAMPLE_CALLBACK_APPROVE)
     assert approved is not None
     assert approved["status"] == "completed"
     assert sender.documents
-    assert "Готово" in sender.sent[-1]["text"]
+    assert sender.documents[-1].get("caption") == "Готово."
 
     convo = store.get(SAMPLE_UPDATE["message"]["from"]["id"])
     assert convo is not None

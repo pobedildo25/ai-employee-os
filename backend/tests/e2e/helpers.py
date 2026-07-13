@@ -54,7 +54,8 @@ def build_e2e_registry(
     registry.register(DocumentCreationSkill(creator=creator))
     registry.register(PresentationDesignSkill(llm_gateway=llm_gateway))
     registry.register(StrategySkill(llm_gateway=llm_gateway))
-    registry.register(ResearchSkill(llm_gateway=llm_gateway))
+    if settings.research_enabled:
+        registry.register(ResearchSkill(llm_gateway=llm_gateway))
     registry.register(
         DocumentRenderSkill(
             artifact_service=RenderArtifactService(
@@ -67,11 +68,8 @@ def build_e2e_registry(
     )
     registry.register(RevisionSkill(manager=revision_manager))
 
-    from app.skills.builtin.analysis_skill import AnalysisSkill
     from app.skills.builtin.analytics_skill import AnalyticsSkill
     from app.skills.builtin.client_intelligence_skill import ClientIntelligenceSkill
-    from app.skills.builtin.document_skill import DocumentSkill
-    from app.skills.builtin.file_skill import FileSkill
     from app.skills.builtin.knowledge_migration_skill import KnowledgeMigrationSkill
     from app.skills.builtin.quality_review_skill import QualityReviewSkill
 
@@ -79,9 +77,6 @@ def build_e2e_registry(
     registry.register(ClientIntelligenceSkill())
     registry.register(QualityReviewSkill())
     registry.register(KnowledgeMigrationSkill())
-    registry.register(DocumentSkill())
-    registry.register(AnalysisSkill())
-    registry.register(FileSkill())
     return registry
 
 

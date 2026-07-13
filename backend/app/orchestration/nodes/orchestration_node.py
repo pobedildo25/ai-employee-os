@@ -9,7 +9,7 @@ from app.orchestration.state_manager import StateManager
 from app.orchestration.store import get_execution_store_singleton
 from app.orchestration.validators.execution_validator import ExecutionValidator
 from app.planning.models import TaskPlan
-from app.planning.policies.execution_policy import should_plan
+from app.planning.policies.execution_policy import plan_requires_orchestration
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +33,9 @@ class OrchestrationNode:
 
     async def __call__(self, state: AgentState) -> dict[str, Any]:
         _log_node(state, self.name, "started")
-        decision = state.get("decision") or {}
         plan_data = state.get("task_plan")
 
-        if not should_plan(decision.get("action")) or not plan_data:
+        if not plan_data:
             update = {
                 "current_step": self.name,
                 "status": "orchestration_skipped",
@@ -51,6 +50,23 @@ class OrchestrationNode:
             return update
 
         plan = TaskPlan.model_validate(plan_data)
+
+        # Single-step plans skip ExecutionGraph / Scheduler / DependencyResolver.
+        if not plan_requires_orchestration(plan):
+            update = {
+                "current_step": self.name,
+                "status": "orchestration_skipped",
+                "execution_graph": None,
+                "execution_state": None,
+                "progress": 0.0,
+                "active_nodes": [],
+                "completed_nodes": [],
+                "failed_nodes": [],
+                "telegram_progress": None,
+            }
+            _log_node({**state, **update}, self.name, "single_step_skip")
+            return update
+
         graph = build_execution_graph(plan)
         self._validator.validate_graph(graph)
 

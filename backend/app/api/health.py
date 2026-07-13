@@ -11,6 +11,9 @@ from app.database.redis import check_redis
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["health"])
 
+REQUIRED_SERVICES = ("postgres", "redis")
+OPTIONAL_SERVICES = ("qdrant", "minio")
+
 
 def check_minio() -> tuple[bool, str]:
     settings = get_settings()
@@ -43,15 +46,25 @@ async def build_readiness_payload(request: Request) -> dict:
         "minio": {"status": "up" if minio_ok else "down", "detail": minio_msg},
     }
 
-    all_up = all(s["status"] == "up" for s in services.values())
+    required_up = all(services[name]["status"] == "up" for name in REQUIRED_SERVICES)
+    optional_up = all(services[name]["status"] == "up" for name in OPTIONAL_SERVICES)
+    if not required_up:
+        overall = "not_ready"
+    elif not optional_up:
+        overall = "degraded"
+    else:
+        overall = "ready"
+
     trace_id = getattr(request.state, "trace_id", "-")
 
     return {
-        "status": "ready" if all_up else "not_ready",
+        "status": overall,
         "service": "ai-employee-os",
         "environment": settings.app_env,
         "trace_id": trace_id,
         "services": services,
+        "required": list(REQUIRED_SERVICES),
+        "optional": list(OPTIONAL_SERVICES),
     }
 
 
@@ -78,8 +91,9 @@ async def health(request: Request) -> dict:
 
 @router.get("/ready")
 async def ready(request: Request, response: Response) -> dict:
-    """Readiness probe — dependencies are reachable."""
+    """Readiness probe — required dependencies must be up; optional may degrade."""
     payload = await build_readiness_payload(request)
-    if payload["status"] != "ready":
+    if payload["status"] == "not_ready":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return payload
+

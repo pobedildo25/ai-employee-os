@@ -23,11 +23,27 @@ class ExecutiveAgentNode:
 
     async def __call__(self, state: AgentState) -> dict[str, Any]:
         _log_node(state, self.name, "started")
+        metadata = state.get("metadata") or {}
+        pre_decision = metadata.get("preclassified_decision")
+        pre_understanding = metadata.get("preclassified_understanding")
+        if metadata.get("skip_executive_llm") and isinstance(pre_decision, dict):
+            update = {
+                "current_step": self.name,
+                "understanding": pre_understanding
+                if isinstance(pre_understanding, dict)
+                else state.get("understanding"),
+                "decision": pre_decision,
+                "status": "analyzed",
+                "metadata": {**metadata, "executive_reused_classification": True},
+            }
+            _log_node({**state, **update}, self.name, "completed")
+            return update
+
         result = await self._agent.analyze(state)
         update = {
             "current_step": self.name,
-            "understanding": result.understanding.model_dump(),
-            "decision": result.decision.model_dump(),
+            "understanding": result.understanding.model_dump(mode="json"),
+            "decision": result.decision.model_dump(mode="json"),
             "status": "analyzed",
         }
         _log_node({**state, **update}, self.name, "completed")
@@ -64,7 +80,9 @@ class ChatResponseNode(BaseNode):
         decision = state.get("decision") or {}
         message = extract_chat_reply(decision)
         if not message:
-            message = (state.get("understanding") or {}).get("summary") or "Привет! Чем могу помочь?"
+            message = (state.get("understanding") or {}).get("summary") or (
+                "Не удалось сформулировать ответ. Повторите запрос, пожалуйста."
+            )
         update = {
             "current_step": self.name,
             "status": "completed",

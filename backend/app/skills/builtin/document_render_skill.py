@@ -98,9 +98,23 @@ class DocumentRenderSkill(BaseSkill):
         )
 
         if payload.get("store_artifact") and request.client_id and request.project_id:
-            render_result = await self._artifact_service.render_and_store(request)
+            try:
+                render_result = await self._artifact_service.render_and_store(request)
+            except Exception as exc:
+                return {
+                    "status": "failed",
+                    "skill": self.name(),
+                    "message": f"document render failed: {exc}",
+                }
         else:
-            render_result = self._renderer_service.render(request)
+            try:
+                render_result = self._renderer_service.render(request)
+            except Exception as exc:
+                return {
+                    "status": "failed",
+                    "skill": self.name(),
+                    "message": f"document render failed: {exc}",
+                }
 
         render_payload = render_result.model_dump(mode="json", exclude={"file_bytes"})
         if render_result.file_bytes is not None:

@@ -9,7 +9,6 @@ from app.document_intelligence.pipeline import DocumentPipeline
 from app.document_renderer.models import OutputFormat, RenderRequest
 from app.document_renderer.renderer import DocumentRendererService
 from app.file_processing.processor import FileProcessor
-from tests.e2e.helpers import brand_plan_steps
 from tests.fixtures.file_factory import (
     create_docx_file,
     create_pdf_file,
@@ -17,7 +16,7 @@ from tests.fixtures.file_factory import (
     create_pptx_file,
     read_file_bytes,
 )
-from tests.llm_fixtures import creation_ast_json, executive_json, mock_gateway, plan_json, review_json
+from tests.llm_fixtures import creation_ast_json, executive_json, review_json
 
 
 @pytest.mark.asyncio
@@ -82,10 +81,6 @@ async def test_document_creation_with_brand_style_pipeline(
             action="EXECUTE",
             required_capabilities=["document_analysis", "brand_style_analysis", "document_creation", "document_rendering"],
             next_action="execute",
-        ),
-        plan_json(
-            goal="Создай новое коммерческое предложение для клиента",
-            steps=brand_plan_steps(),
         ),
         creation_ast_json(title="Commercial Proposal", document_type="docx"),
         review_json(score=0.95, summary="Branded proposal meets the goal"),

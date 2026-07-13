@@ -2,76 +2,90 @@ from typing import Any
 
 
 def format_progress_header() -> str:
-    return "🧠 NOVA анализирует задачу"
+    return "Думаю…"
 
 
 def format_telegram_progress(progress: dict[str, Any] | None, *, header: str | None = None) -> str:
+    """Quiet ephemeral status — no checklist theater in chat history."""
     title = header or format_progress_header()
     if not progress:
         return title
 
     lines = progress.get("lines") or []
-    body_parts: list[str] = []
-    for line in lines:
-        name = line.get("title") or ""
-        icon = line.get("status_icon") or "⌛"
-        label = line.get("status_label") or "ожидает"
-        body_parts.append(f"{icon} {name}")
-
-    if not body_parts:
-        return title
-    return f"{title}\n\n" + "\n".join(body_parts)
+    active = next(
+        (
+            line
+            for line in lines
+            if str(line.get("status_label") or "").lower() in {"выполняется", "in_progress", "running"}
+        ),
+        None,
+    )
+    if active and active.get("title"):
+        return f"{title}\n{active['title']}"
+    return title
 
 
 def format_approval_message(task_plan: dict[str, Any] | None) -> str:
     steps = (task_plan or {}).get("steps") or []
     if not steps:
-        return (
-            "Я подготовил план выполнения.\n\n"
-            "Начать выполнение?"
-        )
+        return "План готов. Начать выполнение?"
 
-    lines = [f"{index}. {step.get('description') or step.get('capability')}" for index, step in enumerate(steps, start=1)]
-    plan_text = "\n".join(lines)
-    return f"Я подготовил план:\n\n{plan_text}\n\nНачать выполнение?"
+    lines = [
+        f"{index}. {step.get('description') or step.get('capability')}"
+        for index, step in enumerate(steps, start=1)
+    ]
+    return f"План:\n\n" + "\n".join(lines) + "\n\nНачать выполнение?"
+
+
+INCOMPLETE_COMPLETION_MESSAGE = (
+    "Задача завершилась без результата. Можно уточнить запрос или попробовать ещё раз."
+)
 
 
 def format_completion_message(state: dict[str, Any]) -> str:
-    quality = state.get("quality_check") or {}
-    score = quality.get("score")
-    score_line = f"\n\nQuality score: {score:.2f}" if isinstance(score, (int, float)) else ""
-    return f"Готово.\n\nЕсли нужно что-то изменить — напишите.{score_line}"
+    reply = _extract_result_message(state)
+    if reply:
+        return reply
+    return INCOMPLETE_COMPLETION_MESSAGE
+
+
+def has_real_result_message(state: dict[str, Any]) -> bool:
+    return _extract_result_message(state) is not None
 
 
 def format_delivery_summary(artifacts: list[dict[str, Any]], state: dict[str, Any]) -> str:
-    quality = state.get("quality_check") or {}
-    score = quality.get("score")
-    lines = ["✅ Готово", "", "Создано:"]
-    for artifact in artifacts:
-        name = artifact.get("name") or "файл"
-        mime = (artifact.get("mime_type") or "").lower()
-        icon = _artifact_icon(mime, name)
-        lines.append(f"{icon} {name}")
-    if isinstance(score, (int, float)):
-        lines.extend(["", f"Quality score: {score:.2f}"])
-    return "\n".join(lines)
+    """Short confirmation after files — no quality score, no icon inventory."""
+    _ = artifacts, state
+    return "Готово."
+
+
+def format_delivery_caption(artifacts: list[dict[str, Any]]) -> str | None:
+    if not artifacts:
+        return None
+    count = len(artifacts)
+    if count == 1:
+        return "Готово."
+    return f"Готово · {count} {_plural_files(count)}"
+
+
+def _plural_files(count: int) -> str:
+    mod10 = count % 10
+    mod100 = count % 100
+    if mod10 == 1 and mod100 != 11:
+        return "файл"
+    if 2 <= mod10 <= 4 and not (12 <= mod100 <= 14):
+        return "файла"
+    return "файлов"
 
 
 def format_revision_prompt() -> str:
-    return (
-        "Что нужно изменить?\n\n"
-        "Напишите, что исправить:\n"
-        "• стиль\n"
-        "• объём текста\n"
-        "• структуру\n"
-        "• содержание"
-    )
+    return "Что изменить?"
 
 
 def format_error_message(reason: str | None = None) -> str:
     base = "Не удалось завершить задачу."
     if reason:
-        return f"{base}\n\nПричина: {reason}"
+        return f"{base}\n\n{reason}"
     return base
 
 
@@ -81,14 +95,11 @@ def format_runtime_error_message(
     execution_id: str | None = None,
     reason: str | None = None,
 ) -> str:
-    lines = ["Произошла ошибка при выполнении задачи. Я уже сохранил детали."]
-    if trace_id:
-        lines.append(f"trace_id: {trace_id}")
-    if execution_id:
-        lines.append(f"execution_id: {execution_id}")
+    # Ids stay in API/result payloads — not in the chat bubble.
+    _ = trace_id, execution_id
     if reason:
-        lines.append(f"Причина: {reason}")
-    return "\n".join(lines)
+        return f"Не удалось выполнить задачу.\n\n{reason}"
+    return "Не удалось выполнить задачу. Можно попробовать ещё раз."
 
 
 def extract_failure_reason(state: dict[str, Any]) -> str | None:
@@ -105,12 +116,16 @@ def extract_failure_reason(state: dict[str, Any]) -> str | None:
     return None
 
 
-def _artifact_icon(mime_type: str, name: str) -> str:
-    lowered = name.lower()
-    if "pptx" in lowered or "presentation" in mime_type:
-        return "📊"
-    if "pdf" in lowered or mime_type == "application/pdf":
-        return "📕"
-    if "png" in lowered or mime_type.startswith("image/"):
-        return "🖼"
-    return "📄"
+def _extract_result_message(state: dict[str, Any]) -> str | None:
+    result = state.get("result")
+    if isinstance(result, dict):
+        for key in ("message", "reply", "text", "summary"):
+            value = result.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    decision = state.get("decision") or {}
+    for key in ("response_message", "clarification_question"):
+        value = decision.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None

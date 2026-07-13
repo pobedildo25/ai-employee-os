@@ -8,6 +8,7 @@ from app.learning.prompts.rule_extraction import (
     RULE_EXTRACTION_SYSTEM_PROMPT,
     build_rule_extraction_message,
 )
+from app.llm.exceptions import LLMProviderError
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMMessage
 
@@ -55,6 +56,19 @@ class LearningExtractor:
                     attempt,
                 )
                 return result
+            except LLMProviderError as exc:
+                logger.warning(
+                    "learning extract degraded | trace_id=%s attempt=%d error=%s",
+                    trace_id,
+                    attempt,
+                    exc,
+                )
+                return RuleExtractionResult(
+                    rule=None,
+                    confidence=0.0,
+                    should_learn=False,
+                    reason=f"llm unavailable: {exc}",
+                )
             except (ResponseParseError, ValueError) as exc:
                 last_error = exc
                 messages.append(
@@ -63,8 +77,16 @@ class LearningExtractor:
                         content="Return ONLY valid JSON matching the required learning schema.",
                     )
                 )
-        raise LearningExtractorError(
-            f"Failed to extract learning rule after {self._max_retries} attempts: {last_error}"
+        logger.warning(
+            "learning extract degraded after retries | trace_id=%s error=%s",
+            trace_id,
+            last_error,
+        )
+        return RuleExtractionResult(
+            rule=None,
+            confidence=0.0,
+            should_learn=False,
+            reason=f"parse failed after {self._max_retries} attempts: {last_error}",
         )
 
 

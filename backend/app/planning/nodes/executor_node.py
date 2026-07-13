@@ -86,7 +86,7 @@ class ExecutorNode:
 
         plan = TaskPlan.model_validate(plan_data)
 
-        if requires_approval(decision.get("action")) and not metadata.get("auto_approve"):
+        if requires_approval(decision.get("action"), plan) and not metadata.get("auto_approve"):
             execution = TaskExecution(
                 plan_id=plan.id,
                 status=TaskExecutionStatus.WAITING_APPROVAL,
@@ -144,14 +144,17 @@ class ExecutorNode:
                 plan,
                 self._registry,
                 trace_id=state.get("trace_id", "-"),
+                execution_context=state.get("execution_context") or {},
             )
+            skill_updates = _merge_skill_results(plan)
+            completed = execution.status == TaskExecutionStatus.COMPLETED
             update = {
                 "current_step": self.name,
                 "task_plan": plan.model_dump(mode="json"),
                 "task_execution": execution.model_dump(mode="json"),
-                "status": "executed"
-                if execution.status == TaskExecutionStatus.COMPLETED
-                else "execution_failed",
+                "progress": 100.0 if completed else 0.0,
+                "status": "executed" if completed else "execution_failed",
+                **skill_updates,
             }
         _log_node({**state, **update}, self.name, "completed")
         return update

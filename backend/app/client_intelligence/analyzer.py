@@ -9,6 +9,7 @@ from app.client_intelligence.analyzers.preference_analyzer import PreferenceAnal
 from app.client_intelligence.analyzers.risk_analyzer import RiskAnalyzer
 from app.client_intelligence.models import ClientIntelligenceSources, IntelligenceSignal
 from app.client_intelligence.prompt import CLIENT_INTELLIGENCE_SYSTEM_PROMPT, build_analyzer_user_message
+from app.llm.exceptions import LLMProviderError
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMMessage
 
@@ -72,8 +73,8 @@ class ClientIntelligenceAnalyzer:
         try:
             response = await self._gateway.complete(messages, temperature=0.2)
             return parse_llm_intelligence(response.content)
-        except (ResponseParseError, ValueError, json.JSONDecodeError) as exc:
-            logger.warning("client intelligence llm enrich failed | trace_id=%s error=%s", trace_id, exc)
+        except (LLMProviderError, ResponseParseError, ValueError, json.JSONDecodeError, Exception) as exc:
+            logger.warning("client intelligence llm enrich degraded | trace_id=%s error=%s", trace_id, exc)
             return {}
 
 

@@ -58,6 +58,22 @@ class WorkspaceService:
             return None
         return await self.get_snapshot(workspace.id)
 
+    async def ensure_session_for_client(
+        self,
+        *,
+        client_id: UUID,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Reuse active session when present; otherwise open one session for the client."""
+        existing = await self.get_snapshot_for_client(client_id)
+        if existing is not None and existing.get("active_session_id"):
+            return existing
+        return await self.open(
+            client_id=client_id,
+            metadata=metadata,
+            open_session=True,
+        )
+
     def build_snapshot(
         self,
         workspace: Workspace,
@@ -79,6 +95,7 @@ class WorkspaceService:
                 "session_id": str(conversation.session_id),
                 "message_count": len(conversation.messages),
                 "summary": conversation.summary,
+                "messages": list(conversation.messages),
             }
             if conversation
             else None,

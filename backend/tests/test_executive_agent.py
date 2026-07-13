@@ -3,14 +3,13 @@ import pytest
 from app.agent_runtime.checkpoint.manager import InMemoryCheckpointManager
 from app.agent_runtime.runtime import AgentRuntime, build_executive_graph
 from app.agents.decision.models import DecisionType
-from app.agents.executive.agent import ExecutiveAgent, ExecutiveAgentError
+from app.agents.executive.agent import ExecutiveAgent
 from app.agents.parsers.response_parser import ResponseParseError, parse_executive_response
 from app.core.config import Settings
 from app.agent_runtime.state.models import create_initial_state
 from tests.llm_fixtures import creation_ast_json as _creation_ast_json
 from tests.llm_fixtures import executive_json as _executive_json
 from tests.llm_fixtures import mock_gateway as _mock_gateway
-from tests.llm_fixtures import plan_json as _plan_json
 from tests.llm_fixtures import review_json as _review_json
 
 
@@ -49,19 +48,18 @@ async def test_greeting_returns_respond(settings: Settings) -> None:
 
 
 @pytest.mark.asyncio
-async def test_proposal_request_understands_goal_and_capabilities(settings: Settings) -> None:
-    gateway, _ = _mock_gateway(
+async def test_vague_artifact_request_asks_clarification(settings: Settings) -> None:
+    gateway, provider = _mock_gateway(
         settings,
         _executive_json(
             goal="создать коммерческое предложение",
-            summary="Пользователь хочет подготовить КП",
-            action="CREATE_PLAN",
-            required_capabilities=["document_generation", "brand_style", "document_analysis"],
+            summary="Не хватает данных клиента и оффера",
+            action="ASK_CLARIFICATION",
+            required_capabilities=["document_generation"],
             missing_information=["данные клиента", "услуги и цены"],
             next_action="request_information",
+            clarification_question="Для какого клиента и какого предложения нужно КП?",
         ),
-        _plan_json(goal="создать коммерческое предложение"),
-        _review_json(),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway),
@@ -70,11 +68,40 @@ async def test_proposal_request_understands_goal_and_capabilities(settings: Sett
 
     result = await runtime.execute("Сделай коммерческое предложение")
 
-    understanding = result["understanding"]
-    assert understanding["goal"] == "создать коммерческое предложение"
-    assert "document_generation" in understanding["required_capabilities"]
-    assert len(understanding["required_capabilities"]) >= 2
-    assert understanding["missing_information"]
+    assert result["decision"]["action"] == DecisionType.ASK_CLARIFICATION.value
+    assert result["decision"]["clarification_question"]
+    assert result["understanding"]["missing_information"]
+    assert result.get("task_plan") is None
+    assert len(provider.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_clear_proposal_request_executes_without_planner(settings: Settings) -> None:
+    gateway, provider = _mock_gateway(
+        settings,
+        _executive_json(
+            goal="создать коммерческое предложение",
+            summary="КП для клиента Acme по SEO",
+            action="EXECUTE",
+            required_capabilities=["document_generation"],
+            next_action="execute",
+        ),
+        _review_json(),
+    )
+    runtime = AgentRuntime(
+        graph=build_executive_graph(gateway),
+        checkpoint_manager=InMemoryCheckpointManager(),
+    )
+
+    result = await runtime.execute(
+        "Сделай коммерческое предложение для Acme: SEO-аудит, срок 2 недели, бюджет 150к"
+    )
+
+    assert result["decision"]["action"] == DecisionType.EXECUTE.value
+    assert result["task_plan"] is not None
+    assert len(result["task_plan"]["steps"]) == 1
+    # Executive only — non-document EXECUTE skips LLM reviewer.
+    assert len(provider.calls) == 1
 
 
 @pytest.mark.asyncio
@@ -151,8 +178,8 @@ async def test_executive_agent_retries_on_invalid_json(settings: Settings) -> No
 
 
 @pytest.mark.asyncio
-async def test_executive_agent_raises_after_max_retries(settings: Settings) -> None:
-    gateway, _ = _mock_gateway(settings, "bad", "bad", "bad")
+async def test_executive_agent_degrades_after_max_parse_retries(settings: Settings) -> None:
+    gateway, provider = _mock_gateway(settings, "bad", "bad", "bad")
     agent = ExecutiveAgent(gateway, max_retries=3)
 
     state = create_initial_state(
@@ -161,28 +188,25 @@ async def test_executive_agent_raises_after_max_retries(settings: Settings) -> N
         user_input="test",
     )
 
-    with pytest.raises(ExecutiveAgentError, match="Failed to obtain valid"):
-        await agent.analyze(state)
+    result = await agent.analyze(state)
+    assert result.decision.action == DecisionType.RESPOND
+    assert "временно" in (result.decision.response_message or "").lower() or "ошибк" in (
+        result.decision.response_message or ""
+    ).lower()
+    assert len(provider.calls) == 3
 
 
 @pytest.mark.asyncio
 async def test_executive_graph_full_workflow(settings: Settings) -> None:
-    gateway, _ = _mock_gateway(
+    gateway, provider = _mock_gateway(
         settings,
         _executive_json(
-            goal="анализ данных",
+            goal="анализ документа",
             summary="Нужен анализ",
             action="EXECUTE",
-            required_capabilities=["data_analysis"],
+            required_capabilities=["document_analysis"],
             next_action="execute",
         ),
-        _plan_json(
-            goal="анализ данных",
-            steps=[
-                {"description": "Analyze report", "capability": "data_analysis", "dependencies": []},
-            ],
-        ),
-        _review_json(),
     )
     runtime = AgentRuntime(
         graph=build_executive_graph(gateway),
@@ -192,13 +216,15 @@ async def test_executive_graph_full_workflow(settings: Settings) -> None:
     result = await runtime.execute(
         "Проанализируй отчёт",
         trace_id="trace-exec",
-        metadata={"auto_approve": True},
     )
 
     assert result["status"] == "completed"
     assert result["trace_id"] == "trace-exec"
-    assert result["current_step"] == "quality_gate"
-    assert result["result"]["understanding"]["goal"] == "анализ данных"
+    assert result["result"]["understanding"]["goal"] == "анализ документа"
     assert result["result"]["decision"]["action"] == "EXECUTE"
-    assert result["execution_graph"] is not None
-    assert result["progress"] == 100.0
+    assert result["task_plan"]["steps"][0]["capability"] == "document_analysis"
+    assert result["execution_graph"] is None
+    # document_analysis without extracted_content → fail, not silent COMPLETED.
+    assert result["task_execution"]["status"] == "FAILED"
+    assert result["progress"] < 100.0
+    assert len(provider.calls) == 1

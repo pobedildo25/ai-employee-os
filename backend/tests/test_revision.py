@@ -20,7 +20,6 @@ from tests.llm_fixtures import (
     creation_ast_json,
     executive_json,
     mock_gateway,
-    plan_json,
     review_json,
     revision_json,
 )
@@ -195,7 +194,8 @@ def test_skill_registry_includes_document_revision() -> None:
 
 @pytest.mark.asyncio
 async def test_langgraph_revision_loop(settings: Settings) -> None:
-    registry = create_capability_registry(settings)
+    from tests.e2e.helpers import build_e2e_runtime
+
     gateway, _ = mock_gateway(
         settings,
         executive_json(
@@ -205,7 +205,6 @@ async def test_langgraph_revision_loop(settings: Settings) -> None:
             required_capabilities=["document_creation", "document_rendering"],
             next_action="execute",
         ),
-        plan_json(goal="Подготовь документ"),
         creation_ast_json(title="Initial Document"),
         review_json(
             status="REVISE",
@@ -217,10 +216,7 @@ async def test_langgraph_revision_loop(settings: Settings) -> None:
         revision_json(title="Improved Document"),
         review_json(status="PASS", score=0.9, summary="Looks good after revision"),
     )
-    runtime = AgentRuntime(
-        graph=build_executive_graph(gateway, capability_registry=registry),
-        checkpoint_manager=InMemoryCheckpointManager(),
-    )
+    runtime, _registry, _provider = build_e2e_runtime(gateway)
 
     result = await runtime.execute(
         "Подготовь документ для клиента",

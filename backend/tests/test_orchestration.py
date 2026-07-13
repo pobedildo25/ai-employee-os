@@ -1,3 +1,4 @@
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -22,9 +23,32 @@ from app.orchestration.store import ExecutionStore
 from app.orchestration.validators.execution_validator import ExecutionValidationError, ExecutionValidator
 from app.planning.models import PlanStep, StepStatus, TaskExecutionStatus, TaskPlan
 from app.planning.parsers.plan_parser import parse_task_plan
-from app.skills.registry import create_capability_registry
+from app.skills.base.skill import BaseSkill
+from app.skills.models import Capability, SkillMetadata
+from app.skills.registry import CapabilityRegistry, create_capability_registry
 from app.core.config import Settings
 from tests.llm_fixtures import plan_json
+
+
+class _OkSkill(BaseSkill):
+    """Deterministic skill for orchestration graph tests."""
+
+    def __init__(self, skill_id: str, capability: str) -> None:
+        super().__init__(
+            metadata=SkillMetadata(
+                id=skill_id,
+                name=skill_id,
+                description="ok",
+                capabilities=[capability],
+                enabled=True,
+            ),
+            capabilities=[
+                Capability(name=capability, description="ok", category="test"),
+            ],
+        )
+
+    async def execute(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {"status": "completed", "skill": self.name(), "payload_keys": list(payload.keys())}
 
 
 @pytest.fixture
@@ -58,6 +82,14 @@ def parallel_plan() -> TaskPlan:
 def orchestrator() -> Orchestrator:
     store = ExecutionStore()
     return Orchestrator(store=store)
+
+
+@pytest.fixture
+def ok_registry(settings: Settings) -> CapabilityRegistry:
+    registry = CapabilityRegistry(settings)
+    registry.register(_OkSkill("document_analysis_skill", "document_analysis"))
+    registry.register(_OkSkill("document_generation_skill", "document_generation"))
+    return registry
 
 
 def test_build_execution_graph(sample_plan: TaskPlan) -> None:
@@ -150,15 +182,18 @@ def test_state_manager_tracks_nodes(sample_plan: TaskPlan) -> None:
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_executes_graph(settings: Settings, sample_plan: TaskPlan, orchestrator: Orchestrator) -> None:
-    registry = create_capability_registry(settings)
+async def test_orchestrator_executes_graph(
+    sample_plan: TaskPlan,
+    orchestrator: Orchestrator,
+    ok_registry: CapabilityRegistry,
+) -> None:
     graph = build_execution_graph(sample_plan)
     state = StateManager().create_state("exec-orch-1", graph)
 
     final_state, execution = await orchestrator.execute(
         graph,
         sample_plan,
-        registry,
+        ok_registry,
         state,
         execution_context={"user_input": "test"},
         trace_id="trace-1",
@@ -170,8 +205,12 @@ async def test_orchestrator_executes_graph(settings: Settings, sample_plan: Task
 
 
 @pytest.mark.asyncio
-async def test_orchestrator_retry_on_missing_capability(settings: Settings, orchestrator: Orchestrator) -> None:
-    registry = create_capability_registry(settings)
+async def test_orchestrator_retry_on_missing_capability(
+    settings: Settings,
+    orchestrator: Orchestrator,
+    ok_registry: CapabilityRegistry,
+) -> None:
+    registry = ok_registry
     plan = TaskPlan(
         goal="fail",
         summary="missing",
@@ -302,12 +341,14 @@ async def test_executions_api(orchestrator: Orchestrator, sample_plan: TaskPlan)
 
 
 @pytest.mark.asyncio
-async def test_langgraph_orchestration_integration(settings: Settings) -> None:
+async def test_langgraph_orchestration_integration(
+    settings: Settings,
+    ok_registry: CapabilityRegistry,
+) -> None:
     from app.agent_runtime.checkpoint.manager import InMemoryCheckpointManager
     from app.agent_runtime.runtime import AgentRuntime, build_executive_graph
     from tests.llm_fixtures import executive_json, mock_gateway, review_json
 
-    registry = create_capability_registry(settings)
     gateway, _ = mock_gateway(
         settings,
         executive_json(
@@ -317,18 +358,14 @@ async def test_langgraph_orchestration_integration(settings: Settings) -> None:
             required_capabilities=["document_generation", "document_analysis"],
             next_action="execute",
         ),
-        plan_json(goal="Подготовить КП для клиента"),
         review_json(summary="Plan execution meets the goal"),
     )
     runtime = AgentRuntime(
-        graph=build_executive_graph(gateway, capability_registry=registry),
+        graph=build_executive_graph(gateway, capability_registry=ok_registry),
         checkpoint_manager=InMemoryCheckpointManager(),
     )
 
-    result = await runtime.execute(
-        "Подготовь КП для клиента",
-        metadata={"auto_approve": True},
-    )
+    result = await runtime.execute("Подготовь КП для клиента")
 
     assert result["task_plan"] is not None
     assert result["execution_graph"] is not None
@@ -336,4 +373,4 @@ async def test_langgraph_orchestration_integration(settings: Settings) -> None:
     assert result["progress"] == 100.0
     assert result["telegram_progress"] is not None
     assert result["quality_check"]["passed"] is True
-    assert result["result"]["task_plan"]["goal"] == "Подготовить КП для клиента"
+    assert result["result"]["task_plan"]["goal"] == "Подготовить КП"

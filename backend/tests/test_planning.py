@@ -25,13 +25,44 @@ from app.planning.nodes.planner_node import PlannerNode
 from app.planning.parsers.plan_parser import parse_task_plan
 from app.planning.planner import TaskPlanner
 from app.planning.policies.execution_policy import requires_approval, should_plan, should_retry_step
-from app.skills.models import Capability
-from app.skills.registry import create_capability_registry
+from app.skills.base.skill import BaseSkill
+from app.skills.models import Capability, SkillMetadata
+from app.skills.registry import CapabilityRegistry, create_capability_registry
 from tests.llm_fixtures import creation_ast_json as _creation_ast_json
 from tests.llm_fixtures import executive_json as _executive_json
 from tests.llm_fixtures import mock_gateway as _mock_gateway
 from tests.llm_fixtures import plan_json as _plan_json
 from tests.llm_fixtures import review_json as _review_json
+
+
+class _OkSkill(BaseSkill):
+    """Test double that reports successful skill completion."""
+
+    def __init__(self, skill_id: str, capability: str) -> None:
+        super().__init__(
+            metadata=SkillMetadata(
+                id=skill_id,
+                name=skill_id,
+                description="ok",
+                capabilities=[capability],
+                enabled=True,
+            ),
+            capabilities=[
+                Capability(name=capability, description="ok", category="test"),
+            ],
+        )
+
+    async def execute(self, payload: dict) -> dict:
+        return {"status": "completed", "skill": self.name()}
+
+
+def _ok_registry() -> CapabilityRegistry:
+    registry = CapabilityRegistry(Settings(skills_enabled=True))
+    registry.register(_OkSkill("document_analysis_skill", "document_analysis"))
+    registry.register(_OkSkill("document_skill", "document_generation"))
+    registry.register(_OkSkill("analysis_skill", "data_analysis"))
+    registry.register(_OkSkill("file_skill", "file_processing"))
+    return registry
 
 
 @pytest.fixture
@@ -48,12 +79,14 @@ def test_parse_task_plan_with_dependencies() -> None:
 
 def test_should_plan_policy() -> None:
     assert should_plan("CREATE_PLAN") is True
-    assert should_plan("EXECUTE") is True
+    assert should_plan("EXECUTE") is False
     assert should_plan("RESPOND") is False
+    assert should_plan("ASK_CLARIFICATION") is False
 
 
 def test_requires_approval_policy() -> None:
     assert requires_approval("CREATE_PLAN") is True
+    assert requires_approval("EXECUTE") is False
     assert requires_approval("RESPOND") is False
 
 
@@ -91,7 +124,7 @@ async def test_task_planner_creates_plan(settings: Settings) -> None:
 
 @pytest.mark.asyncio
 async def test_task_executor_runs_steps(settings: Settings) -> None:
-    registry = create_capability_registry(settings)
+    registry = _ok_registry()
     plan = parse_task_plan(_plan_json(goal="Execute test"))
     executor = TaskExecutor()
 
@@ -142,8 +175,8 @@ async def test_executor_node_waiting_approval(settings: Settings) -> None:
 
 
 @pytest.mark.asyncio
-async def test_executor_node_with_auto_approve(settings: Settings) -> None:
-    registry = create_capability_registry(settings)
+async def test_executor_node_execute_skips_approval(settings: Settings) -> None:
+    registry = _ok_registry()
     node = ExecutorNode(TaskExecutor(), registry)
     plan = parse_task_plan(_plan_json())
 
@@ -154,6 +187,26 @@ async def test_executor_node_with_auto_approve(settings: Settings) -> None:
     )
     state["task_plan"] = plan.model_dump(mode="json")
     state["decision"] = {"action": "EXECUTE"}
+
+    update = await node(state)
+
+    assert update["status"] == "executed"
+    assert update["task_execution"]["status"] == TaskExecutionStatus.COMPLETED.value
+
+
+@pytest.mark.asyncio
+async def test_executor_node_with_auto_approve(settings: Settings) -> None:
+    registry = _ok_registry()
+    node = ExecutorNode(TaskExecutor(), registry)
+    plan = parse_task_plan(_plan_json())
+
+    state = create_initial_state(
+        execution_id="exec-1",
+        trace_id="trace-1",
+        user_input="Подготовь КП",
+    )
+    state["task_plan"] = plan.model_dump(mode="json")
+    state["decision"] = {"action": "CREATE_PLAN"}
     state["metadata"] = {"auto_approve": True}
 
     update = await node(state)
@@ -188,6 +241,35 @@ async def test_planner_node_skips_for_respond(settings: Settings) -> None:
 
 
 @pytest.mark.asyncio
+async def test_planner_node_builds_direct_plan_for_execute(settings: Settings) -> None:
+    registry = create_capability_registry(settings)
+    gateway, provider = _mock_gateway(settings, _plan_json())
+    node = PlannerNode(TaskPlanner(gateway), registry)
+
+    state = create_initial_state(
+        execution_id="exec-1",
+        trace_id="trace-1",
+        user_input="Создай SWOT-анализ",
+    )
+    state["decision"] = {"action": "EXECUTE"}
+    state["understanding"] = {
+        "goal": "создать SWOT-анализ",
+        "summary": "Одноартефактная задача",
+        "required_capabilities": ["strategy_analysis"],
+        "missing_information": [],
+        "next_action": "execute",
+    }
+
+    update = await node(state)
+
+    assert update["status"] == "direct_plan_ready"
+    assert update["task_plan"] is not None
+    assert len(update["task_plan"]["steps"]) == 1
+    assert update["task_plan"]["steps"][0]["capability"] == "strategy_analysis"
+    assert provider.calls == []
+
+
+@pytest.mark.asyncio
 async def test_quality_gate_node(settings: Settings) -> None:
     gateway, _ = _mock_gateway(settings, _review_json())
     node = QualityGateNode(QualityGate(ReviewerAgent(gateway)))
@@ -219,9 +301,9 @@ async def test_quality_gate_node(settings: Settings) -> None:
 
 
 @pytest.mark.asyncio
-async def test_langgraph_planning_integration(settings: Settings) -> None:
-    registry = create_capability_registry(settings)
-    gateway, _ = _mock_gateway(
+async def test_langgraph_execute_uses_direct_plan_without_llm_planner(settings: Settings) -> None:
+    registry = _ok_registry()
+    gateway, provider = _mock_gateway(
         settings,
         _executive_json(
             goal="Подготовить КП",
@@ -230,7 +312,6 @@ async def test_langgraph_planning_integration(settings: Settings) -> None:
             required_capabilities=["document_generation", "document_analysis"],
             next_action="execute",
         ),
-        _plan_json(goal="Подготовить КП для клиента"),
         _review_json(summary="Plan execution meets the goal"),
     )
     runtime = AgentRuntime(
@@ -238,16 +319,65 @@ async def test_langgraph_planning_integration(settings: Settings) -> None:
         checkpoint_manager=InMemoryCheckpointManager(),
     )
 
-    result = await runtime.execute(
-        "Подготовь КП для клиента",
-        metadata={"auto_approve": True},
-    )
+    result = await runtime.execute("Подготовь КП для клиента")
 
     assert result["task_plan"] is not None
     assert len(result["task_plan"]["steps"]) == 2
+    assert {step["capability"] for step in result["task_plan"]["steps"]} == {
+        "document_generation",
+        "document_analysis",
+    }
     assert result["execution_graph"] is not None
     assert result["execution_state"] is not None
     assert result["progress"] == 100.0
     assert result["quality_check"]["passed"] is True
     assert result["review_result"]["status"] == "PASS"
-    assert result["result"]["task_plan"]["goal"] == "Подготовить КП для клиента"
+    assert result["result"]["task_plan"]["goal"] == "Подготовить КП"
+    # Executive only — stub capabilities, non-document quality path.
+    assert len(provider.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_langgraph_create_plan_invokes_llm_planner(settings: Settings) -> None:
+    registry = create_capability_registry(settings)
+    gateway, provider = _mock_gateway(
+        settings,
+        _executive_json(
+            goal="Исследовать рынок и подготовить стратегию с презентацией",
+            summary="Многоэтапная задача",
+            action="CREATE_PLAN",
+            required_capabilities=["research", "strategy_analysis", "presentation_design"],
+            next_action="create_plan",
+        ),
+        _plan_json(
+            goal="Исследовать рынок и подготовить стратегию с презентацией",
+            steps=[
+                {"description": "Research market", "capability": "research", "dependencies": []},
+                {
+                    "description": "Build strategy",
+                    "capability": "strategy_analysis",
+                    "dependencies": [0],
+                },
+                {
+                    "description": "Design presentation",
+                    "capability": "presentation_design",
+                    "dependencies": [1],
+                },
+            ],
+        ),
+        _review_json(summary="Multi-step plan executed"),
+    )
+    runtime = AgentRuntime(
+        graph=build_executive_graph(gateway, capability_registry=registry),
+        checkpoint_manager=InMemoryCheckpointManager(),
+    )
+
+    result = await runtime.execute(
+        "Исследуй рынок, подготовь стратегию и сделай презентацию",
+        metadata={"auto_approve": True},
+    )
+
+    assert result["task_plan"] is not None
+    assert len(result["task_plan"]["steps"]) == 3
+    assert result["execution_graph"] is not None
+    assert len(provider.calls) == 3

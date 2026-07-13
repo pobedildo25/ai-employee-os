@@ -110,7 +110,6 @@ class CapabilityRegistry:
 
 
 def create_capability_registry(settings: Settings | None = None) -> CapabilityRegistry:
-    from app.skills.builtin.analysis_skill import AnalysisSkill
     from app.skills.builtin.brand_style_analysis_skill import BrandStyleAnalysisSkill
     from app.skills.builtin.document_analysis_skill import DocumentAnalysisSkill
     from app.skills.builtin.document_creation_skill import DocumentCreationSkill
@@ -123,13 +122,12 @@ def create_capability_registry(settings: Settings | None = None) -> CapabilityRe
     from app.skills.builtin.client_intelligence_skill import ClientIntelligenceSkill
     from app.skills.builtin.analytics_skill import AnalyticsSkill
     from app.skills.builtin.research_skill import ResearchSkill
-    from app.skills.builtin.document_skill import DocumentSkill
-    from app.skills.builtin.file_skill import FileSkill
 
     settings = settings or get_settings()
     registry = CapabilityRegistry(settings)
 
     if settings.skills_enabled:
+        # Real skills only — stub BaseSkill implementations stay out of prod registry.
         registry.register(DocumentAnalysisSkill())
         registry.register(BrandStyleAnalysisSkill())
         registry.register(DocumentCreationSkill())
@@ -137,13 +135,11 @@ def create_capability_registry(settings: Settings | None = None) -> CapabilityRe
         registry.register(StrategySkill())
         registry.register(ClientIntelligenceSkill())
         registry.register(AnalyticsSkill())
-        registry.register(ResearchSkill())
+        if settings.research_enabled:
+            registry.register(ResearchSkill())
         registry.register(DocumentRenderSkill())
         registry.register(QualityReviewSkill())
         registry.register(RevisionSkill())
         registry.register(KnowledgeMigrationSkill())
-        registry.register(DocumentSkill())
-        registry.register(AnalysisSkill())
-        registry.register(FileSkill())
 
     return registry

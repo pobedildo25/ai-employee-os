@@ -2,6 +2,7 @@ import logging
 from typing import Any
 
 from app.agents.parsers.response_parser import ResponseParseError
+from app.llm.exceptions import LLMProviderError
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMMessage
 from app.revision.interfaces.revision import RevisionInterface
@@ -72,6 +73,21 @@ class RevisionAgent(RevisionInterface):
                     attempt,
                 )
                 return result
+            except LLMProviderError as exc:
+                logger.warning(
+                    "revision llm degraded | trace_id=%s attempt=%d error=%s",
+                    trace_id,
+                    attempt,
+                    exc,
+                )
+                return RevisionResult(
+                    artifact_id=request.source_artifact_id,
+                    changes_applied=[],
+                    summary="Revision skipped: LLM unavailable",
+                    status=RevisionStatus.FAILED,
+                    document_ast=document_ast,
+                    metadata={"degraded": True, "error": str(exc)},
+                )
             except ResponseParseError as exc:
                 last_error = exc
                 logger.warning(
@@ -87,6 +103,16 @@ class RevisionAgent(RevisionInterface):
                     )
                 )
 
-        raise RevisionAgentError(
-            f"Failed to obtain valid revision after {self._max_retries} attempts: {last_error}"
+        logger.warning(
+            "revision degraded after parse retries | trace_id=%s error=%s",
+            trace_id,
+            last_error,
+        )
+        return RevisionResult(
+            artifact_id=request.source_artifact_id,
+            changes_applied=[],
+            summary="Revision skipped: invalid LLM response",
+            status=RevisionStatus.FAILED,
+            document_ast=document_ast,
+            metadata={"degraded": True, "error": str(last_error) if last_error else "parse failed"},
         )

@@ -29,7 +29,7 @@ class DocumentCreationSkill(BaseSkill):
                 id="document_creation_skill",
                 name="document_creation_skill",
                 description="Создание структуры документа из пользовательской задачи",
-                capabilities=["document_creation"],
+                capabilities=["document_creation", "document_generation"],
                 input_schema={
                     "type": "object",
                     "properties": {
@@ -51,6 +51,11 @@ class DocumentCreationSkill(BaseSkill):
                 Capability(
                     name="document_creation",
                     description="Генерация структуры документа (AST) из задачи пользователя",
+                    category="document",
+                ),
+                Capability(
+                    name="document_generation",
+                    description="Создание документов",
                     category="document",
                 ),
             ],

@@ -5,17 +5,18 @@ def approval_keyboard() -> dict[str, Any]:
     return {
         "inline_keyboard": [
             [
-                {"text": "✅ Начать", "callback_data": "tg:approve"},
-                {"text": "❌ Отмена", "callback_data": "tg:cancel"},
+                {"text": "Начать", "callback_data": "tg:approve"},
+                {"text": "Отмена", "callback_data": "tg:cancel"},
             ]
         ]
     }
 
 
 def revision_keyboard() -> dict[str, Any]:
+    """Optional shortcut — prefer natural-language revision without buttons."""
     return {
         "inline_keyboard": [
-            [{"text": "🔄 Переделать", "callback_data": "tg:revise"}],
+            [{"text": "Изменить", "callback_data": "tg:revise"}],
         ]
     }
 
@@ -23,6 +24,6 @@ def revision_keyboard() -> dict[str, Any]:
 def retry_keyboard() -> dict[str, Any]:
     return {
         "inline_keyboard": [
-            [{"text": "🔁 Попробовать снова", "callback_data": "tg:retry"}],
+            [{"text": "Попробовать снова", "callback_data": "tg:retry"}],
         ]
     }

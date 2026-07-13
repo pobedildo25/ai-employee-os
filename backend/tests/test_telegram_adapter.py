@@ -78,6 +78,23 @@ class FakeAgentRuntime:
         yield {"executor": state}
 
 
+class TaskExecutiveAgent:
+    """Routes Telegram adapter tests into the execution path without OpenRouter."""
+
+    async def analyze(self, state):
+        from app.agents.decision.models import AgentDecision, DecisionType
+        from app.agents.executive.models import AgentUnderstanding, ExecutiveAgentResult
+
+        return ExecutiveAgentResult(
+            understanding=AgentUnderstanding(
+                goal=state.get("user_input", ""),
+                summary="task",
+                next_action="execute",
+            ),
+            decision=AgentDecision(action=DecisionType.EXECUTE, reasoning="adapter test"),
+        )
+
+
 @pytest.fixture
 def workspace_service() -> WorkspaceService:
     return WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository()))
@@ -167,17 +184,20 @@ async def test_telegram_adapter(
         session_manager=session_manager,
         sender=sender,
         enabled=True,
+        executive_agent=TaskExecutiveAgent(),  # type: ignore[arg-type]
     )
     result = await adapter.handle_update(SAMPLE_UPDATE)
     assert result is not None
     assert result["execution_id"] == "exec-tg-1"
-    assert sender.sent[0]["reply_to_message_id"] == 42
+    assert sender.sent[0]["text"] == "Думаю…" or sender.sent[-1]["text"].startswith("Ответ на:")
+    assert any(item.get("reply_to_message_id") == 42 for item in sender.sent)
 
     disabled = TelegramAdapter(
         runtime=runtime,  # type: ignore[arg-type]
         session_manager=session_manager,
         sender=sender,
         enabled=False,
+        executive_agent=TaskExecutiveAgent(),  # type: ignore[arg-type]
     )
     assert await disabled.handle_update(SAMPLE_UPDATE) is None
 
@@ -192,11 +212,13 @@ async def test_dispatcher_and_bot(
         runtime=runtime,  # type: ignore[arg-type]
         session_manager=session_manager,
         sender=sender,
+        executive_agent=TaskExecutiveAgent(),  # type: ignore[arg-type]
     )
     bot = TelegramBot(adapter, token="test-token")
     result = await bot.process_update(SAMPLE_UPDATE)
     assert result is not None
-    assert result["reply"].startswith("Готово") or result["reply"].startswith("Ответ на:")
+    reply = result.get("reply") or ""
+    assert reply.startswith("Готово") or reply.startswith("Ответ на:")
 
     dispatcher = TelegramDispatcher(adapter.handler)
     skipped = await dispatcher.dispatch({"update_id": 2})

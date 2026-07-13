@@ -196,6 +196,15 @@ class AgentRuntime:
         config = {"configurable": {"thread_id": execution_id}}
 
         try:
+            bootstrap = {
+                "execution_id": execution_id,
+                "trace_id": trace_id,
+                "user_input": user_input,
+                "context": state.get("context") or {},
+                "metadata": state.get("metadata") or {},
+                "revision_count": int(state.get("revision_count") or 0),
+            }
+            yield {"_bootstrap": bootstrap}
             async for event in self._graph.astream(state, config, stream_mode="updates"):
                 yield event
         except Exception as exc:

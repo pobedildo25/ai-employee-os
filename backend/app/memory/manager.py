@@ -36,16 +36,36 @@ class MemoryManager:
     def enabled(self) -> bool:
         return self._settings.memory_enabled
 
+    def _store_for_type(self, memory_type: MemoryType) -> MemoryStore:
+        if memory_type == MemoryType.SHORT_TERM:
+            return self._short_term
+        if memory_type == MemoryType.KNOWLEDGE:
+            return self._semantic
+        return self._long_term
+
     async def remember(self, item: MemoryItem) -> MemoryItem:
         if not self.enabled:
             logger.debug("memory disabled, skipping remember | id=%s", item.id)
+            return item
+
+        if item.type == MemoryType.KNOWLEDGE and not self._settings.semantic_memory_enabled:
+            logger.debug("semantic memory disabled, skipping remember | id=%s", item.id)
             return item
 
         if not should_persist(item):
             raise MemoryRetentionError(f"Memory item rejected by retention policy: {item.type.value}")
 
         store = self._store_for_type(item.type)
-        saved = await store.save(item)
+        try:
+            saved = await store.save(item)
+        except Exception as exc:
+            logger.warning(
+                "memory remember degraded | id=%s type=%s error=%s",
+                item.id,
+                item.type.value,
+                exc,
+            )
+            return item
         logger.info(
             "memory remembered | id=%s type=%s source=%s importance=%.2f",
             saved.id,
@@ -66,7 +86,7 @@ class MemoryManager:
             short_query = query.model_copy(
                 update={"memory_types": [MemoryType.SHORT_TERM], "query": None}
             )
-            results.extend(await self._short_term.search(short_query))
+            results.extend(await self._search_store_safe(self._short_term, short_query, "short_term"))
 
         long_types = requested_types.intersection(
             {MemoryType.FACT, MemoryType.PREFERENCE, MemoryType.DECISION}
@@ -78,29 +98,44 @@ class MemoryManager:
                     "query": None,
                 }
             )
-            results.extend(await self._long_term.search(long_query))
+            results.extend(await self._search_store_safe(self._long_term, long_query, "long_term"))
 
         if query.query and (not query.memory_types or MemoryType.KNOWLEDGE in requested_types):
-            semantic_query = query.model_copy(
-                update={"memory_types": [MemoryType.KNOWLEDGE]}
-            )
-            results.extend(await self._semantic.search(semantic_query))
+            if self._settings.semantic_memory_enabled:
+                semantic_query = query.model_copy(
+                    update={"memory_types": [MemoryType.KNOWLEDGE]}
+                )
+                results.extend(await self._search_store_safe(self._semantic, semantic_query, "semantic"))
 
         return _dedupe_and_limit(results, query.limit)
 
     async def forget(self, memory_id: UUID, memory_type: MemoryType) -> bool:
         store = self._store_for_type(memory_type)
-        deleted = await store.delete(memory_id)
+        try:
+            deleted = await store.delete(memory_id)
+        except Exception as exc:
+            logger.warning(
+                "memory forget degraded | id=%s type=%s error=%s",
+                memory_id,
+                memory_type.value,
+                exc,
+            )
+            return False
         if deleted:
             logger.info("memory forgotten | id=%s type=%s", memory_id, memory_type.value)
         return deleted
 
-    def _store_for_type(self, memory_type: MemoryType) -> MemoryStore:
-        if memory_type == MemoryType.SHORT_TERM:
-            return self._short_term
-        if memory_type == MemoryType.KNOWLEDGE:
-            return self._semantic
-        return self._long_term
+    @staticmethod
+    async def _search_store_safe(
+        store: MemoryStore,
+        query: MemorySearchQuery,
+        store_name: str,
+    ) -> list[MemoryItem]:
+        try:
+            return await store.search(query)
+        except Exception as exc:
+            logger.warning("memory recall degraded | store=%s error=%s", store_name, exc)
+            return []
 
 
 def create_memory_manager(

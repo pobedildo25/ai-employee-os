@@ -88,7 +88,7 @@ def workspace_service() -> WorkspaceService:
 
 @pytest.fixture
 def session_manager(workspace_service: WorkspaceService) -> TelegramSessionManager:
-    return TelegramSessionManager(workspace_service=workspace_service)
+    return TelegramSessionManager(workspace_service=workspace_service, bindings={})
 
 
 @pytest.fixture
@@ -127,12 +127,12 @@ async def test_pipeline_exception_sends_friendly_error_message(
     assert result["trace_id"] == "trace-err"
     assert result["execution_id"] == "exec-err"
     assert sender.edited
-    assert sender.edited[-1]["text"] == "⚠️ Задача прервана"
-    error_text = sender.sent[-1]["text"]
-    assert "Произошла ошибка при выполнении задачи" in error_text
-    assert "trace_id: trace-err" in error_text
-    assert "execution_id: exec-err" in error_text
+    error_text = sender.edited[-1]["text"]
+    assert "Не удалось выполнить задачу" in error_text
+    assert "trace_id" not in error_text.lower()
+    assert "execution_id" not in error_text.lower()
     assert "Traceback" not in error_text
+    assert "Попробовать снова" in str(sender.edited[-1].get("reply_markup"))
 
 
 @pytest.mark.asyncio
@@ -145,17 +145,43 @@ async def test_clarification_then_answer_resumes_task_pipeline(
         final_state={
             "execution_id": "exec-kp",
             "status": "completed",
+            "result": {"message": "КП готово"},
             "quality_check": {"passed": True, "score": 0.9},
         }
     )
-    executive = FakeExecutiveAgent(
-        action="ASK_CLARIFICATION",
-        clarification_question="Какие конкретные детали нужны для КП?",
-        goal="Сделай КП для Яндекса",
-        missing_information=["тема КП"],
-    )
+
+    class ClarifyThenExecute:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def analyze(self, state):
+            self.calls += 1
+            if self.calls == 1:
+                return ExecutiveAgentResult(
+                    understanding=AgentUnderstanding(
+                        goal="Сделай КП для Яндекса",
+                        summary="need details",
+                        missing_information=["тема КП"],
+                        next_action="request_information",
+                    ),
+                    decision=AgentDecision(
+                        action=DecisionType.ASK_CLARIFICATION,
+                        reasoning="missing",
+                        clarification_question="Какие конкретные детали нужны для КП?",
+                    ),
+                )
+            return ExecutiveAgentResult(
+                understanding=AgentUnderstanding(
+                    goal="Сделай КП для Яндекса",
+                    summary="ready",
+                    next_action="execute",
+                    required_capabilities=["document_generation"],
+                ),
+                decision=AgentDecision(action=DecisionType.EXECUTE, reasoning="enough"),
+            )
+
     flow = build_flow(runtime, session_manager, sender, conversation_store)
-    flow._executive_agent = executive  # type: ignore[assignment]
+    flow._executive_agent = ClarifyThenExecute()  # type: ignore[assignment]
 
     first = await flow.handle_message(_request("Сделай КП для Яндекса"))
     assert first["status"] == "clarification"
@@ -173,6 +199,8 @@ async def test_clarification_then_answer_resumes_task_pipeline(
     assert len(runtime.calls) == 1
     assert "Яндекса" in runtime.calls[0]["user_input"]
     assert "AI автоматизацию" in runtime.calls[0]["user_input"]
+    convo = conversation_store.get(777)
+    assert convo is not None
     assert convo.pending_clarification is None
 
 
@@ -206,7 +234,11 @@ async def test_broken_memory_provider_allows_task_execution(
             raise RuntimeError("qdrant unavailable")
 
     runtime = StreamableFakeRuntime(
-        final_state={"execution_id": "exec-no-mem", "status": "completed"}
+        final_state={
+            "execution_id": "exec-no-mem",
+            "status": "completed",
+            "result": {"message": "Задача выполнена без памяти."},
+        }
     )
     executive = FakeExecutiveAgent(action="EXECUTE")
     flow = TelegramProductFlow(

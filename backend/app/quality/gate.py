@@ -116,5 +116,13 @@ class QualityGate:
         )
 
     def _is_non_document_flow(self, context: dict[str, Any]) -> bool:
+        from app.agents.decision.policy import is_chat_action, is_execute
+
         decision_action = (context.get("decision") or {}).get("action")
-        return decision_action in {"RESPOND", "ASK_CLARIFICATION"}
+        if is_chat_action(decision_action):
+            return True
+        # EXECUTE without document artifacts is a non-document skill run (e.g. analytics).
+        if is_execute(decision_action):
+            has_document = bool(context.get("document_ast") or context.get("render_result"))
+            return not has_document
+        return False

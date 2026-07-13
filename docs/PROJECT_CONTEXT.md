@@ -1,5 +1,7 @@
 # Project Context — AI Employee OS
 
+> **Product Goal (источник правды):** [`docs/PRODUCT_GOAL.md`](./PRODUCT_GOAL.md) — NOVA как AI Employee, инварианты Executive / запрет keyword & document routing.
+
 ## Vision
 
 Создать универсального AI-сотрудника для маркетингового агентства, который работает через Telegram и способен выполнять задачи как полноценный член команды.

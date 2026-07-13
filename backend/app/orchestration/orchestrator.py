@@ -27,7 +27,7 @@ from app.orchestration.scheduler import Scheduler
 from app.orchestration.state_manager import StateManager
 from app.orchestration.store import ExecutionStore, get_execution_store_singleton
 from app.orchestration.validators.execution_validator import ExecutionValidator
-from app.planning.executor import TaskExecutorError
+from app.planning.executor import TaskExecutorError, _skill_result_succeeded
 from app.planning.models import (
     ExecutionLogEntry,
     PlanStatus,
@@ -219,6 +219,33 @@ class Orchestrator(OrchestratorInterface):
         for attempt in range(1, MAX_STEP_RETRIES + 1):
             try:
                 result = await self._execute_step(step, registry, execution_context, trace_id, plan)
+                if not _skill_result_succeeded(result):
+                    status = result.get("status") if isinstance(result, dict) else None
+                    step.status = StepStatus.FAILED
+                    step.result = result
+                    node.error = f"skill returned status={status!r}"
+                    node.retry_count = attempt
+                    execution.logs.append(
+                        ExecutionLogEntry(
+                            step_id=step.id,
+                            level="error",
+                            message=(
+                                f"Step failed (attempt {attempt}): "
+                                f"skill returned status={status!r}"
+                            ),
+                        )
+                    )
+                    logger.warning(
+                        "orchestration step incomplete | trace_id=%s step_id=%s attempt=%d status=%s",
+                        trace_id,
+                        step.id,
+                        attempt,
+                        status,
+                    )
+                    if not should_retry_step(step, attempt):
+                        return False
+                    step.status = StepStatus.PENDING
+                    continue
                 step.status = StepStatus.COMPLETED
                 step.result = result
                 node.retry_count = attempt

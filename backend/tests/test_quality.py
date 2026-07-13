@@ -126,7 +126,8 @@ async def test_quality_gate_escalate_case(settings: Settings) -> None:
             "user_goal": "Подготовь документ",
             "decision": {"action": "EXECUTE"},
             "understanding": {"goal": "Подготовь документ"},
-            "render_result": None,
+            "document_ast": {"root": {"node_type": "document", "children": [{"node_type": "paragraph", "content": "x", "children": []}]}, "node_count": 2},
+            "render_result": {"metadata": {"format": "docx"}},
         }
     )
 

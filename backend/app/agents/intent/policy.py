@@ -1,4 +1,10 @@
 from app.agents.decision.models import DecisionType
+from app.agents.decision.policy import (
+    is_chat_action,
+    is_task_action,
+    should_direct_execute,
+    should_invoke_planner,
+)
 
 CHAT_DECISIONS = {
     DecisionType.RESPOND.value,
@@ -11,11 +17,19 @@ TASK_DECISIONS = {
 
 
 def is_chat_decision(action: str | None) -> bool:
-    return action in CHAT_DECISIONS
+    return is_chat_action(action)
 
 
 def is_task_decision(action: str | None) -> bool:
-    return action in TASK_DECISIONS
+    return is_task_action(action)
+
+
+def needs_planner(action: str | None) -> bool:
+    return should_invoke_planner(action)
+
+
+def needs_direct_execution(action: str | None) -> bool:
+    return should_direct_execute(action)
 
 
 def extract_chat_reply(decision: dict | None) -> str | None:

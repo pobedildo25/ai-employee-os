@@ -47,7 +47,7 @@ def workspace_service() -> WorkspaceService:
 
 @pytest.fixture
 def session_manager(workspace_service: WorkspaceService) -> TelegramSessionManager:
-    return TelegramSessionManager(workspace_service=workspace_service)
+    return TelegramSessionManager(workspace_service=workspace_service, bindings={})
 
 
 @pytest.fixture
@@ -97,7 +97,7 @@ async def test_greeting_does_not_start_execution(
     assert runtime.calls == []
     assert executive.calls and executive.calls[0]["user_input"] == "Привет"
     assert sender.sent[-1]["text"] == "Привет! Я NOVA, AI-сотрудник агентства."
-    assert sender.sent[0]["text"] != "🧠 NOVA анализирует задачу"
+    assert sender.sent[0]["text"] != "Думаю…"
 
 
 @pytest.mark.asyncio
@@ -131,6 +131,7 @@ async def test_task_request_starts_execution_pipeline(
         final_state={
             "execution_id": "exec-task",
             "status": "completed",
+            "result": {"message": "Презентация готова."},
             "quality_check": {"passed": True, "score": 0.9},
         }
     )
@@ -144,7 +145,7 @@ async def test_task_request_starts_execution_pipeline(
     assert len(runtime.calls) == 1
     assert runtime.calls[0]["mode"] == "stream"
     assert runtime.calls[0]["user_input"] == "Создай презентацию"
-    assert sender.sent[0]["text"] == "🧠 NOVA анализирует задачу"
+    assert sender.sent[0]["text"] == "Думаю…"
 
 
 @pytest.mark.asyncio
@@ -157,6 +158,7 @@ async def test_task_execution_preserves_telegram_progress_ux(
         final_state={
             "execution_id": "exec-progress",
             "status": "completed",
+            "result": {"message": "Готово."},
             "quality_check": {"passed": True, "score": 0.91},
         },
         stream_events=[
@@ -184,5 +186,6 @@ async def test_task_execution_preserves_telegram_progress_ux(
     await flow.handle_message(_request("Подготовь стратегию"))
 
     assert runtime.calls
-    assert sender.sent[0]["text"] == "🧠 NOVA анализирует задачу"
+    assert sender.sent[0]["text"] == "Думаю…"
     assert sender.edited
+    assert sender.deleted

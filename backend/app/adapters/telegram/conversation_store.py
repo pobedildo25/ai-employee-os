@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from functools import lru_cache
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -54,6 +55,7 @@ class TelegramConversationStore:
     def get_or_create(self, telegram_user_id: int, telegram_chat_id: int) -> TelegramConversationState:
         existing = self._states.get(telegram_user_id)
         if existing is not None:
+            existing.telegram_chat_id = telegram_chat_id
             return existing
         state = TelegramConversationState(
             telegram_user_id=telegram_user_id,
@@ -74,3 +76,9 @@ class TelegramConversationStore:
         state.progress_message_id = None
         state.revision_prompted_at = None
         self.save(state)
+
+
+@lru_cache
+def get_conversation_store_singleton() -> TelegramConversationStore:
+    """Process-lifetime store so multi-turn Telegram state survives rebuilds."""
+    return TelegramConversationStore()

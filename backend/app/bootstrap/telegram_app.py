@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.telegram.bot import TelegramBot
+from app.adapters.telegram.conversation_store import get_conversation_store_singleton
 from app.adapters.telegram.factory import create_telegram_bot
 from app.agent_runtime.runtime import create_agent_runtime
 from app.agents.executive.agent import ExecutiveAgent
@@ -12,8 +13,8 @@ from app.client_intelligence.analyzer import ClientIntelligenceAnalyzer
 from app.client_intelligence.builder import ClientIntelligenceBuilder
 from app.client_intelligence.manager import ClientIntelligenceManager
 from app.context.builder import create_context_builder
+from app.context.providers.workspace_history_provider import WorkspaceHistoryProvider
 from app.core.config import Settings, get_settings
-from app.database.qdrant import get_qdrant_client
 from app.database.redis import get_redis_client
 from app.knowledge.manager import KnowledgeManager
 from app.knowledge.stores.postgres_store import PostgresKnowledgeStore
@@ -22,7 +23,7 @@ from app.learning.providers.postgres_learning_store import PostgresLearningStore
 from app.llm.gateway import create_llm_gateway
 from app.memory.long_term.postgres_memory import PostgresLongTermMemory
 from app.memory.manager import create_memory_manager
-from app.memory.semantic.qdrant_memory import QdrantSemanticMemory
+from app.memory.semantic.qdrant_memory import create_semantic_memory
 from app.memory.short_term.redis_memory import RedisShortTermMemory
 from app.orchestration.orchestrator import Orchestrator
 from app.orchestration.store import get_execution_store_singleton
@@ -52,7 +53,7 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
     memory_manager = create_memory_manager(
         short_term=RedisShortTermMemory(get_redis_client(settings), settings),
         long_term=PostgresLongTermMemory(session),
-        semantic=QdrantSemanticMemory(get_qdrant_client(settings), settings),
+        semantic=create_semantic_memory(settings),
         settings=settings,
     )
     knowledge_manager = KnowledgeManager(PostgresKnowledgeStore(session))
@@ -75,6 +76,7 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         client_repository=client_repository,
         project_repository=project_repository,
         artifact_repository=artifact_repository,
+        history_provider=WorkspaceHistoryProvider(workspace_service),
         memory_manager=memory_manager,
         knowledge_manager=knowledge_manager,
         learning_manager=learning_manager,
@@ -100,4 +102,5 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         client_repository=client_repository,
         executive_agent=executive_agent,
         capability_registry=capability_registry,
+        conversation_store=get_conversation_store_singleton(),
     )

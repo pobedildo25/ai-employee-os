@@ -17,7 +17,7 @@ from app.memory.short_term.redis_memory import InMemoryShortTermMemory
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(qdrant_collection="test_knowledge")
+    return Settings(qdrant_collection="test_knowledge", semantic_memory_enabled=True)
 
 
 def _mock_qdrant_client(*, points: list | None = None) -> MagicMock:

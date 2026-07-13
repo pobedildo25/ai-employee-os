@@ -144,4 +144,7 @@ class TelegramArtifactDelivery:
         path = artifact.get("storage_path")
         if not path:
             return None
-        return await self._storage.download(str(path))
+        try:
+            return await self._storage.download(str(path))
+        except Exception:
+            return None

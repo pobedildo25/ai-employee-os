@@ -62,12 +62,16 @@ def create_app() -> FastAPI:
         ),
         secrets=SecretsManager(settings),
     )
+    is_production = settings.is_production
     app = FastAPI(
         title="AI Employee OS",
         description="Agentic AI system for marketing agency",
         version="0.1.0",
-        debug=settings.app_debug,
+        debug=settings.app_debug and not is_production,
         lifespan=lifespan,
+        docs_url=None if is_production else "/docs",
+        redoc_url=None if is_production else "/redoc",
+        openapi_url=None if is_production else "/openapi.json",
     )
     app.state.security_manager = security_manager
 
@@ -82,7 +86,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         SecurityMiddleware,
         security_manager=security_manager,
-        enabled=settings.security_enabled,
+        enabled=settings.security_enabled or is_production,
     )
 
     app.include_router(health_router)

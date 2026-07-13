@@ -1,3 +1,4 @@
+from functools import lru_cache
 from uuid import UUID, uuid5, NAMESPACE_URL
 
 from app.clients.classification import telegram_user_client_metadata
@@ -11,6 +12,12 @@ def telegram_client_id(telegram_user_id: int) -> UUID:
     return uuid5(NAMESPACE_URL, f"telegram:user:{telegram_user_id}")
 
 
+@lru_cache
+def get_session_bindings_singleton() -> dict[int, UUID]:
+    """Process-lifetime telegram_user_id → workspace_id bindings."""
+    return {}
+
+
 class TelegramSessionManager:
     """Links telegram_user_id → Workspace → Session via existing WorkspaceManager."""
 
@@ -19,26 +26,29 @@ class TelegramSessionManager:
         workspace_service: WorkspaceService | None = None,
         workspace_manager: WorkspaceManager | None = None,
         client_repository: ClientRepository | None = None,
+        bindings: dict[int, UUID] | None = None,
     ) -> None:
         if workspace_service is not None:
             self._service = workspace_service
         else:
             self._service = WorkspaceService(workspace_manager or WorkspaceManager())
         self._client_repository = client_repository
-        self._bindings: dict[int, UUID] = {}
+        self._bindings: dict[int, UUID] = (
+            bindings if bindings is not None else get_session_bindings_singleton()
+        )
 
     @property
     def workspace_manager(self) -> WorkspaceManager:
         return self._service.manager
 
     async def resolve(self, telegram_user_id: int) -> dict:
-        """Open or reuse Workspace/Session for the Telegram user. No memory writes."""
+        """Reuse Workspace/Session for the Telegram user across updates."""
         client_id = telegram_client_id(telegram_user_id)
         existing_id = self._bindings.get(telegram_user_id)
 
         if existing_id is not None:
             snapshot = await self._service.get_snapshot(existing_id)
-            if snapshot is not None:
+            if snapshot is not None and snapshot.get("active_session_id"):
                 return snapshot
 
         if self._client_repository is not None:
@@ -49,10 +59,15 @@ class TelegramSessionManager:
                 metadata=telegram_user_client_metadata(telegram_user_id),
             )
 
-        snapshot = await self._service.open(
+        # Prefer durable workspace lookup over always opening a new session.
+        existing = await self._service.get_snapshot_for_client(client_id)
+        if existing is not None and existing.get("active_session_id"):
+            self._bindings[telegram_user_id] = UUID(existing["workspace_id"])
+            return existing
+
+        snapshot = await self._service.ensure_session_for_client(
             client_id=client_id,
             metadata={"source": "telegram", "telegram_user_id": telegram_user_id},
-            open_session=True,
         )
         self._bindings[telegram_user_id] = UUID(snapshot["workspace_id"])
         return snapshot

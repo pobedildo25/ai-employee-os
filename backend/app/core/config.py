@@ -44,16 +44,39 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = ""
     telegram_enabled: bool = False
+    telegram_allowed_user_ids: str = ""
 
     security_enabled: bool = False
     security_rate_limit: int = 120
     security_rate_window_seconds: int = 60
+
+    research_enabled: bool = False
+    semantic_memory_enabled: bool = False
 
     db_pool_size: int = 5
     db_max_overflow: int = 10
     db_pool_timeout: int = 30
     db_pool_recycle: int = 1800
     run_migrations_on_startup: bool = False
+
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.strip().lower() == "production"
+
+    def parsed_telegram_allowed_user_ids(self) -> set[int]:
+        raw = (self.telegram_allowed_user_ids or "").strip()
+        if not raw:
+            return set()
+        result: set[int] = set()
+        for part in raw.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                result.add(int(part))
+            except ValueError:
+                continue
+        return result
 
 
 @lru_cache

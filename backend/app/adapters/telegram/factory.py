@@ -13,6 +13,10 @@ from app.skills.registry import CapabilityRegistry
 from app.storage.storage_interface import StorageInterface
 from app.workspace.service import WorkspaceService
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def create_telegram_adapter(
     *,
@@ -35,6 +39,12 @@ def create_telegram_adapter(
         else:
             sender = InMemoryTelegramSender()
 
+    allowed_user_ids = settings.parsed_telegram_allowed_user_ids()
+    if settings.is_production and not allowed_user_ids:
+        logger.warning(
+            "telegram allowlist empty in production — all users accepted until configured"
+        )
+
     session_manager = TelegramSessionManager(
         workspace_service=workspace_service,
         client_repository=client_repository,
@@ -51,6 +61,7 @@ def create_telegram_adapter(
         conversation_store=conversation_store,
         capability_registry=capability_registry,
         executive_agent=executive_agent,
+        allowed_user_ids=allowed_user_ids,
     )
 
 
@@ -66,6 +77,7 @@ def create_telegram_bot(
     client_repository: ClientRepository | None = None,
     executive_agent: ExecutiveAgent | None = None,
     capability_registry: CapabilityRegistry | None = None,
+    conversation_store: TelegramConversationStore | None = None,
 ) -> TelegramBot:
     adapter = create_telegram_adapter(
         runtime=runtime,
@@ -75,6 +87,7 @@ def create_telegram_bot(
         artifact_service=artifact_service,
         storage=storage,
         orchestrator=orchestrator,
+        conversation_store=conversation_store,
         client_repository=client_repository,
         executive_agent=executive_agent,
         capability_registry=capability_registry,

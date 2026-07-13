@@ -21,7 +21,6 @@ from app.llm.models import LLMResponse
 from tests.llm_fixtures import creation_ast_json as _creation_ast_json
 from tests.llm_fixtures import executive_json as _executive_json
 from tests.llm_fixtures import mock_gateway as _mock_gateway
-from tests.llm_fixtures import plan_json as _plan_json
 from tests.llm_fixtures import review_json as _review_json
 
 
@@ -270,13 +269,9 @@ async def test_executive_agent_receives_built_context(settings: Settings, projec
         _executive_json(
             goal="создать коммерческое предложение",
             summary="Нужно КП для проекта",
-            action="CREATE_PLAN",
+            action="EXECUTE",
             required_capabilities=["document_generation"],
-            next_action="create_plan",
-        ),
-        _plan_json(
-            goal="создать коммерческое предложение",
-            summary="Нужно КП для проекта",
+            next_action="execute",
         ),
         _review_json(),
     )

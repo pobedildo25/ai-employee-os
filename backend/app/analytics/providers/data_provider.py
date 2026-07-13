@@ -1,5 +1,6 @@
 from typing import Any
 from uuid import UUID
+import logging
 
 from app.analytics.interfaces.analytics import AnalyticsDataProvider
 from app.analytics.models import AnalyticsDataset, AnalyticsRequest
@@ -8,6 +9,8 @@ from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.client_repository import ClientRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.task_repository import TaskRepository
+
+logger = logging.getLogger(__name__)
 
 
 class CompositeAnalyticsDataProvider(AnalyticsDataProvider):
@@ -60,7 +63,11 @@ class CompositeAnalyticsDataProvider(AnalyticsDataProvider):
         project_id = _as_uuid(request.project_id)
 
         if client_id and self._clients is not None and not dataset.clients:
-            client = await self._clients.get_by_id(client_id)
+            try:
+                client = await self._clients.get_by_id(client_id)
+            except Exception as exc:
+                logger.warning("analytics clients fetch degraded | error=%s", exc)
+                client = None
             if client is not None and is_telegram_user_client(client):
                 dataset.sources_used = ["skipped_telegram_user"]
                 return dataset
@@ -75,14 +82,20 @@ class CompositeAnalyticsDataProvider(AnalyticsDataProvider):
                 sources.append("clients")
 
         if client_id and self._projects is not None and not dataset.projects:
-            projects = await self._projects.list_by_client(client_id, skip=0, limit=100)
-            dataset.projects = [_project_dict(p) for p in projects]
-            sources.append("projects")
-        elif project_id and self._projects is not None and not dataset.projects:
-            project = await self._projects.get_by_id(project_id)
-            if project is not None:
-                dataset.projects = [_project_dict(project)]
+            try:
+                projects = await self._projects.list_by_client(client_id, skip=0, limit=100)
+                dataset.projects = [_project_dict(p) for p in projects]
                 sources.append("projects")
+            except Exception as exc:
+                logger.warning("analytics projects fetch degraded | error=%s", exc)
+        elif project_id and self._projects is not None and not dataset.projects:
+            try:
+                project = await self._projects.get_by_id(project_id)
+                if project is not None:
+                    dataset.projects = [_project_dict(project)]
+                    sources.append("projects")
+            except Exception as exc:
+                logger.warning("analytics project fetch degraded | error=%s", exc)
 
         project_ids = [str(p.get("id")) for p in dataset.projects if p.get("id")]
         if project_id:
@@ -94,8 +107,11 @@ class CompositeAnalyticsDataProvider(AnalyticsDataProvider):
                 uid = _as_uuid(pid)
                 if uid is None:
                     continue
-                items = await self._artifacts.list_by_project(uid, skip=0, limit=100)
-                artifacts.extend(_artifact_dict(a) for a in items)
+                try:
+                    items = await self._artifacts.list_by_project(uid, skip=0, limit=100)
+                    artifacts.extend(_artifact_dict(a) for a in items)
+                except Exception as exc:
+                    logger.warning("analytics artifacts fetch degraded | project=%s error=%s", pid, exc)
             dataset.artifacts = artifacts
             if artifacts:
                 sources.append("artifacts")
@@ -106,8 +122,11 @@ class CompositeAnalyticsDataProvider(AnalyticsDataProvider):
                 uid = _as_uuid(pid)
                 if uid is None:
                     continue
-                items = await self._tasks.list_by_project(uid, skip=0, limit=100)
-                tasks.extend(_task_dict(t) for t in items)
+                try:
+                    items = await self._tasks.list_by_project(uid, skip=0, limit=100)
+                    tasks.extend(_task_dict(t) for t in items)
+                except Exception as exc:
+                    logger.warning("analytics tasks fetch degraded | project=%s error=%s", pid, exc)
             dataset.tasks = tasks
             if tasks:
                 sources.append("tasks")

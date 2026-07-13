@@ -27,7 +27,7 @@ class MinioStorage(StorageInterface):
         try:
             if not self._client.bucket_exists(self._bucket):
                 self._client.make_bucket(self._bucket)
-        except S3Error as exc:
+        except Exception as exc:
             logger.warning("Failed to ensure MinIO bucket %s: %s", self._bucket, exc)
 
     async def upload(self, path: str, data: bytes, content_type: str | None = None) -> str:

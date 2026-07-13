@@ -32,11 +32,10 @@ from app.storage.storage_interface import StorageInterface
 from app.agent_runtime.checkpoint.manager import CheckpointManager, InMemoryCheckpointManager
 from app.agent_runtime.runtime import AgentRuntime, create_agent_runtime
 from app.context.builder import ContextBuilder, create_context_builder
-from app.database.qdrant import get_qdrant_client
 from app.database.redis import get_redis_client
 from app.memory.long_term.postgres_memory import PostgresLongTermMemory
 from app.memory.manager import MemoryManager, create_memory_manager
-from app.memory.semantic.qdrant_memory import QdrantSemanticMemory
+from app.memory.semantic.qdrant_memory import create_semantic_memory
 from app.memory.short_term.redis_memory import RedisShortTermMemory
 from app.knowledge.manager import KnowledgeManager
 from app.knowledge.stores.postgres_store import PostgresKnowledgeStore
@@ -140,7 +139,7 @@ def get_memory_manager(
     return create_memory_manager(
         short_term=RedisShortTermMemory(get_redis_client(settings), settings),
         long_term=PostgresLongTermMemory(session),
-        semantic=QdrantSemanticMemory(get_qdrant_client(settings), settings),
+        semantic=create_semantic_memory(settings),
         settings=settings,
     )
 

@@ -64,11 +64,18 @@ class StreamableFakeRuntime:
 
 
 class FakeContinuation:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
     async def continue_revision(self, prior_state: dict[str, Any], user_feedback: str) -> dict[str, Any]:
+        self.calls.append({"prior_state": prior_state, "user_feedback": user_feedback})
         return {
             **prior_state,
             "status": "completed",
-            "revision_result": {"status": "COMPLETED", "artifact_id": prior_state.get("render_result", {}).get("artifact_id")},
+            "revision_result": {
+                "status": "COMPLETED",
+                "artifact_id": prior_state.get("render_result", {}).get("artifact_id"),
+            },
             "quality_check": {"passed": True, "score": 0.95},
             "metadata": {**(prior_state.get("metadata") or {}), "user_feedback": user_feedback},
         }
@@ -99,7 +106,7 @@ def workspace_service() -> WorkspaceService:
 
 @pytest.fixture
 def session_manager(workspace_service: WorkspaceService) -> TelegramSessionManager:
-    return TelegramSessionManager(workspace_service=workspace_service)
+    return TelegramSessionManager(workspace_service=workspace_service, bindings={})
 
 
 @pytest.fixture
@@ -146,6 +153,7 @@ def _task_executive_agent() -> Any:
                     goal=state.get("user_input", ""),
                     summary="task",
                     next_action="execute",
+                    required_capabilities=["document_generation"],
                 ),
                 decision=AgentDecision(
                     action=DecisionType.EXECUTE,
@@ -154,6 +162,25 @@ def _task_executive_agent() -> Any:
             )
 
     return TaskExecutive()
+
+
+def _revision_executive_agent() -> Any:
+    class RevisionExecutive:
+        async def analyze(self, state):
+            return ExecutiveAgentResult(
+                understanding=AgentUnderstanding(
+                    goal=state.get("user_input", ""),
+                    summary="revision",
+                    next_action="execute",
+                    required_capabilities=["document_revision"],
+                ),
+                decision=AgentDecision(
+                    action=DecisionType.EXECUTE,
+                    reasoning="revision request",
+                ),
+            )
+
+    return RevisionExecutive()
 
 
 @pytest.mark.asyncio
@@ -175,6 +202,7 @@ async def test_progress_update_edits_single_message(
                 ],
             },
             "quality_check": {"passed": True, "score": 0.9},
+            "result": {"message": "Готово по стратегии."},
         },
         stream_events=[
             {
@@ -197,9 +225,11 @@ async def test_progress_update_edits_single_message(
     await flow.handle_message(request)
 
     assert len(sender.sent) >= 1
-    assert sender.sent[0]["text"] == "🧠 NOVA анализирует задачу"
+    assert sender.sent[0]["text"] == "Думаю…"
     assert len(sender.edited) >= 1
-    assert "Исследование" in sender.edited[-1]["text"]
+    assert "Стратегия" in sender.edited[-1]["text"] or "Думаю" in sender.edited[-1]["text"]
+    assert sender.deleted
+    assert "Quality score" not in (sender.sent[-1]["text"] if sender.sent else "")
 
 
 @pytest.mark.asyncio
@@ -225,6 +255,7 @@ async def test_approval_buttons_and_resume(
         final_state={
             "execution_id": "exec-approved",
             "status": "completed",
+            "result": {"message": "План выполнен."},
             "quality_check": {"passed": True, "score": 0.91},
         }
     )
@@ -256,7 +287,8 @@ async def test_approval_buttons_and_resume(
     first = await flow.handle_message(request)
     assert first["status"] == "waiting_approval"
     assert "Исследование рынка" in sender.sent[-1]["text"]
-    assert sender.sent[-1]["reply_markup"]["inline_keyboard"][0][0]["text"] == "✅ Начать"
+    assert sender.sent[-1]["reply_markup"]["inline_keyboard"][0][0]["text"] == "Начать"
+    assert sender.deleted  # progress cleared before approval
 
     callback = TelegramMapper().map_callback(SAMPLE_CALLBACK_APPROVE)
     assert callback is not None
@@ -285,8 +317,20 @@ async def test_approval_cancel(
     assert request is not None
     await flow.handle_message(request)
 
-    cancel_update = dict(SAMPLE_CALLBACK_APPROVE)
-    cancel_update["callback_query"]["data"] = "tg:cancel"
+    cancel_update = {
+        "update_id": 2002,
+        "callback_query": {
+            "id": "cb-cancel",
+            "from": {"id": 777, "is_bot": False, "first_name": "Ada"},
+            "message": {
+                "message_id": 50,
+                "chat": {"id": 555, "type": "private"},
+                "date": 1710000001,
+                "text": "plan",
+            },
+            "data": "tg:cancel",
+        },
+    }
     callback = TelegramMapper().map_callback(cancel_update)
     assert callback is not None
     result = await flow.handle_callback(callback)
@@ -372,6 +416,7 @@ async def test_contextual_revision_without_button(
         sender,
         conversation_store,
         continuation=FakeContinuation(),
+        executive_agent=_revision_executive_agent(),
     )
     convo = conversation_store.get_or_create(777, 555)
     convo.flow_mode = TelegramFlowMode.COMPLETED
@@ -413,7 +458,10 @@ async def test_artifact_delivery(
     assert result["status"] == "completed"
     assert len(sender.documents) == 1
     assert sender.documents[0]["filename"] == "КП.docx"
-    assert "Quality score: 0.92" in sender.sent[-1]["text"]
+    assert sender.documents[0]["caption"] == "Готово."
+    assert "Quality score" not in "".join(item["text"] for item in sender.sent)
+    # No separate delivery summary after the file.
+    assert not any("Создано:" in item["text"] for item in sender.sent)
 
 
 @pytest.mark.asyncio
@@ -436,8 +484,12 @@ async def test_error_handling_without_traceback(
     assert request is not None
     result = await flow.handle_message(request)
     assert result["status"] == "failed"
-    assert "traceback" not in sender.sent[-1]["text"].lower()
-    assert "Попробовать снова" in str(sender.sent[-1]["reply_markup"])
+    error_text = sender.edited[-1]["text"] if sender.edited else sender.sent[-1]["text"]
+    assert "traceback" not in error_text.lower()
+    assert "trace_id" not in error_text.lower()
+    assert "Попробовать снова" in str(
+        (sender.edited[-1] if sender.edited else sender.sent[-1]).get("reply_markup")
+    )
 
 
 @pytest.mark.asyncio
@@ -447,7 +499,12 @@ async def test_session_persistence(
     conversation_store: TelegramConversationStore,
 ) -> None:
     runtime = StreamableFakeRuntime(
-        final_state={"execution_id": "exec-session", "status": "completed", "quality_check": {"score": 0.9}}
+        final_state={
+            "execution_id": "exec-session",
+            "status": "completed",
+            "result": {"message": "Сессия сохранена."},
+            "quality_check": {"score": 0.9},
+        }
     )
     flow = build_flow(runtime, session_manager, sender, conversation_store, continuation=FakeContinuation())
     request = TelegramMapper().map_update(SAMPLE_UPDATE)

@@ -3,6 +3,7 @@ import logging
 from typing import Any
 
 from app.agents.parsers.response_parser import ResponseParseError, extract_json_content
+from app.llm.exceptions import LLMProviderError
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMMessage
 from app.research.analyzers import run_type_analyzers
@@ -39,13 +40,28 @@ class Researcher(ResearcherInterface):
 
     async def research(self, request: ResearchRequest, *, trace_id: str = "-") -> ResearchResult:
         queries = self._query_builder.build(request)
-        raw_hits = await self._provider.search(queries, limit=request.max_sources)
+        try:
+            raw_hits = await self._provider.search(queries, limit=request.max_sources)
+        except Exception as exc:
+            logger.warning("research provider search degraded | trace_id=%s error=%s", trace_id, exc)
+            raw_hits = []
         sources: list[ResearchSource] = []
         for hit in raw_hits:
             if hit.get("url") and not hit.get("extracted_content") and not hit.get("snippet"):
-                fetched = await self._provider.fetch(str(hit["url"]))
-                hit = {**hit, **fetched}
-            sources.append(await self._provider.extract(hit))
+                try:
+                    fetched = await self._provider.fetch(str(hit["url"]))
+                    hit = {**hit, **fetched}
+                except Exception as exc:
+                    logger.warning(
+                        "research provider fetch degraded | trace_id=%s url=%s error=%s",
+                        trace_id,
+                        hit.get("url"),
+                        exc,
+                    )
+            try:
+                sources.append(await self._provider.extract(hit))
+            except Exception as exc:
+                logger.warning("research provider extract degraded | trace_id=%s error=%s", trace_id, exc)
 
         ranked = self._ranker.rank(sources, query=request.query)[: request.max_sources]
         heuristic = run_type_analyzers(request.research_type, ranked, query=request.query)
@@ -116,8 +132,8 @@ class Researcher(ResearcherInterface):
         try:
             response = await self._gateway.complete(messages, temperature=0.2)
             return parse_research_interpretation(response.content)
-        except (ResponseParseError, ValueError, json.JSONDecodeError) as exc:
-            logger.warning("research llm interpret failed | trace_id=%s error=%s", trace_id, exc)
+        except (LLMProviderError, ResponseParseError, ValueError, json.JSONDecodeError, Exception) as exc:
+            logger.warning("research llm interpret degraded | trace_id=%s error=%s", trace_id, exc)
             return _fallback(request, sources, heuristic)
 
 
