@@ -77,3 +77,6 @@ data/
 *.key
 credentials.json
 secrets/
+
+# Graphify rebuildable cache (keep graph.json / report / html in git)
+graphify-out/cache/
