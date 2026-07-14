@@ -13,9 +13,12 @@ Return ONLY valid JSON matching:
     "scope": "client"|"project"|"global"
   }
 }
+Allowed categories ONLY: style, writing_style, document_style, presentation_style,
+format, formatting, language, tone, layout, structure, verbosity, preference,
+brand, agency_practice, visual, copy.
+Never extract rules about strategy, routing, decision type, capabilities, plans, or workflows.
 Rules describe lasting preferences (style, verbosity, formatting), NOT one-off task edits.
-If feedback is a temporary instruction, set should_learn=false and rule=null.
-Do not invent business workflows.
+If feedback is a temporary instruction or out of allowed categories, set should_learn=false and rule=null.
 """
 
 

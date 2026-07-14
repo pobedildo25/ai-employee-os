@@ -1,3 +1,4 @@
+from app.ux.human_labels import human_progress_title
 from app.orchestration.models import (
     ExecutionGraph,
     NodeStatus,
@@ -17,7 +18,7 @@ _STATUS_ICONS: dict[NodeStatus, tuple[str, str]] = {
 
 
 class ProgressTracker:
-    """Compute progress from completed graph nodes."""
+    """Compute progress from completed graph nodes — human titles only."""
 
     def calculate_progress(self, graph: ExecutionGraph) -> float:
         if not graph.nodes:
@@ -38,7 +39,10 @@ class ProgressTracker:
         for node_id in graph.execution_order:
             node = graph.nodes[node_id]
             icon, label = _STATUS_ICONS.get(node.status, ("⌛", "ожидает"))
-            title = node.description or node.capability
+            title = human_progress_title(
+                description=node.description,
+                capability=node.capability,
+            )
             lines.append(
                 TelegramProgressLine(
                     title=title,

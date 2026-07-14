@@ -131,7 +131,7 @@ async def test_status_reports_mode(
     result = await flow.handle_message(_request("/status"))
 
     assert result["command"] == "status"
-    assert "жду подтверждения" in result["reply"]
+    assert "жду вашего подтверждения" in result["reply"]
     assert "да" in result["reply"]
     assert "exec-42" in result["reply"]
     assert runtime.calls == []

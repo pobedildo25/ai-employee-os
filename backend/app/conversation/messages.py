@@ -1,26 +1,27 @@
 from typing import Any
 
+from app.ux.human_labels import human_approval_bullet
 from app.conversation.models import ConversationState, FlowMode
 
 
 def format_progress_header() -> str:
-    return "Думаю…"
+    return "Работаю…"
 
 
 def format_working_header(goal: str | None) -> str:
-    """Task-aware working indicator so the user sees the bot understood the task."""
+    """Task-aware working indicator for real multi-step work (not fake theater)."""
     text = (goal or "").strip()
     if not text:
-        return "Принял, работаю над задачей…"
+        return "Принял, выполняю…"
     if len(text) > 90:
         text = text[:87].rstrip() + "…"
-    return f"Принял. Готовлю: {text}"
+    return f"Принял. {text}"
 
 
 _FLOW_MODE_LABELS: dict[FlowMode, str] = {
     FlowMode.IDLE: "свободен",
     FlowMode.RUNNING: "выполняю задачу",
-    FlowMode.WAITING_APPROVAL: "жду подтверждения плана",
+    FlowMode.WAITING_APPROVAL: "жду вашего подтверждения",
     FlowMode.REVISION_PROMPTED: "жду правки",
     FlowMode.PENDING_CLARIFICATION: "жду уточнение",
     FlowMode.COMPLETED: "есть готовый результат",
@@ -88,15 +89,15 @@ def format_progress(progress: dict[str, Any] | None, *, header: str | None = Non
 
 
 def format_approval_message(task_plan: dict[str, Any] | None) -> str:
+    """Employee-style proposal — no capability / pipeline / planner jargon."""
     steps = (task_plan or {}).get("steps") or []
     if not steps:
-        return "План готов. Начать выполнение?"
+        return "Предлагаю выполнить задачу целиком.\n\nВсё сделать сразу?"
 
-    lines = [
-        f"{index}. {step.get('description') or step.get('capability')}"
-        for index, step in enumerate(steps, start=1)
-    ]
-    return "План:\n\n" + "\n".join(lines) + "\n\nНачать выполнение?"
+    bullets = [f"• {human_approval_bullet(step)}" for step in steps if isinstance(step, dict)]
+    if not bullets:
+        return "Предлагаю выполнить задачу целиком.\n\nВсё сделать сразу?"
+    return "Предлагаю такой порядок:\n\n" + "\n".join(bullets) + "\n\nВсё выполнить сразу?"
 
 
 INCOMPLETE_COMPLETION_MESSAGE = (
@@ -193,7 +194,7 @@ def extract_failure_reason(state: dict[str, Any]) -> str | None:
     if execution_state.get("failure_reason"):
         return str(execution_state["failure_reason"])
     if state.get("status") == "execution_failed":
-        return "Ошибка при выполнении плана"
+        return "Ошибка при выполнении задачи"
     return None
 
 

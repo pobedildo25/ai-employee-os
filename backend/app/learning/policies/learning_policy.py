@@ -5,6 +5,44 @@ REVISION_SAVE_CONFIDENCE = 0.75
 CONFIDENCE_BOOST = 0.08
 MAX_CONFIDENCE = 0.98
 
+# Hard allowlist — Learning may only persist style/format/preference rules.
+# Never strategy, routing, DecisionType, or capability selection.
+ALLOWED_LEARNING_CATEGORIES = frozenset(
+    {
+        "style",
+        "writing_style",
+        "document_style",
+        "presentation_style",
+        "format",
+        "formatting",
+        "language",
+        "tone",
+        "layout",
+        "structure",
+        "verbosity",
+        "preference",
+        "preferences",
+        "brand",
+        "agency_practice",
+        "presentation",
+        "visual",
+        "copy",
+    }
+)
+
+_BLOCKED_CATEGORY_MARKERS = (
+    "strateg",
+    "rout",
+    "decision",
+    "capability",
+    "pipeline",
+    "workflow",
+    "intent",
+    "execut",
+    "planner",
+    "orchestr",
+)
+
 # One-off / ephemeral instruction markers — not durable learning.
 ONE_OFF_MARKERS = (
     "только сейчас",
@@ -96,12 +134,29 @@ class LearningPolicy:
         # Require an explicit durable preference marker (always/prefer/…).
         return any(marker in lowered for marker in DURABLE_PREFERENCE_MARKERS)
 
+    def is_allowed_category(self, category: str | None) -> bool:
+        """Fail-closed category gate — Product Goal §5."""
+        cat = (category or "").strip().lower()
+        if not cat:
+            return False
+        if any(marker in cat for marker in _BLOCKED_CATEGORY_MARKERS):
+            return False
+        if cat in ALLOWED_LEARNING_CATEGORIES:
+            return True
+        # Soft accept common extractor synonyms that stay style/format-bound.
+        return any(
+            cat.startswith(prefix)
+            for prefix in ("style", "writing", "document", "format", "prefer", "brand")
+        )
+
     def should_save(self, result: RuleExtractionResult, signal: LearningSignal) -> bool:
         if not result.should_learn or result.rule is None:
             return False
         if self.is_one_off(signal.text):
             return False
         if self.looks_like_document_edit(signal.text):
+            return False
+        if not self.is_allowed_category(result.rule.category):
             return False
         threshold = self.min_confidence
         if signal.source.value == "revision_request":

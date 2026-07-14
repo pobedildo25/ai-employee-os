@@ -5,7 +5,7 @@ def approval_keyboard() -> dict[str, Any]:
     return {
         "inline_keyboard": [
             [
-                {"text": "Начать", "callback_data": "tg:approve"},
+                {"text": "Выполнить", "callback_data": "tg:approve"},
                 {"text": "Отмена", "callback_data": "tg:cancel"},
             ]
         ]
