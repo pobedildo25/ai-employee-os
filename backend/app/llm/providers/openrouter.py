@@ -12,9 +12,27 @@ from app.llm.exceptions import (
     LLMRateLimitError,
 )
 from app.llm.interfaces.provider import LLMProvider
-from app.llm.models import EmbeddingRequest, EmbeddingResponse, LLMRequest, LLMResponse, TokenUsage
+from app.llm.models import (
+    EmbeddingRequest,
+    EmbeddingResponse,
+    LLMMessage,
+    LLMRequest,
+    LLMResponse,
+    TokenUsage,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _serialize_message(message: LLMMessage) -> dict[str, object]:
+    """Serialize a message for the OpenRouter chat API.
+
+    Multimodal messages carry ``content_parts`` (text + image_url); plain
+    messages carry a string ``content``.
+    """
+    if message.content_parts is not None:
+        return {"role": message.role, "content": message.content_parts}
+    return {"role": message.role, "content": message.content}
 
 
 class OpenRouterProvider(LLMProvider):
@@ -30,7 +48,7 @@ class OpenRouterProvider(LLMProvider):
         model = request.model or self._settings.default_llm_model
         payload: dict[str, object] = {
             "model": model,
-            "messages": [message.model_dump() for message in request.messages],
+            "messages": [_serialize_message(message) for message in request.messages],
             "temperature": request.temperature,
         }
         if request.max_tokens is not None:

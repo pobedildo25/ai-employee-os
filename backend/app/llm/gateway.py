@@ -68,6 +68,47 @@ class LLMGateway:
         )
         return await self.chat(request)
 
+    async def vision(
+        self,
+        prompt: str,
+        images: list[tuple[bytes, str]],
+        *,
+        model: str | None = None,
+        system: str | None = None,
+        max_tokens: int | None = 1200,
+    ) -> str:
+        """Describe/analyze one or more images with a multimodal model.
+
+        ``images`` is a list of ``(bytes, mime_type)`` pairs. Returns the model's
+        text answer.
+        """
+        import base64
+
+        parts: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for data, mime in images:
+            b64 = base64.b64encode(data).decode("ascii")
+            parts.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime or 'image/jpeg'};base64,{b64}"},
+                }
+            )
+
+        messages: list[LLMMessage] = []
+        if system:
+            messages.append(LLMMessage(role="system", content=system))
+        messages.append(LLMMessage(role="user", content_parts=parts))
+
+        response = await self.chat(
+            LLMRequest(
+                messages=messages,
+                model=model or getattr(self._settings, "vision_model", None),
+                temperature=0.3,
+                max_tokens=max_tokens,
+            )
+        )
+        return response.content
+
     async def embed(
         self,
         texts: str | list[str],

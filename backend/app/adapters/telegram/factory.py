@@ -1,6 +1,7 @@
 from app.adapters.telegram.bot import TelegramAdapter, TelegramBot
 from app.adapters.telegram.conversation_store import TelegramConversationStore
 from app.adapters.telegram.mapper import TelegramMapper
+from app.adapters.telegram.media import MediaIngestor
 from app.adapters.telegram.sender import HttpTelegramSender, InMemoryTelegramSender, TelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.runtime import AgentRuntime
@@ -35,6 +36,7 @@ def create_telegram_adapter(
     agency_profile: AgencyProfile | None = None,
     memory_capture: DialogueMemoryCapture | None = None,
     client_work_summary: ClientWorkSummaryService | None = None,
+    media_ingestor: MediaIngestor | None = None,
 ) -> TelegramAdapter:
     """Wire Telegram transport to existing runtime/workspace. No new singletons."""
     if sender is None:
@@ -42,6 +44,15 @@ def create_telegram_adapter(
             sender = HttpTelegramSender(settings.telegram_bot_token)
         else:
             sender = InMemoryTelegramSender()
+
+    if media_ingestor is None:
+        from app.llm.gateway import create_llm_gateway
+
+        media_ingestor = MediaIngestor(
+            sender,
+            gateway=create_llm_gateway(settings),
+            settings=settings,
+        )
 
     session_manager = TelegramSessionManager(
         workspace_service=workspace_service,
@@ -63,6 +74,7 @@ def create_telegram_adapter(
         agency_profile=agency_profile,
         memory_capture=memory_capture,
         client_work_summary=client_work_summary,
+        media_ingestor=media_ingestor,
     )
 
 
@@ -82,6 +94,7 @@ def create_telegram_bot(
     agency_profile: AgencyProfile | None = None,
     memory_capture: DialogueMemoryCapture | None = None,
     client_work_summary: ClientWorkSummaryService | None = None,
+    media_ingestor: MediaIngestor | None = None,
 ) -> TelegramBot:
     adapter = create_telegram_adapter(
         runtime=runtime,
@@ -98,5 +111,6 @@ def create_telegram_bot(
         agency_profile=agency_profile,
         memory_capture=memory_capture,
         client_work_summary=client_work_summary,
+        media_ingestor=media_ingestor,
     )
     return TelegramBot(adapter, token=settings.telegram_bot_token or None)

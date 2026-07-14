@@ -46,6 +46,20 @@ class Settings(BaseSettings):
     embedding_model: str = "openai/text-embedding-3-small"
     embedding_dimensions: int = 1536
 
+    # --- Multimodal input (Phase B) ---
+    # Vision uses the same OpenRouter key with a multimodal model.
+    vision_enabled: bool = True
+    vision_model: str = "openai/gpt-4o-mini"
+    # Audio transcription needs a Whisper-compatible endpoint (OpenRouter has none),
+    # so it is opt-in and configured separately. Falls back to OPENROUTER_API_KEY only
+    # when the transcription base_url points at a compatible service.
+    transcription_enabled: bool = False
+    transcription_base_url: str = "https://api.openai.com/v1"
+    transcription_api_key: str = ""
+    transcription_model: str = "whisper-1"
+    # Max characters of extracted attachment text injected into the model context.
+    attachment_max_chars: int = 6000
+
     skills_enabled: bool = True
 
     # Agency identity ("who WE are") — injected into dialogue and every document

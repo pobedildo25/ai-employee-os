@@ -7,6 +7,7 @@ from app.adapters.telegram.flow import TelegramProductFlow
 from app.adapters.telegram.handlers import TelegramMessageHandler
 from app.adapters.telegram.interfaces.telegram_adapter import TelegramAdapterInterface
 from app.adapters.telegram.mapper import TelegramMapper
+from app.adapters.telegram.media import MediaIngestor
 from app.adapters.telegram.progress import TelegramProgressMessenger
 from app.adapters.telegram.sender import TelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
@@ -50,6 +51,7 @@ class TelegramAdapter(TelegramAdapterInterface):
         agency_profile: AgencyProfile | None = None,
         memory_capture: DialogueMemoryCapture | None = None,
         client_work_summary: ClientWorkSummaryService | None = None,
+        media_ingestor: MediaIngestor | None = None,
     ) -> None:
         self.enabled = enabled
         self._mapper = mapper or TelegramMapper()
@@ -67,6 +69,7 @@ class TelegramAdapter(TelegramAdapterInterface):
             agency_profile=agency_profile,
             memory_capture=memory_capture,
             client_work_summary=client_work_summary,
+            media_ingestor=media_ingestor,
         )
         self._handler = TelegramMessageHandler(
             runtime=runtime,
@@ -113,6 +116,7 @@ class TelegramAdapter(TelegramAdapterInterface):
         agency_profile: AgencyProfile | None = None,
         memory_capture: DialogueMemoryCapture | None = None,
         client_work_summary: ClientWorkSummaryService | None = None,
+        media_ingestor: MediaIngestor | None = None,
     ) -> TelegramProductFlow:
         continuation = self._build_continuation(capability_registry)
         return TelegramProductFlow(
@@ -130,6 +134,7 @@ class TelegramAdapter(TelegramAdapterInterface):
             agency_profile=agency_profile,
             memory_capture=memory_capture,
             client_work_summary=client_work_summary,
+            media_ingestor=media_ingestor,
         )
 
     @staticmethod

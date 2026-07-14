@@ -5,7 +5,10 @@ from pydantic import BaseModel, Field
 
 class LLMMessage(BaseModel):
     role: Literal["system", "user", "assistant"]
-    content: str
+    content: str = ""
+    # Optional multimodal content parts (text + image_url) for vision requests.
+    # When set, providers send these instead of the plain string content.
+    content_parts: list[dict[str, Any]] | None = None
 
 
 class TokenUsage(BaseModel):

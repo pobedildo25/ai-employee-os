@@ -60,6 +60,12 @@ def build_user_message(
             "\nYour agency (you are its employee — speak and represent it):\n"
             f"{agency}"
         )
+    attachments = _format_attachments(context) if isinstance(context, dict) else ""
+    if attachments:
+        parts.append(
+            "\nThe user attached files to this message. Treat their content as part of "
+            "the request and use it directly in your answer:\n" + attachments
+        )
     if context:
         parts.append(f"\nAvailable context:\n{context}")
     if available_capabilities:
@@ -67,3 +73,22 @@ def build_user_message(
         for capability in available_capabilities:
             parts.append(f'- {{"name": "{capability["name"]}", "description": "{capability["description"]}"}}')
     return "\n".join(parts)
+
+
+def _format_attachments(context: dict) -> str:
+    """Render inbound attachments (documents / images / transcripts) for the prompt."""
+    blocks: list[str] = []
+    for doc in context.get("attached_documents") or []:
+        title = doc.get("title") or "document"
+        text = (doc.get("text") or "").strip()
+        suffix = " (обрезано)" if doc.get("truncated") else ""
+        blocks.append(f"[Документ: {title}]{suffix}\n{text}")
+    for image in context.get("attached_images") or []:
+        desc = (image.get("description") or "").strip()
+        if desc:
+            blocks.append(f"[Изображение]\n{desc}")
+    for audio in context.get("attached_transcripts") or []:
+        transcript = (audio.get("transcript") or "").strip()
+        if transcript:
+            blocks.append(f"[Расшифровка аудио]\n{transcript}")
+    return "\n\n".join(blocks)

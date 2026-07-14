@@ -39,6 +39,14 @@ class TelegramSender(ABC):
     ) -> dict[str, Any]:
         raise NotImplementedError
 
+    async def download_file(self, file_id: str) -> bytes | None:
+        """Download an inbound Telegram file by file_id (getFile + fetch).
+
+        Returns raw bytes, or ``None`` when the file cannot be retrieved.
+        Not abstract so existing doubles keep working without media support.
+        """
+        return None
+
 
 class HttpTelegramSender(TelegramSender):
     def __init__(self, token: str, *, api_base: str = "https://api.telegram.org") -> None:
@@ -98,6 +106,27 @@ class HttpTelegramSender(TelegramSender):
             response.raise_for_status()
             return response.json()
 
+    async def download_file(self, file_id: str) -> bytes | None:
+        import logging
+
+        import httpx
+
+        logger = logging.getLogger(__name__)
+        try:
+            meta = await self._post("getFile", {"file_id": file_id})
+            file_path = (meta.get("result") or {}).get("file_path")
+            if not file_path:
+                logger.warning("getFile returned no file_path | file_id=%s", file_id)
+                return None
+            url = f"{self._api_base}/file/bot{self._token}/{file_path}"
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.content
+        except httpx.HTTPError as exc:
+            logger.warning("telegram file download failed | file_id=%s error=%s", file_id, exc)
+            return None
+
     async def _post(self, method: str, payload: dict[str, Any]) -> dict[str, Any]:
         import httpx
 
@@ -115,6 +144,8 @@ class InMemoryTelegramSender(TelegramSender):
         self.sent: list[dict[str, Any]] = []
         self.edited: list[dict[str, Any]] = []
         self.documents: list[dict[str, Any]] = []
+        self.downloads: dict[str, bytes] = {}
+        self.download_calls: list[str] = []
         self._message_counter = 1000
 
     async def send_message(
@@ -171,3 +202,7 @@ class InMemoryTelegramSender(TelegramSender):
         }
         self.documents.append(record)
         return {"ok": True, "result": record}
+
+    async def download_file(self, file_id: str) -> bytes | None:
+        self.download_calls.append(file_id)
+        return self.downloads.get(file_id)
