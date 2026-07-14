@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import time
 from typing import Any
@@ -73,9 +72,14 @@ class ContextBuilder:
             trace_id=trace_id,
         )
 
-        fragments = await asyncio.gather(
-            *(_fetch_provider_safe(provider, request, trace_id) for provider in self._providers)
-        )
+        # Providers share a single AsyncSession in the Telegram/runtime path; a
+        # SQLAlchemy AsyncSession does not allow concurrent operations. Fetch
+        # sequentially to avoid "concurrent operations are not permitted" errors
+        # that previously wiped client/history/knowledge/workspace context.
+        fragments = [
+            await _fetch_provider_safe(provider, request, trace_id)
+            for provider in self._providers
+        ]
         merged = _merge_fragments(fragments)
 
         history = list(merged.get("conversation_history") or [])

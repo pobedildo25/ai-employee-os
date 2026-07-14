@@ -12,7 +12,12 @@ from app.planning.models import (
     TaskExecutionStatus,
     TaskPlan,
 )
-from app.planning.policies.execution_policy import MAX_STEP_RETRIES, should_retry_step
+from app.planning.policies.execution_policy import (
+    MAX_STEP_RETRIES,
+    is_critical_capability,
+    is_retryable_failure,
+    should_retry_step,
+)
 from app.skills.registry import CapabilityRegistry
 
 logger = logging.getLogger(__name__)
@@ -123,7 +128,9 @@ class TaskExecutor(TaskExecutorInterface):
                         attempt,
                         status,
                     )
-                    if not should_retry_step(step, attempt):
+                    if not is_retryable_failure(status) or not should_retry_step(step, attempt):
+                        if _giveup_is_tolerable(step, execution):
+                            return True
                         return False
                     step.status = StepStatus.PENDING
                     continue
@@ -153,6 +160,8 @@ class TaskExecutor(TaskExecutorInterface):
                     exc,
                 )
                 if not should_retry_step(step, attempt):
+                    if _giveup_is_tolerable(step, execution):
+                        return True
                     return False
                 step.status = StepStatus.PENDING
 
@@ -178,6 +187,30 @@ class TaskExecutor(TaskExecutorInterface):
             **execution_context,
         }
         return await skill.execute(payload)
+
+
+def _giveup_is_tolerable(step: PlanStep, execution: TaskExecution) -> bool:
+    """Non-critical enrichment steps degrade to skipped instead of failing the task."""
+    if is_critical_capability(step.capability):
+        return False
+    reason = "enrichment unavailable"
+    if isinstance(step.result, dict):
+        reason = str(step.result.get("message") or step.result.get("status") or reason)
+    step.status = StepStatus.COMPLETED
+    step.result = {"status": "skipped", "skill": step.capability, "reason": reason}
+    execution.logs.append(
+        ExecutionLogEntry(
+            step_id=step.id,
+            message=f"Enrichment step skipped (best-effort): {step.capability} — {reason}",
+        )
+    )
+    logger.warning(
+        "step enrichment skipped | step_id=%s capability=%s reason=%s",
+        step.id,
+        step.capability,
+        reason,
+    )
+    return True
 
 
 _SUCCESS_SKILL_STATUSES = frozenset({"completed", "success", "ok"})

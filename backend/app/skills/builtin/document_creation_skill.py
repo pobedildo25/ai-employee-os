@@ -80,9 +80,23 @@ class DocumentCreationSkill(BaseSkill):
                 brand_raw if isinstance(brand_raw, BrandProfile) else BrandProfile.model_validate(brand_raw)
             )
 
+        context = dict(payload.get("context") or {})
+        # Pull upstream analysis results (produced by prior pipeline steps) into the
+        # writer's context so the document is filled with real facts, not placeholders.
+        for key in (
+            "strategy_result",
+            "research_result",
+            "analytics_result",
+            "client_intelligence_result",
+            "profile",
+        ):
+            value = payload.get(key)
+            if value is not None and key not in context:
+                context[key] = value
+
         request = DocumentCreationRequest(
             user_goal=str(goal),
-            context=dict(payload.get("context") or {}),
+            context=context,
             brand_profile=brand_profile,
             document_type=payload.get("document_type"),
             requirements=list(payload.get("requirements") or []),

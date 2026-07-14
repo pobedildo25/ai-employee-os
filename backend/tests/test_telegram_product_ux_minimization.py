@@ -112,10 +112,11 @@ async def test_successful_task_clears_progress_and_sends_one_reply(
     result = await flow.handle_message(request)
 
     assert result["status"] == "completed"
-    # EXECUTE (default task executive) skips progress bubble.
-    assert all(item["text"] != "Думаю…" for item in sender.sent)
-    user_texts = [item["text"] for item in sender.sent]
-    assert user_texts == ["Краткий ответ по стратегии."]
+    # A task-aware working indicator is shown, then cleared; exactly one reply remains.
+    assert sender.sent[0]["text"].startswith("Принял")
+    deleted_ids = {item["message_id"] for item in sender.deleted}
+    visible = [item["text"] for item in sender.sent if item["message_id"] not in deleted_ids]
+    assert visible == ["Краткий ответ по стратегии."]
     assert all(item.get("reply_markup") is None for item in sender.sent)
 
 

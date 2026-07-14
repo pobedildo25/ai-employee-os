@@ -121,8 +121,11 @@ class TelegramChannelNotifier:
         chat_id: int,
         *,
         reply_to_message_id: int | None = None,
+        header: str | None = None,
     ) -> int | None:
-        return await self._progress.start(chat_id, reply_to_message_id=reply_to_message_id)
+        return await self._progress.start(
+            chat_id, reply_to_message_id=reply_to_message_id, header=header
+        )
 
     async def update_progress(
         self,

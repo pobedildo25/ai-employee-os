@@ -37,7 +37,12 @@ from app.planning.models import (
     TaskExecutionStatus,
     TaskPlan,
 )
-from app.planning.policies.execution_policy import MAX_STEP_RETRIES, should_retry_step
+from app.planning.policies.execution_policy import (
+    MAX_STEP_RETRIES,
+    is_critical_capability,
+    is_retryable_failure,
+    should_retry_step,
+)
 from app.skills.registry import CapabilityRegistry
 
 logger = logging.getLogger(__name__)
@@ -242,7 +247,9 @@ class Orchestrator(OrchestratorInterface):
                         attempt,
                         status,
                     )
-                    if not should_retry_step(step, attempt):
+                    if not is_retryable_failure(status) or not should_retry_step(step, attempt):
+                        if self._giveup_is_tolerable(step, node, execution, trace_id):
+                            return True
                         return False
                     step.status = StepStatus.PENDING
                     continue
@@ -272,9 +279,40 @@ class Orchestrator(OrchestratorInterface):
                     exc,
                 )
                 if not should_retry_step(step, attempt):
+                    if self._giveup_is_tolerable(step, node, execution, trace_id):
+                        return True
                     return False
                 step.status = StepStatus.PENDING
         return False
+
+    @staticmethod
+    def _giveup_is_tolerable(
+        step: PlanStep,
+        node: ExecutionGraphNode,
+        execution: TaskExecution,
+        trace_id: str,
+    ) -> bool:
+        """Non-critical enrichment steps degrade to skipped instead of failing the task."""
+        if is_critical_capability(step.capability):
+            return False
+        reason = node.error or "enrichment unavailable"
+        step.status = StepStatus.COMPLETED
+        step.result = {"status": "skipped", "skill": step.capability, "reason": reason}
+        node.error = None
+        execution.logs.append(
+            ExecutionLogEntry(
+                step_id=step.id,
+                message=f"Enrichment step skipped (best-effort): {step.capability} — {reason}",
+            )
+        )
+        logger.warning(
+            "orchestration enrichment skipped | trace_id=%s step_id=%s capability=%s reason=%s",
+            trace_id,
+            step.id,
+            step.capability,
+            reason,
+        )
+        return True
 
     async def _execute_step(
         self,

@@ -47,6 +47,7 @@ class ChannelNotifier(Protocol):
         chat_id: int,
         *,
         reply_to_message_id: int | None = None,
+        header: str | None = None,
     ) -> int | None: ...
 
     async def update_progress(

@@ -5,18 +5,21 @@ from dataclasses import dataclass
 from app.agent_runtime.exceptions import GraphExecutionError
 from app.agent_runtime.runtime import AgentRuntime
 from app.agent_runtime.state.models import create_initial_state
-from app.agents.decision.policy import is_clarification, is_respond, should_direct_execute
+from app.agents.decision.policy import is_clarification, is_respond
 from app.agents.executive.agent import ExecutiveAgent
 from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
 from app.conversation.clarification import build_pending_clarification, merge_clarification_answer
 from app.conversation.commands import SlashCommand, parse_slash_command
 from app.conversation.messages import (
     INCOMPLETE_REASON,
+    extract_creation_missing_information,
     extract_failure_reason,
     extract_reply_text,
     format_approval_message,
+    format_clarification_question,
     format_completion_message,
     format_delivery_caption,
+    format_working_header,
     format_delivery_summary,
     format_error_message,
     format_revision_prompt,
@@ -401,9 +404,11 @@ class ConversationService:
 
         progress_message_id: int | None = None
         if self._should_show_progress(classification, convo):
+            header = self._progress_header(classification)
             progress_message_id = await self._notifier.start_progress(
                 request.chat_id,
                 reply_to_message_id=request.message_id,
+                header=header,
             )
             convo.progress_message_id = progress_message_id
             await self._store.save(convo)
@@ -478,18 +483,21 @@ class ConversationService:
 
     @staticmethod
     def _should_show_progress(classification, convo: ConversationState) -> bool:
-        """Skip ephemeral progress for single-step EXECUTE; keep for CREATE_PLAN / unknown."""
-        action: str | None = None
-        if classification is not None:
-            action = classification.decision.action.value
-        else:
-            prior = (convo.last_agent_state or {}).get("decision") or {}
-            if isinstance(prior, dict):
-                raw = prior.get("action")
-                action = raw.value if hasattr(raw, "value") else raw
-        if should_direct_execute(action):
-            return False
+        """Show a working indicator for any produced-artifact task (EXECUTE + CREATE_PLAN).
+
+        Chat replies (RESPOND / ASK_CLARIFICATION) never reach this path, so a task here
+        always warrants feedback — the user must see the bot is working during long LLM steps.
+        """
+        _ = classification, convo
         return True
+
+    @staticmethod
+    def _progress_header(classification) -> str | None:
+        goal: str | None = None
+        if classification is not None:
+            understanding = getattr(classification, "understanding", None)
+            goal = getattr(understanding, "goal", None)
+        return format_working_header(goal)
 
     async def _handle_execution_failure(
         self,
@@ -573,6 +581,43 @@ class ConversationService:
             )
         return state_dict
 
+    async def _ask_clarification_from_incomplete(
+        self,
+        request: UserMessageRequest,
+        convo: ConversationState,
+        state: dict[str, Any],
+        missing: list[str],
+        progress_message_id: int | None,
+    ) -> dict[str, Any]:
+        """Convert an incomplete document step into a resumable clarification."""
+        understanding = state.get("understanding") or {}
+        original_goal = str(understanding.get("goal") or convo.last_user_input or request.text)
+        convo.flow_mode = FlowMode.PENDING_CLARIFICATION
+        convo.pending_clarification = PendingClarification(
+            original_goal=original_goal,
+            original_user_input=convo.last_user_input or request.text,
+            intent="ASK_CLARIFICATION",
+            missing_information=missing,
+            understanding=understanding if isinstance(understanding, dict) else {},
+        )
+        await self._store.save(convo)
+
+        text = format_clarification_question(missing)
+        await self._notifier.clear_progress(request.chat_id, progress_message_id)
+        send_result = await self._notifier.send_text(request.chat_id, text)
+        await self._sessions.append_history(
+            {"active_session_id": convo.session_id, "workspace_id": convo.workspace_id},
+            role="assistant",
+            content=text,
+        )
+        return {
+            "execution_id": state.get("execution_id"),
+            "status": "clarification",
+            "reply": text,
+            "send_result": send_result,
+            "progress_message_id": progress_message_id,
+        }
+
     async def _deliver_outcome(
         self,
         request: UserMessageRequest,
@@ -598,6 +643,13 @@ class ConversationService:
             }
 
         if status in {"execution_failed", "failed"} or status.endswith("_failed"):
+            # A document step that could not draft anything reports missing_information.
+            # Turn that into a resumable clarification instead of a dead-end error.
+            missing = extract_creation_missing_information(state)
+            if missing:
+                return await self._ask_clarification_from_incomplete(
+                    request, convo, state, missing, progress_message_id
+                )
             convo.flow_mode = FlowMode.FAILED
             await self._store.save(convo)
             reason = extract_failure_reason(state)

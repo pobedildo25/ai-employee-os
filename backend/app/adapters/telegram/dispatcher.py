@@ -1,9 +1,12 @@
+import logging
 from typing import Any
 
 from app.adapters.telegram.flow import TelegramProductFlow
 from app.adapters.telegram.handlers import TelegramMessageHandler
 from app.adapters.telegram.mapper import TelegramMapper
 from app.adapters.telegram.models import TelegramUpdate
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramDispatcher:
@@ -28,6 +31,12 @@ class TelegramDispatcher:
             request = self._mapper.map_update(parsed)
             if request is not None:
                 return await self._flow.handle_message(request)
+            msg = parsed.message
+            logger.warning(
+                "telegram update skipped (no text/caption/media) | update_id=%s has_message=%s",
+                parsed.update_id,
+                msg is not None,
+            )
             return None
 
         request = self._mapper.map_update(update)

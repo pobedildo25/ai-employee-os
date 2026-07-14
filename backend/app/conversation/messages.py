@@ -7,6 +7,16 @@ def format_progress_header() -> str:
     return "Думаю…"
 
 
+def format_working_header(goal: str | None) -> str:
+    """Task-aware working indicator so the user sees the bot understood the task."""
+    text = (goal or "").strip()
+    if not text:
+        return "Принял, работаю над задачей…"
+    if len(text) > 90:
+        text = text[:87].rstrip() + "…"
+    return f"Принял. Готовлю: {text}"
+
+
 _FLOW_MODE_LABELS: dict[FlowMode, str] = {
     FlowMode.IDLE: "свободен",
     FlowMode.RUNNING: "выполняю задачу",
@@ -134,6 +144,23 @@ def _plural_files(count: int) -> str:
 
 def format_revision_prompt() -> str:
     return "Что изменить?"
+
+
+def extract_creation_missing_information(state: dict[str, Any]) -> list[str]:
+    """Missing-info items a document step reported when it could not draft anything."""
+    result = state.get("document_creation_result")
+    if not isinstance(result, dict):
+        return []
+    missing = result.get("missing_information") or []
+    return [str(item) for item in missing if str(item).strip()]
+
+
+def format_clarification_question(missing: list[str]) -> str:
+    items = [item for item in missing if item and item.strip()]
+    if not items:
+        return "Уточните, пожалуйста, детали задачи — что именно подготовить?"
+    listed = "; ".join(items)
+    return f"Чтобы подготовить черновик, уточните: {listed}."
 
 
 def format_error_message(reason: str | None = None) -> str:

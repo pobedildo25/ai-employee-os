@@ -18,10 +18,29 @@ class TelegramChat(BaseModel):
     username: str | None = None
 
 
+class TelegramPhotoSize(BaseModel):
+    file_id: str
+    file_unique_id: str | None = None
+    width: int | None = None
+    height: int | None = None
+    file_size: int | None = None
+
+
+class TelegramDocument(BaseModel):
+    file_id: str
+    file_unique_id: str | None = None
+    file_name: str | None = None
+    mime_type: str | None = None
+    file_size: int | None = None
+
+
 class TelegramMessage(BaseModel):
     message_id: int
     date: int | None = None
     text: str | None = None
+    caption: str | None = None
+    photo: list[TelegramPhotoSize] | None = None
+    document: TelegramDocument | None = None
     chat: TelegramChat
     from_user: TelegramUser | None = Field(default=None, alias="from")
 

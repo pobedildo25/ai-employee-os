@@ -20,12 +20,20 @@ class TelegramProgressMessenger:
         self._sender = sender
         self._min_interval = min_interval_seconds
         self._last_sent_at: dict[int, float] = {}
+        self._headers: dict[int, str] = {}
 
-    async def start(self, chat_id: int, *, reply_to_message_id: int | None = None) -> int | None:
+    async def start(
+        self,
+        chat_id: int,
+        *,
+        reply_to_message_id: int | None = None,
+        header: str | None = None,
+    ) -> int | None:
+        title = header or format_progress_header()
         try:
             result = await self._sender.send_message(
                 chat_id,
-                format_progress_header(),
+                title,
                 reply_to_message_id=reply_to_message_id,
             )
         except Exception as exc:
@@ -34,6 +42,8 @@ class TelegramProgressMessenger:
         message_id = _extract_message_id(result)
         if message_id is not None:
             self._last_sent_at[message_id] = 0.0
+            if header:
+                self._headers[message_id] = header
         return message_id
 
     async def maybe_update(
@@ -54,7 +64,7 @@ class TelegramProgressMessenger:
         if not final and now - last < self._min_interval:
             return message_id
 
-        text = format_telegram_progress(progress)
+        text = format_telegram_progress(progress, header=self._headers.get(message_id))
         try:
             result = await self._sender.edit_message_text(chat_id, message_id, text)
         except Exception as exc:
@@ -89,6 +99,7 @@ class TelegramProgressMessenger:
                 return
         finally:
             self._last_sent_at.pop(message_id, None)
+            self._headers.pop(message_id, None)
 
     async def replace(
         self,

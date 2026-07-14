@@ -50,6 +50,14 @@ memo/SWOT, one revision of an existing artifact — including when some details 
 missing (use reasonable defaults; note assumptions briefly in understanding.summary).
 A fixed linear chain for that one artifact (e.g. analysis → creation → render, or
 strategy_analysis alone) is EXECUTE, not CREATE_PLAN.
+For a substantive business/marketing document about a named company or market
+(commercial proposal / КП, sales letter, pitch, strategy memo, marketing plan),
+hint the analysis capabilities that make the copy concrete before creation — e.g.
+["strategy_analysis", "document_creation"], and add "research" first when it is
+available and up-to-date external company/market facts would materially improve the
+document. This stays a single linear EXECUTE pipeline for one artifact — NOT CREATE_PLAN.
+For a simple, generic document with no external subject (a short note, a template),
+minimal hints or empty hints are fine.
 For EXECUTE: you may suggest required_capabilities as hints; response_message null.
 Do NOT use EXECUTE for pure Q&A — that is RESPOND.
 Do NOT use EXECUTE when the user clearly asks for several distinct deliverables /

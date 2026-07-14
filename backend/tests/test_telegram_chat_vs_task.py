@@ -187,6 +187,6 @@ async def test_task_execution_preserves_telegram_progress_ux(
     await flow.handle_message(_request("Подготовь стратегию"))
 
     assert runtime.calls
-    assert sender.sent[0]["text"] == "Думаю…"
+    assert sender.sent[0]["text"].startswith("Принял")
     assert sender.edited
     assert sender.deleted

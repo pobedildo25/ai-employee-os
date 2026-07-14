@@ -126,8 +126,12 @@ async def test_pipeline_exception_sends_friendly_error_message(
     assert result["status"] == "failed"
     assert result["trace_id"] == "trace-err"
     assert result["execution_id"] == "exec-err"
-    # EXECUTE skips progress — error is a new message (not an edit of «Думаю…»).
-    error_bubbles = [item for item in sender.sent if "Не удалось выполнить задачу" in item["text"]]
+    # The working indicator is replaced (edited) with the friendly error, or sent fresh.
+    error_bubbles = [
+        item
+        for item in (sender.sent + sender.edited)
+        if "Не удалось выполнить задачу" in item["text"]
+    ]
     assert error_bubbles
     error_text = error_bubbles[-1]["text"]
     assert "trace_id" not in error_text.lower()

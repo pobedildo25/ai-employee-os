@@ -11,6 +11,34 @@ from app.planning.models import PlanStep, StepStatus, TaskExecutionStatus, TaskP
 
 MAX_STEP_RETRIES = 3
 
+# Statuses that are deterministic outcomes, not transient failures. Retrying them
+# re-issues the identical LLM call and yields the identical result (e.g. a document
+# the model deems too vague to draft). Surface them immediately instead.
+NON_RETRYABLE_SKILL_STATUSES = frozenset({"incomplete"})
+
+
+def is_retryable_failure(status: str | None) -> bool:
+    return status not in NON_RETRYABLE_SKILL_STATUSES
+
+
+# Enrichment capabilities improve a deliverable but are not required to produce it.
+# If one of these fails (e.g. client_intelligence with no stored client, a research
+# outage), the pipeline must still deliver the document — degrade gracefully instead
+# of failing the whole task. The actual deliverable steps (document_creation,
+# document_rendering, presentation_design, document_revision) remain critical.
+NON_CRITICAL_CAPABILITIES = frozenset(
+    {
+        "research",
+        "strategy_analysis",
+        "analytics",
+        "client_intelligence",
+    }
+)
+
+
+def is_critical_capability(capability: str | None) -> bool:
+    return capability not in NON_CRITICAL_CAPABILITIES
+
 # Re-export decision-engine policies for planning/orchestration callers.
 should_plan = should_invoke_planner
 
