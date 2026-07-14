@@ -252,7 +252,7 @@ async def test_progress_update_edits_single_message(
     assert len(sender.sent) >= 1
     assert sender.sent[0]["text"].startswith("Принял")
     assert len(sender.edited) >= 1
-    assert "Стратегия" in sender.edited[-1]["text"] or "Думаю" in sender.edited[-1]["text"]
+    assert "Стратегия" in sender.edited[-1]["text"] or "Работаю" in sender.edited[-1]["text"]
     assert sender.deleted
     assert "Quality score" not in (sender.sent[-1]["text"] if sender.sent else "")
 
@@ -312,8 +312,12 @@ async def test_approval_buttons_and_resume(
     assert request is not None
     first = await flow.handle_message(request)
     assert first["status"] == "waiting_approval"
-    assert "Исследование рынка" in sender.sent[-1]["text"]
-    assert sender.sent[-1]["reply_markup"]["inline_keyboard"][0][0]["text"] == "Начать"
+    approval_text = sender.sent[-1]["text"]
+    assert "Предлагаю такой порядок" in approval_text
+    assert "изучу компанию" in approval_text
+    assert "Всё выполнить сразу" in approval_text
+    assert "research" not in approval_text
+    assert sender.sent[-1]["reply_markup"]["inline_keyboard"][0][0]["text"] == "Выполнить"
     assert sender.deleted  # progress cleared before approval
 
     callback = TelegramMapper().map_callback(SAMPLE_CALLBACK_APPROVE)
@@ -571,14 +575,18 @@ def test_approval_message_format() -> None:
     text = format_approval_message(
         {
             "steps": [
-                {"description": "Исследование рынка"},
-                {"description": "Создание стратегии"},
-                {"description": "Подготовка презентации"},
+                {"description": "Исследование рынка", "capability": "research"},
+                {"description": "Создание стратегии", "capability": "strategy_analysis"},
+                {"description": "Подготовка презентации", "capability": "presentation_design"},
             ]
         }
     )
-    assert "Исследование рынка" in text
-    assert "Начать выполнение" in text
+    assert "Предлагаю такой порядок" in text
+    assert "изучу компанию" in text
+    assert "подготовлю стратегию" in text
+    assert "Всё выполнить сразу" in text
+    assert "research" not in text
+    assert "План:" not in text
 
 
 @pytest.mark.asyncio

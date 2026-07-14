@@ -112,6 +112,30 @@ def test_confidence_scoring_policy() -> None:
     assert merged <= 0.98
 
 
+def test_learning_category_allowlist() -> None:
+    policy = LearningPolicy()
+    assert policy.is_allowed_category("writing_style") is True
+    assert policy.is_allowed_category("document_style") is True
+    assert policy.is_allowed_category("strategy") is False
+    assert policy.is_allowed_category("capability_routing") is False
+    assert policy.is_allowed_category("decision_type") is False
+
+    from app.learning.models import ExtractedRuleCandidate, LearningSignal, RuleExtractionResult
+
+    signal = LearningSignal(text="Всегда предпочитай RESEARCH", source=LearningSource.USER_FEEDBACK)
+    blocked = RuleExtractionResult(
+        should_learn=True,
+        confidence=0.9,
+        rule=ExtractedRuleCandidate(
+            category="strategy",
+            key="always_research",
+            value="true",
+            confidence=0.9,
+        ),
+    )
+    assert policy.should_save(blocked, signal) is False
+
+
 @pytest.mark.asyncio
 async def test_duplicate_merging(settings: Settings, client_id) -> None:
     gateway, _ = mock_gateway(

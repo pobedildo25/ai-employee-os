@@ -50,7 +50,7 @@ def conversation_store() -> TelegramConversationStore:
 
 
 def test_progress_copy_is_quiet() -> None:
-    assert format_progress_header() == "Думаю…"
+    assert format_progress_header() == "Работаю…"
     assert "NOVA" not in format_progress_header()
     text = format_telegram_progress(
         {
@@ -60,7 +60,7 @@ def test_progress_copy_is_quiet() -> None:
             ]
         }
     )
-    assert text == "Думаю…\nСтратегия"
+    assert text == "Работаю…\nСтратегия"
     assert "✅" not in text
 
 
@@ -112,12 +112,12 @@ async def test_successful_task_clears_progress_and_sends_one_reply(
     result = await flow.handle_message(request)
 
     assert result["status"] == "completed"
-    # A task-aware working indicator is shown, then cleared; exactly one reply remains.
-    assert sender.sent[0]["text"].startswith("Принял")
+    # Simple EXECUTE: no progress theater — only the final employee reply.
     deleted_ids = {item["message_id"] for item in sender.deleted}
     visible = [item["text"] for item in sender.sent if item["message_id"] not in deleted_ids]
     assert visible == ["Краткий ответ по стратегии."]
     assert all(item.get("reply_markup") is None for item in sender.sent)
+    assert all(not item["text"].startswith("Принял") for item in sender.sent)
 
 
 @pytest.mark.asyncio

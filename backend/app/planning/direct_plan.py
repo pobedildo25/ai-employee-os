@@ -1,19 +1,7 @@
 """Build a direct TaskPlan for EXECUTE without invoking the LLM Planner."""
 
+from app.ux.human_labels import humanize_direct_plan_label
 from app.planning.models import PlanStatus, PlanStep, TaskPlan
-
-
-_CAPABILITY_LABELS_RU = {
-    "document_generation": "Подготовка документа",
-    "document_analysis": "Анализ документа",
-    "document_rendering": "Рендер документа",
-    "document_revision": "Правка документа",
-    "presentation_design": "Подготовка презентации",
-    "strategy_analysis": "Стратегический анализ",
-    "research": "Исследование",
-    "data_analysis": "Анализ данных",
-    "brand_style": "Фирменный стиль",
-}
 
 
 def build_direct_execution_plan(
@@ -27,9 +15,8 @@ def build_direct_execution_plan(
     steps: list[PlanStep] = []
     previous_id = None
     for capability in capabilities:
-        label = _CAPABILITY_LABELS_RU.get(capability, capability)
         step = PlanStep(
-            description=label,
+            description=humanize_direct_plan_label(capability),
             capability=capability,
             dependencies=[previous_id] if previous_id is not None else [],
         )

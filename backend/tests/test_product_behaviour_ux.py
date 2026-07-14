@@ -37,7 +37,8 @@ def test_direct_plan_uses_russian_step_labels() -> None:
         required_capabilities=["document_generation"],
     )
     assert "Execute capability" not in plan.steps[0].description
-    assert plan.steps[0].description == "Подготовка документа"
+    assert plan.steps[0].description == "Пишу документ"
+    assert "_" not in plan.steps[0].description
 
 
 def test_single_step_create_plan_skips_approval() -> None:

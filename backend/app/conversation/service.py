@@ -119,9 +119,6 @@ class ConversationService:
 
         await self._sessions.append_history(snapshot, role="user", content=request.text)
 
-        # Optional business-client attach is context enrichment only (not Product Decision).
-        await self._attach_business_client(request.text, convo, snapshot)
-
         # P1-I: release DB session after short persistence before LLM/classify.
         await self._sessions.release_db()
 
@@ -157,6 +154,8 @@ class ConversationService:
             if is_chat_decision(classification.decision.action.value):
                 return await self._handle_chat_response(request, convo, classification, snapshot)
             if is_task_decision(classification.decision.action.value):
+                # Client/project bootstrap only after Executive chose a task.
+                await self._attach_business_client(request.text, convo, snapshot)
                 return await self._run_execution(
                     request, convo, snapshot, classification=classification
                 )
@@ -188,6 +187,7 @@ class ConversationService:
             if convo.flow_mode == FlowMode.REVISION_PROMPTED:
                 convo.revision_prompted_at = None
                 await self._store.save(convo)
+            await self._attach_business_client(request.text, convo, snapshot)
             return await self._run_execution(
                 request, convo, snapshot, classification=classification
             )
@@ -334,6 +334,7 @@ class ConversationService:
             convo.flow_mode = FlowMode.IDLE
             await self._store.save(convo)
             merged_request = request.model_copy(update={"text": merged_input})
+            await self._attach_business_client(merged_input, convo, snapshot)
             deferred = await self._run_execution(
                 merged_request, convo, snapshot, classification=classification
             )
@@ -500,13 +501,23 @@ class ConversationService:
 
     @staticmethod
     def _should_show_progress(classification, convo: ConversationState) -> bool:
-        """Show a working indicator for any produced-artifact task (EXECUTE + CREATE_PLAN).
+        """Show progress only for real multi-step work — no fake theater on simple EXECUTE.
 
-        Chat replies (RESPOND / ASK_CLARIFICATION) never reach this path, so a task here
-        always warrants feedback — the user must see the bot is working during long LLM steps.
+        CREATE_PLAN (and approval resumes without a fresh classification) get live stages.
+        Single-capability EXECUTE delivers quietly; chat never reaches this path.
         """
-        _ = classification, convo
-        return True
+        _ = convo
+        if classification is None:
+            # Approval / retry resume — prior path already chose multi-step work.
+            return True
+        action = getattr(getattr(classification, "decision", None), "action", None)
+        action_value = action.value if hasattr(action, "value") else str(action or "")
+        if action_value == "CREATE_PLAN":
+            return True
+        understanding = getattr(classification, "understanding", None)
+        caps = list(getattr(understanding, "required_capabilities", None) or [])
+        # Multiple Executive hints imply multi-stage work worth staging in chat.
+        return len([c for c in caps if c and str(c).strip()]) > 1
 
     @staticmethod
     def _progress_header(classification) -> str | None:
@@ -887,7 +898,7 @@ class ConversationService:
         snapshot: dict[str, Any],
     ) -> dict[str, Any] | _DeferredExecution:
         if convo.flow_mode != FlowMode.WAITING_APPROVAL or not convo.last_user_input:
-            text = "Сейчас нет плана, ожидающего подтверждения."
+            text = "Сейчас нечего подтверждать — опишите задачу текстом."
             send_result = await self._notifier.send_text(convo.chat_id, text)
             return {"status": "noop", "reply": text, "send_result": send_result}
 
