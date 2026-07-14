@@ -39,7 +39,18 @@ def test_status_waiting_approval_has_no_plan_jargon() -> None:
         user_id=1,
         chat_id=1,
         flow_mode=FlowMode.WAITING_APPROVAL,
+        last_execution_id="exec-secret-hex",
     )
     text = format_slash_status(convo)
     assert "плана" not in text
     assert "подтверждения" in text
+    assert "exec-secret-hex" not in text
+    assert "capability" not in text
+
+
+def test_safe_error_reason_hides_internals() -> None:
+    from app.conversation.service import _safe_error_reason
+
+    assert _safe_error_reason("No skill registered for capability: document_revision") is None
+    assert _safe_error_reason("Enrichment step skipped: research") is None
+    assert _safe_error_reason("Не хватило бюджета на рекламу") == "Не хватило бюджета на рекламу"

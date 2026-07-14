@@ -133,7 +133,7 @@ async def test_status_reports_mode(
     assert result["command"] == "status"
     assert "жду вашего подтверждения" in result["reply"]
     assert "да" in result["reply"]
-    assert "exec-42" in result["reply"]
+    assert "exec-42" not in result["reply"]
     assert runtime.calls == []
 
 

@@ -57,11 +57,9 @@ def format_slash_cancelled() -> str:
 def format_slash_status(convo: ConversationState) -> str:
     mode = _FLOW_MODE_LABELS.get(convo.flow_mode, str(convo.flow_mode.value))
     has_artifacts = "да" if convo.artifact_ids else "нет"
-    last_id = convo.last_execution_id or "—"
     return (
         f"Сейчас: {mode}\n"
-        f"Артефакты в диалоге: {has_artifacts}\n"
-        f"Последний запрос: {last_id}"
+        f"Есть готовый файл в диалоге: {has_artifacts}"
     )
 
 

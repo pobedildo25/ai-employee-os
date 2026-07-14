@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 BUSINESS_CLIENT_METADATA = {"type": "business", "source": "chat"}
 DEFAULT_PROJECT_SUFFIX = "— общие задачи"
+# Weak heuristic extractions may attach to an existing client, but must not invent one.
+CREATE_CLIENT_MIN_CONFIDENCE = 0.7
 
 
 @dataclass(frozen=True)
@@ -62,7 +64,19 @@ class BusinessClientResolver:
         if not subject.is_usable or subject.name is None:
             return None
 
-        client, created = await self._find_or_create_client(subject.name)
+        allow_create = subject.confidence >= CREATE_CLIENT_MIN_CONFIDENCE
+        client, created = await self._find_or_create_client(
+            subject.name,
+            allow_create=allow_create,
+        )
+        if client is None:
+            logger.info(
+                "business client skipped (weak extract, not found) | trace_id=%s name=%s confidence=%.2f",
+                trace_id,
+                subject.name,
+                subject.confidence,
+            )
+            return None
         client_id = getattr(client, "id", None)
         if client_id is None:
             return None
@@ -87,10 +101,12 @@ class BusinessClientResolver:
             project_created=project_created,
         )
 
-    async def _find_or_create_client(self, name: str):
+    async def _find_or_create_client(self, name: str, *, allow_create: bool = True):
         existing = await self._clients.find_by_name(name)
         if existing is not None:
             return existing, False
+        if not allow_create:
+            return None, False
         client = await self._clients.create(
             ClientCreate(
                 name=name,
