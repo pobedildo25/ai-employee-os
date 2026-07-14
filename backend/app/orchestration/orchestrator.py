@@ -285,6 +285,8 @@ class Orchestrator(OrchestratorInterface):
             "file_bytes",
             "filename",
             "brand_profile",
+            "agency_profile",
+            "agency_context",
             "artifact_id",
             "client_id",
             "project_id",

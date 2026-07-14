@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.telegram.bot import TelegramBot
 from app.adapters.telegram.factory import create_telegram_bot
+from app.agency.profile import build_agency_profile
 from app.agent_runtime.runtime import create_agent_runtime
 from app.agents.executive.agent import ExecutiveAgent
 from app.client_intelligence.analyzer import ClientIntelligenceAnalyzer
@@ -44,6 +45,7 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
     """Build a Telegram bot bound to one DB session (commit per update)."""
     settings = settings or get_settings()
     llm_gateway = create_llm_gateway(settings)
+    agency_profile = build_agency_profile(settings)
     client_repository = SQLAlchemyClientRepository(session)
     project_repository = SQLAlchemyProjectRepository(session)
     artifact_repository = SQLAlchemyArtifactRepository(session)
@@ -82,6 +84,7 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         workspace_service=workspace_service,
         client_intelligence_manager=intelligence_manager,
         research_manager=research_manager,
+        agency_profile=agency_profile,
     )
     runtime = create_agent_runtime(
         llm_gateway=llm_gateway,
@@ -107,4 +110,5 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         executive_agent=executive_agent,
         capability_registry=capability_registry,
         business_client_resolver=business_client_resolver,
+        agency_profile=agency_profile,
     )

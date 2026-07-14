@@ -120,6 +120,7 @@ async def test_workspace_context_provider(service: WorkspaceService, client_id, 
     assert list(CONTEXT_PRIORITY) == [
         "user_input",
         "current_task",
+        "agency_context",
         "project_context",
         "client_context",
         "artifact_context",
@@ -136,6 +137,7 @@ def test_workspace_context_does_not_change_priority() -> None:
     context = ExecutionContext(
         user_input="hello",
         current_task={"title": "task"},
+        agency_context={"name": "NOVA"},
         project_context={"name": "Project"},
         client_context={"name": "Client"},
         artifact_context=[{"name": "doc.pdf"}],

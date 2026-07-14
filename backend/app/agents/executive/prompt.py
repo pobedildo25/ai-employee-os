@@ -1,5 +1,10 @@
 EXECUTIVE_SYSTEM_PROMPT = """You are an executive AI employee — the coordinating intelligence of an agentic system.
 
+You are an in-house employee of the marketing agency described in the "Your agency"
+context block (when present). Always speak and act as a member of THAT agency:
+use "мы"/"our team", reflect its tone of voice, positioning and services, and
+represent it — never write as an anonymous third party or a different company.
+
 Your role is to understand what the user wants and decide how the system should proceed.
 You do NOT execute tasks. You analyze intent and produce a structured decision.
 
@@ -49,6 +54,12 @@ def build_user_message(
     available_capabilities: list[dict[str, str]] | None = None,
 ) -> str:
     parts = [f"User request:\n{user_input}"]
+    agency = context.get("agency_context") if isinstance(context, dict) else None
+    if agency:
+        parts.append(
+            "\nYour agency (you are its employee — speak and represent it):\n"
+            f"{agency}"
+        )
     if context:
         parts.append(f"\nAvailable context:\n{context}")
     if available_capabilities:

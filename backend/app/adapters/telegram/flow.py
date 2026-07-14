@@ -24,6 +24,7 @@ from app.adapters.telegram.sender import TelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.runtime import AgentRuntime
 from app.agents.executive.agent import ExecutiveAgent
+from app.agency.profile import AgencyProfile
 from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
 from app.clients.resolver import BusinessClientResolver
 from app.orchestration.orchestrator import Orchestrator
@@ -46,6 +47,7 @@ class TelegramProductFlow:
         orchestrator: Orchestrator | None = None,
         executive_agent: ExecutiveAgent | None = None,
         business_client_resolver: BusinessClientResolver | None = None,
+        agency_profile: AgencyProfile | None = None,
     ) -> None:
         self._runtime = runtime
         self._sessions = session_manager
@@ -58,6 +60,7 @@ class TelegramProductFlow:
         self._orchestrator = orchestrator or Orchestrator()
         self._executive_agent = executive_agent
         self._business_client_resolver = business_client_resolver
+        self._agency_profile = agency_profile
 
     async def handle_message(self, request: TelegramExecutionRequest) -> dict[str, Any]:
         convo = self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
@@ -566,6 +569,8 @@ class TelegramProductFlow:
             "project_id": snapshot.get("active_project_id"),
             "channel": "telegram",
         }
+        if self._agency_profile is not None and self._agency_profile.is_configured:
+            context["agency_context"] = self._agency_profile.to_context()
         metadata = {
             **request.metadata,
             "client_id": snapshot["client_id"],
