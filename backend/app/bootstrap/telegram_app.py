@@ -11,6 +11,7 @@ from app.agents.executive.agent import ExecutiveAgent
 from app.client_intelligence.analyzer import ClientIntelligenceAnalyzer
 from app.client_intelligence.builder import ClientIntelligenceBuilder
 from app.client_intelligence.manager import ClientIntelligenceManager
+from app.clients.resolver import BusinessClientResolver
 from app.context.builder import create_context_builder
 from app.core.config import Settings, get_settings
 from app.database.qdrant import get_qdrant_client
@@ -90,6 +91,11 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
     )
     orchestrator = Orchestrator(store=get_execution_store_singleton())
     executive_agent = ExecutiveAgent(llm_gateway, capability_registry=capability_registry)
+    business_client_resolver = BusinessClientResolver(
+        client_repository,
+        project_repository=project_repository,
+        llm_gateway=llm_gateway,
+    )
     return create_telegram_bot(
         runtime=runtime,
         workspace_service=workspace_service,
@@ -100,4 +106,5 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         client_repository=client_repository,
         executive_agent=executive_agent,
         capability_registry=capability_registry,
+        business_client_resolver=business_client_resolver,
     )

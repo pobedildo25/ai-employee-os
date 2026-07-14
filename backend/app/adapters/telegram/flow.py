@@ -25,6 +25,7 @@ from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.runtime import AgentRuntime
 from app.agents.executive.agent import ExecutiveAgent
 from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
+from app.clients.resolver import BusinessClientResolver
 from app.orchestration.orchestrator import Orchestrator
 
 
@@ -44,6 +45,7 @@ class TelegramProductFlow:
         artifact_delivery: TelegramArtifactDelivery | None = None,
         orchestrator: Orchestrator | None = None,
         executive_agent: ExecutiveAgent | None = None,
+        business_client_resolver: BusinessClientResolver | None = None,
     ) -> None:
         self._runtime = runtime
         self._sessions = session_manager
@@ -55,6 +57,7 @@ class TelegramProductFlow:
         self._artifacts = artifact_delivery or TelegramArtifactDelivery(None, None)
         self._orchestrator = orchestrator or Orchestrator()
         self._executive_agent = executive_agent
+        self._business_client_resolver = business_client_resolver
 
     async def handle_message(self, request: TelegramExecutionRequest) -> dict[str, Any]:
         convo = self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
@@ -197,6 +200,7 @@ class TelegramProductFlow:
         snapshot: dict[str, Any],
     ) -> dict[str, Any]:
         context, metadata = self._build_runtime_payload(request, snapshot)
+        await self._attach_business_client(request, convo, context)
         convo.flow_mode = TelegramFlowMode.RUNNING
         convo.last_user_input = request.user_input
         self._store.save(convo)
@@ -516,6 +520,39 @@ class TelegramProductFlow:
                 file_data=data,
                 mime_type=artifact.get("mime_type"),
             )
+
+    async def _attach_business_client(
+        self,
+        request: TelegramExecutionRequest,
+        convo: TelegramConversationState,
+        context: dict[str, Any],
+    ) -> None:
+        """Find-or-create the business client this task is for and route the run to it.
+
+        The run context's ``client_id``/``project_id`` are pointed at the real
+        business client so artifacts land under it and client intelligence runs
+        against it. The workspace/session binding stays on the transport identity
+        (kept in metadata), so this is additive and safe when no client is named.
+        """
+        if self._business_client_resolver is None:
+            return
+        try:
+            resolved = await self._business_client_resolver.resolve(
+                request.user_input,
+                trace_id=str(request.metadata.get("trace_id") or "-"),
+            )
+        except Exception:  # resolution must never break task execution
+            return
+        if resolved is None:
+            return
+
+        context["client_id"] = str(resolved.client_id)
+        context["business_client_id"] = str(resolved.client_id)
+        context["client_name"] = resolved.name
+        if resolved.project_id is not None:
+            context["project_id"] = str(resolved.project_id)
+        convo.business_client_id = str(resolved.client_id)
+        convo.business_client_name = resolved.name
 
     def _build_runtime_payload(
         self,

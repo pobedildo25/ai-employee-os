@@ -14,6 +14,26 @@ class ClientRepository(ABC):
     async def get_by_id(self, client_id: UUID) -> Client | None:
         ...
 
+    async def find_by_name(self, name: str) -> Client | None:
+        """Case-insensitive lookup of a BUSINESS client by exact name.
+
+        Default implementation scans ``list_all`` and filters out transport
+        (Telegram) identities. Concrete repositories may override with an
+        efficient query. Returns ``None`` for blank names or no match.
+        """
+        from app.clients.classification import is_business_client
+
+        target = (name or "").strip().casefold()
+        if not target:
+            return None
+        clients = await self.list_all(limit=1000)
+        for client in clients:
+            if not is_business_client(client):
+                continue
+            if ((getattr(client, "name", "") or "").strip().casefold()) == target:
+                return client
+        return None
+
     @abstractmethod
     async def get_or_create_with_id(
         self,
