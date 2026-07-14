@@ -47,6 +47,7 @@ class DocumentASTGenerator:
                     document_type=request.document_type,
                     requirements=request.requirements,
                     capabilities=available_capabilities or [],
+                    agency_profile=request.agency_profile,
                 ),
             ),
         ]

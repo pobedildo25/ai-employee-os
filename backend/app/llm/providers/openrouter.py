@@ -88,4 +88,45 @@ class OpenRouterProvider(LLMProvider):
         yield ""  # pragma: no cover
 
     async def embeddings(self, request: EmbeddingRequest) -> EmbeddingResponse:
-        raise NotImplementedError("Embeddings are not implemented yet")
+        if not self._settings.openrouter_api_key:
+            raise LLMConfigurationError("OPENROUTER_API_KEY is not set")
+
+        model = request.model or getattr(self._settings, "embedding_model", "")
+        if not model:
+            raise LLMConfigurationError("Embedding model is not configured")
+
+        payload = {"model": model, "input": request.input}
+        headers = {
+            "Authorization": f"Bearer {self._settings.openrouter_api_key}",
+            "Content-Type": "application/json",
+        }
+        url = f"{self._settings.openrouter_base_url.rstrip('/')}/embeddings"
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(url, json=payload, headers=headers)
+        except httpx.HTTPError as exc:
+            raise LLMProviderError(f"OpenRouter embeddings request failed: {exc}") from exc
+
+        if response.status_code == 401:
+            raise LLMAuthenticationError("OpenRouter authentication failed")
+        if response.status_code == 429:
+            raise LLMRateLimitError("OpenRouter rate limit exceeded")
+        if response.status_code >= 400:
+            raise LLMProviderError(
+                f"OpenRouter embeddings error {response.status_code}: {response.text[:500]}"
+            )
+
+        data = response.json()
+        try:
+            rows = sorted(data["data"], key=lambda row: row.get("index", 0))
+            embeddings = [row["embedding"] for row in rows]
+            usage_data = data.get("usage", {})
+            usage = TokenUsage(
+                prompt_tokens=usage_data.get("prompt_tokens", 0),
+                total_tokens=usage_data.get("total_tokens", 0),
+            )
+        except (KeyError, IndexError, TypeError) as exc:
+            raise LLMProviderError(f"Unexpected OpenRouter embeddings format: {exc}") from exc
+
+        return EmbeddingResponse(embeddings=embeddings, model=data.get("model", model), usage=usage)

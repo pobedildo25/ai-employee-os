@@ -40,7 +40,25 @@ class Settings(BaseSettings):
     redis_memory_ttl: int = 3600
     qdrant_collection: str = "knowledge"
 
+    # Semantic-memory embeddings. Off by default → deterministic stub vectors.
+    # When enabled, semantic memory uses a real embedding model via the LLM gateway.
+    embeddings_enabled: bool = False
+    embedding_model: str = "openai/text-embedding-3-small"
+    embedding_dimensions: int = 1536
+
     skills_enabled: bool = True
+
+    # Agency identity ("who WE are") — injected into dialogue and every document
+    # so the assistant speaks and writes as an employee of THIS agency.
+    agency_name: str = "NOVA"
+    agency_tagline: str = ""
+    agency_positioning: str = ""
+    agency_services: str = ""  # comma/newline separated list
+    agency_tone: str = ""
+    agency_requisites: str = ""
+    agency_contacts: str = ""
+    agency_website: str = ""
+    agency_profile_json: str = ""  # optional full JSON override
 
     telegram_bot_token: str = ""
     telegram_enabled: bool = False

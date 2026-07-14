@@ -24,8 +24,11 @@ from app.adapters.telegram.sender import TelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.runtime import AgentRuntime
 from app.agents.executive.agent import ExecutiveAgent
+from app.agency.profile import AgencyProfile
 from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
 from app.clients.resolver import BusinessClientResolver
+from app.clients.work_summary import ClientWorkSummaryService, detect_client_status_query
+from app.memory.capture import DialogueMemoryCapture
 from app.orchestration.orchestrator import Orchestrator
 
 
@@ -46,6 +49,9 @@ class TelegramProductFlow:
         orchestrator: Orchestrator | None = None,
         executive_agent: ExecutiveAgent | None = None,
         business_client_resolver: BusinessClientResolver | None = None,
+        agency_profile: AgencyProfile | None = None,
+        memory_capture: DialogueMemoryCapture | None = None,
+        client_work_summary: ClientWorkSummaryService | None = None,
     ) -> None:
         self._runtime = runtime
         self._sessions = session_manager
@@ -58,6 +64,9 @@ class TelegramProductFlow:
         self._orchestrator = orchestrator or Orchestrator()
         self._executive_agent = executive_agent
         self._business_client_resolver = business_client_resolver
+        self._agency_profile = agency_profile
+        self._memory_capture = memory_capture
+        self._client_work_summary = client_work_summary
 
     async def handle_message(self, request: TelegramExecutionRequest) -> dict[str, Any]:
         convo = self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
@@ -73,6 +82,14 @@ class TelegramProductFlow:
 
         if convo.pending_clarification is not None:
             return await self._resume_pending_clarification(request, convo, snapshot)
+
+        memory_note = await self._maybe_capture_memory(request, convo, snapshot)
+        if memory_note is not None:
+            return memory_note
+
+        client_status = await self._maybe_client_status(request, convo)
+        if client_status is not None:
+            return client_status
 
         classification = await self._classify_intent(request, snapshot)
         if classification is not None:
@@ -279,6 +296,7 @@ class TelegramProductFlow:
     ) -> dict[str, Any]:
         final_state: dict[str, Any] | None = None
         last_progress: dict[str, Any] | None = None
+        candidates: list[dict[str, Any]] = []
 
         async for event in self._runtime.stream(
             user_input,
@@ -297,10 +315,14 @@ class TelegramProductFlow:
                         progress_message_id,
                         last_progress,
                     )
+                step_candidates = update.get("memory_candidates")
+                if step_candidates:
+                    candidates.extend(step_candidates)
                 final_state = self._merge_state(final_state, update)
 
         if final_state is not None:
             await self._progress.finalize(chat_id, progress_message_id, last_progress)
+            await self._persist_memory_candidates(candidates)
             return final_state
 
         state = await self._runtime.execute(
@@ -310,7 +332,16 @@ class TelegramProductFlow:
         )
         state_dict = dict(state) if not isinstance(state, dict) else state
         await self._progress.finalize(chat_id, progress_message_id, state_dict.get("telegram_progress"))
+        await self._persist_memory_candidates(state_dict.get("memory_candidates") or [])
         return state_dict
+
+    async def _persist_memory_candidates(self, candidates: list[dict[str, Any]]) -> None:
+        if self._memory_capture is None or not candidates:
+            return
+        try:
+            await self._memory_capture.persist_candidates(candidates)
+        except Exception:  # persistence must never break delivery
+            pass
 
     async def _deliver_outcome(
         self,
@@ -521,6 +552,63 @@ class TelegramProductFlow:
                 mime_type=artifact.get("mime_type"),
             )
 
+    async def _maybe_capture_memory(
+        self,
+        request: TelegramExecutionRequest,
+        convo: TelegramConversationState,
+        snapshot: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Handle an explicit 'запомни, что…' note as a direct command."""
+        if self._memory_capture is None:
+            return None
+        fact = self._memory_capture.detect(request.user_input)
+        if fact is None:
+            return None
+
+        client_id = convo.business_client_id or snapshot.get("client_id")
+        result = await self._memory_capture.capture(
+            fact,
+            client_id=client_id,
+            project_id=snapshot.get("active_project_id"),
+            session_id=snapshot.get("active_session_id"),
+        )
+        convo.flow_mode = TelegramFlowMode.IDLE
+        convo.last_user_input = request.user_input
+        self._store.save(convo)
+        send_result = await self._sender.send_message(request.telegram_chat_id, result.reply)
+        return {
+            "status": "memory_saved" if result.stored else "memory_skipped",
+            "reply": result.reply,
+            "send_result": send_result,
+        }
+
+    async def _maybe_client_status(
+        self,
+        request: TelegramExecutionRequest,
+        convo: TelegramConversationState,
+    ) -> dict[str, Any] | None:
+        """Answer 'что сделано по клиенту X' directly from the DB."""
+        if self._client_work_summary is None:
+            return None
+        name = detect_client_status_query(request.user_input)
+        if not name:
+            return None
+
+        try:
+            summary = await self._client_work_summary.summarize(name)
+        except Exception:  # a status lookup must never crash the chat
+            return None
+        if summary is None:
+            text = f"Не нашёл клиента «{name}» в базе. Могу завести его — просто поставьте задачу."
+        else:
+            text = self._client_work_summary.format_reply(summary)
+
+        convo.flow_mode = TelegramFlowMode.IDLE
+        convo.last_user_input = request.user_input
+        self._store.save(convo)
+        send_result = await self._sender.send_message(request.telegram_chat_id, text)
+        return {"status": "client_status", "reply": text, "send_result": send_result}
+
     async def _attach_business_client(
         self,
         request: TelegramExecutionRequest,
@@ -566,6 +654,8 @@ class TelegramProductFlow:
             "project_id": snapshot.get("active_project_id"),
             "channel": "telegram",
         }
+        if self._agency_profile is not None and self._agency_profile.is_configured:
+            context["agency_context"] = self._agency_profile.to_context()
         metadata = {
             **request.metadata,
             "client_id": snapshot["client_id"],

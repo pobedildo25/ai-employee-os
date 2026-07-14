@@ -6,6 +6,7 @@ from app.context.models import ExecutionContext
 CONTEXT_PRIORITY: tuple[str, ...] = (
     "user_input",
     "current_task",
+    "agency_context",
     "project_context",
     "client_context",
     "artifact_context",
@@ -23,6 +24,7 @@ def build_prioritized_context(context: ExecutionContext) -> dict[str, Any]:
     raw: dict[str, Any] = {
         "user_input": context.user_input,
         "current_task": context.current_task,
+        "agency_context": context.agency_context,
         "project_context": context.project_context,
         "client_context": context.client_context,
         "artifact_context": context.artifact_context,

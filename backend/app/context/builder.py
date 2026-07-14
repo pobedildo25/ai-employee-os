@@ -4,8 +4,10 @@ import time
 from typing import Any
 from uuid import UUID
 
+from app.agency.profile import AgencyProfile
 from app.agent_runtime.state.models import AgentState
 from app.context.models import ContextRequest, ExecutionContext
+from app.context.providers.agency_provider import AgencyProfileProvider
 from app.context.providers.artifact_provider import ArtifactContextProvider
 from app.context.providers.base import ContextProvider
 from app.context.providers.client_provider import ClientContextProvider
@@ -70,6 +72,7 @@ class ContextBuilder:
         context = ExecutionContext(
             user_input=user_input,
             current_task=current_task or merged.get("current_task"),
+            agency_context=merged.get("agency_context"),
             client_context=merged.get("client_context"),
             project_context=merged.get("project_context"),
             artifact_context=merged.get("artifact_context", []),
@@ -154,9 +157,12 @@ def create_context_builder(
     workspace_service: WorkspaceService | None = None,
     client_intelligence_manager: ClientIntelligenceManager | None = None,
     research_manager: ResearchManager | None = None,
+    agency_profile: AgencyProfile | None = None,
 ) -> ContextBuilder:
     providers: list[ContextProvider] = []
 
+    if agency_profile is not None and agency_profile.is_configured:
+        providers.append(AgencyProfileProvider(agency_profile))
     if client_repository is not None:
         providers.append(ClientContextProvider(client_repository))
     if project_repository is not None:
@@ -236,6 +242,7 @@ def _merge_fragments(fragments: list[dict[str, Any]]) -> dict[str, Any]:
 
 def _provider_contributed(name: str, merged: dict[str, Any]) -> bool:
     mapping = {
+        "agency": "agency_context",
         "client": "client_context",
         "project": "project_context",
         "artifact": "artifact_context",

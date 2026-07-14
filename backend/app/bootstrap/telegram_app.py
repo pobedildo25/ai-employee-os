@@ -6,12 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.telegram.bot import TelegramBot
 from app.adapters.telegram.factory import create_telegram_bot
+from app.agency.profile import build_agency_profile
 from app.agent_runtime.runtime import create_agent_runtime
 from app.agents.executive.agent import ExecutiveAgent
 from app.client_intelligence.analyzer import ClientIntelligenceAnalyzer
 from app.client_intelligence.builder import ClientIntelligenceBuilder
 from app.client_intelligence.manager import ClientIntelligenceManager
 from app.clients.resolver import BusinessClientResolver
+from app.clients.work_summary import ClientWorkSummaryService
 from app.context.builder import create_context_builder
 from app.core.config import Settings, get_settings
 from app.database.qdrant import get_qdrant_client
@@ -21,6 +23,7 @@ from app.knowledge.stores.postgres_store import PostgresKnowledgeStore
 from app.learning.manager import LearningManager
 from app.learning.providers.postgres_learning_store import PostgresLearningStore
 from app.llm.gateway import create_llm_gateway
+from app.memory.capture import DialogueMemoryCapture
 from app.memory.long_term.postgres_memory import PostgresLongTermMemory
 from app.memory.manager import create_memory_manager
 from app.memory.semantic.qdrant_memory import QdrantSemanticMemory
@@ -44,16 +47,30 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
     """Build a Telegram bot bound to one DB session (commit per update)."""
     settings = settings or get_settings()
     llm_gateway = create_llm_gateway(settings)
+    agency_profile = build_agency_profile(settings)
     client_repository = SQLAlchemyClientRepository(session)
     project_repository = SQLAlchemyProjectRepository(session)
     artifact_repository = SQLAlchemyArtifactRepository(session)
     version_repository = SQLAlchemyArtifactVersionRepository(session)
     storage = MinioStorage(settings)
     artifact_service = ArtifactService(artifact_repository, version_repository, storage)
+    embedder = None
+    embedding_dimensions = None
+    if getattr(settings, "embeddings_enabled", False):
+        async def embedder(text: str) -> list[float]:
+            vectors = await llm_gateway.embed(text)
+            return vectors[0] if vectors else []
+
+        embedding_dimensions = settings.embedding_dimensions
     memory_manager = create_memory_manager(
         short_term=RedisShortTermMemory(get_redis_client(settings), settings),
         long_term=PostgresLongTermMemory(session),
-        semantic=QdrantSemanticMemory(get_qdrant_client(settings), settings),
+        semantic=QdrantSemanticMemory(
+            get_qdrant_client(settings),
+            settings,
+            embedder=embedder,
+            dimensions=embedding_dimensions,
+        ),
         settings=settings,
     )
     knowledge_manager = KnowledgeManager(PostgresKnowledgeStore(session))
@@ -82,6 +99,7 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         workspace_service=workspace_service,
         client_intelligence_manager=intelligence_manager,
         research_manager=research_manager,
+        agency_profile=agency_profile,
     )
     runtime = create_agent_runtime(
         llm_gateway=llm_gateway,
@@ -96,6 +114,12 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         project_repository=project_repository,
         llm_gateway=llm_gateway,
     )
+    memory_capture = DialogueMemoryCapture(memory_manager)
+    client_work_summary = ClientWorkSummaryService(
+        client_repository,
+        project_repository=project_repository,
+        artifact_repository=artifact_repository,
+    )
     return create_telegram_bot(
         runtime=runtime,
         workspace_service=workspace_service,
@@ -107,4 +131,7 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         executive_agent=executive_agent,
         capability_registry=capability_registry,
         business_client_resolver=business_client_resolver,
+        agency_profile=agency_profile,
+        memory_capture=memory_capture,
+        client_work_summary=client_work_summary,
     )

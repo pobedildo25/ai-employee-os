@@ -4,9 +4,12 @@ from app.adapters.telegram.mapper import TelegramMapper
 from app.adapters.telegram.sender import HttpTelegramSender, InMemoryTelegramSender, TelegramSender
 from app.adapters.telegram.session import TelegramSessionManager
 from app.agent_runtime.runtime import AgentRuntime
+from app.agency.profile import AgencyProfile
 from app.agents.executive.agent import ExecutiveAgent
 from app.clients.resolver import BusinessClientResolver
+from app.clients.work_summary import ClientWorkSummaryService
 from app.core.config import Settings
+from app.memory.capture import DialogueMemoryCapture
 from app.orchestration.orchestrator import Orchestrator
 from app.repositories.client_repository import ClientRepository
 from app.services.artifact_service import ArtifactService
@@ -29,6 +32,9 @@ def create_telegram_adapter(
     client_repository: ClientRepository | None = None,
     executive_agent: ExecutiveAgent | None = None,
     business_client_resolver: BusinessClientResolver | None = None,
+    agency_profile: AgencyProfile | None = None,
+    memory_capture: DialogueMemoryCapture | None = None,
+    client_work_summary: ClientWorkSummaryService | None = None,
 ) -> TelegramAdapter:
     """Wire Telegram transport to existing runtime/workspace. No new singletons."""
     if sender is None:
@@ -54,6 +60,9 @@ def create_telegram_adapter(
         capability_registry=capability_registry,
         executive_agent=executive_agent,
         business_client_resolver=business_client_resolver,
+        agency_profile=agency_profile,
+        memory_capture=memory_capture,
+        client_work_summary=client_work_summary,
     )
 
 
@@ -70,6 +79,9 @@ def create_telegram_bot(
     executive_agent: ExecutiveAgent | None = None,
     capability_registry: CapabilityRegistry | None = None,
     business_client_resolver: BusinessClientResolver | None = None,
+    agency_profile: AgencyProfile | None = None,
+    memory_capture: DialogueMemoryCapture | None = None,
+    client_work_summary: ClientWorkSummaryService | None = None,
 ) -> TelegramBot:
     adapter = create_telegram_adapter(
         runtime=runtime,
@@ -83,5 +95,8 @@ def create_telegram_bot(
         executive_agent=executive_agent,
         capability_registry=capability_registry,
         business_client_resolver=business_client_resolver,
+        agency_profile=agency_profile,
+        memory_capture=memory_capture,
+        client_work_summary=client_work_summary,
     )
     return TelegramBot(adapter, token=settings.telegram_bot_token or None)
