@@ -22,6 +22,7 @@ from app.knowledge.stores.postgres_store import PostgresKnowledgeStore
 from app.learning.manager import LearningManager
 from app.learning.providers.postgres_learning_store import PostgresLearningStore
 from app.llm.gateway import create_llm_gateway
+from app.memory.capture import DialogueMemoryCapture
 from app.memory.long_term.postgres_memory import PostgresLongTermMemory
 from app.memory.manager import create_memory_manager
 from app.memory.semantic.qdrant_memory import QdrantSemanticMemory
@@ -99,6 +100,7 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         project_repository=project_repository,
         llm_gateway=llm_gateway,
     )
+    memory_capture = DialogueMemoryCapture(memory_manager)
     return create_telegram_bot(
         runtime=runtime,
         workspace_service=workspace_service,
@@ -111,4 +113,5 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         capability_registry=capability_registry,
         business_client_resolver=business_client_resolver,
         agency_profile=agency_profile,
+        memory_capture=memory_capture,
     )

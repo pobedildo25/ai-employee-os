@@ -14,6 +14,7 @@ from app.agency.profile import AgencyProfile
 from app.agent_runtime.runtime import AgentRuntime
 from app.agents.executive.agent import ExecutiveAgent
 from app.clients.resolver import BusinessClientResolver
+from app.memory.capture import DialogueMemoryCapture
 from app.orchestration.orchestrator import Orchestrator
 from app.quality.gate import QualityGate
 from app.quality.nodes.quality_gate_node import QualityGateNode
@@ -46,6 +47,7 @@ class TelegramAdapter(TelegramAdapterInterface):
         executive_agent: ExecutiveAgent | None = None,
         business_client_resolver: BusinessClientResolver | None = None,
         agency_profile: AgencyProfile | None = None,
+        memory_capture: DialogueMemoryCapture | None = None,
     ) -> None:
         self.enabled = enabled
         self._mapper = mapper or TelegramMapper()
@@ -61,6 +63,7 @@ class TelegramAdapter(TelegramAdapterInterface):
             executive_agent=executive_agent,
             business_client_resolver=business_client_resolver,
             agency_profile=agency_profile,
+            memory_capture=memory_capture,
         )
         self._handler = TelegramMessageHandler(
             runtime=runtime,
@@ -105,6 +108,7 @@ class TelegramAdapter(TelegramAdapterInterface):
         executive_agent: ExecutiveAgent | None = None,
         business_client_resolver: BusinessClientResolver | None = None,
         agency_profile: AgencyProfile | None = None,
+        memory_capture: DialogueMemoryCapture | None = None,
     ) -> TelegramProductFlow:
         continuation = self._build_continuation(capability_registry)
         return TelegramProductFlow(
@@ -120,6 +124,7 @@ class TelegramAdapter(TelegramAdapterInterface):
             executive_agent=executive_agent,
             business_client_resolver=business_client_resolver,
             agency_profile=agency_profile,
+            memory_capture=memory_capture,
         )
 
     @staticmethod

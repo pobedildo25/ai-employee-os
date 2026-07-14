@@ -27,6 +27,7 @@ from app.agents.executive.agent import ExecutiveAgent
 from app.agency.profile import AgencyProfile
 from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
 from app.clients.resolver import BusinessClientResolver
+from app.memory.capture import DialogueMemoryCapture
 from app.orchestration.orchestrator import Orchestrator
 
 
@@ -48,6 +49,7 @@ class TelegramProductFlow:
         executive_agent: ExecutiveAgent | None = None,
         business_client_resolver: BusinessClientResolver | None = None,
         agency_profile: AgencyProfile | None = None,
+        memory_capture: DialogueMemoryCapture | None = None,
     ) -> None:
         self._runtime = runtime
         self._sessions = session_manager
@@ -61,6 +63,7 @@ class TelegramProductFlow:
         self._executive_agent = executive_agent
         self._business_client_resolver = business_client_resolver
         self._agency_profile = agency_profile
+        self._memory_capture = memory_capture
 
     async def handle_message(self, request: TelegramExecutionRequest) -> dict[str, Any]:
         convo = self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
@@ -76,6 +79,10 @@ class TelegramProductFlow:
 
         if convo.pending_clarification is not None:
             return await self._resume_pending_clarification(request, convo, snapshot)
+
+        memory_note = await self._maybe_capture_memory(request, convo, snapshot)
+        if memory_note is not None:
+            return memory_note
 
         classification = await self._classify_intent(request, snapshot)
         if classification is not None:
@@ -523,6 +530,36 @@ class TelegramProductFlow:
                 file_data=data,
                 mime_type=artifact.get("mime_type"),
             )
+
+    async def _maybe_capture_memory(
+        self,
+        request: TelegramExecutionRequest,
+        convo: TelegramConversationState,
+        snapshot: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Handle an explicit 'запомни, что…' note as a direct command."""
+        if self._memory_capture is None:
+            return None
+        fact = self._memory_capture.detect(request.user_input)
+        if fact is None:
+            return None
+
+        client_id = convo.business_client_id or snapshot.get("client_id")
+        result = await self._memory_capture.capture(
+            fact,
+            client_id=client_id,
+            project_id=snapshot.get("active_project_id"),
+            session_id=snapshot.get("active_session_id"),
+        )
+        convo.flow_mode = TelegramFlowMode.IDLE
+        convo.last_user_input = request.user_input
+        self._store.save(convo)
+        send_result = await self._sender.send_message(request.telegram_chat_id, result.reply)
+        return {
+            "status": "memory_saved" if result.stored else "memory_skipped",
+            "reply": result.reply,
+            "send_result": send_result,
+        }
 
     async def _attach_business_client(
         self,
