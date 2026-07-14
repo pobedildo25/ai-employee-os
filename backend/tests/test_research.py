@@ -212,7 +212,8 @@ async def test_skill_registry_and_strategy_handoff(settings: Settings) -> None:
             "context": {"strategy_context": {"strategy_type": "go_to_market"}},
         }
     )
-    assert out["status"] == "completed"
+    # Mock research must never present as product success.
+    assert out["status"] == "incomplete"
     assert out["memory_candidates"]
     assert out["memory_candidates"][0]["type"] == MemoryType.KNOWLEDGE.value
     assert out["metadata"].get("strategy_ready") is False

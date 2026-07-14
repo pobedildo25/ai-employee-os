@@ -16,7 +16,6 @@ from app.conversation.messages import (
     extract_failure_reason,
     extract_reply_text,
     format_approval_message,
-    format_clarification_question,
     format_completion_message,
     format_delivery_caption,
     format_working_header,
@@ -40,7 +39,7 @@ from app.conversation.ports import (
 )
 from app.conversation.requests import CallbackRequest, UserMessageRequest
 from app.clients.resolver import BusinessClientResolver
-from app.clients.work_summary import ClientWorkSummaryService, detect_client_status_query
+from app.clients.work_summary import ClientWorkSummaryService
 from app.memory.capture import DialogueMemoryCapture
 from app.orchestration.orchestrator import Orchestrator
 
@@ -120,17 +119,7 @@ class ConversationService:
 
         await self._sessions.append_history(snapshot, role="user", content=request.text)
 
-        # DB-bound short paths (must run before P1-I release_db).
-        memory_result = await self._maybe_capture_memory(request, convo, snapshot)
-        if memory_result is not None:
-            await self._sessions.release_db()
-            return memory_result
-
-        summary_result = await self._maybe_client_work_summary(request, convo, snapshot)
-        if summary_result is not None:
-            await self._sessions.release_db()
-            return summary_result
-
+        # Optional business-client attach is context enrichment only (not Product Decision).
         await self._attach_business_client(request.text, convo, snapshot)
 
         # P1-I: release DB session after short persistence before LLM/classify.
@@ -609,43 +598,6 @@ class ConversationService:
             )
         return state_dict
 
-    async def _ask_clarification_from_incomplete(
-        self,
-        request: UserMessageRequest,
-        convo: ConversationState,
-        state: dict[str, Any],
-        missing: list[str],
-        progress_message_id: int | None,
-    ) -> dict[str, Any]:
-        """Convert an incomplete document step into a resumable clarification."""
-        understanding = state.get("understanding") or {}
-        original_goal = str(understanding.get("goal") or convo.last_user_input or request.text)
-        convo.flow_mode = FlowMode.PENDING_CLARIFICATION
-        convo.pending_clarification = PendingClarification(
-            original_goal=original_goal,
-            original_user_input=convo.last_user_input or request.text,
-            intent="ASK_CLARIFICATION",
-            missing_information=missing,
-            understanding=understanding if isinstance(understanding, dict) else {},
-        )
-        await self._store.save(convo)
-
-        text = format_clarification_question(missing)
-        await self._notifier.clear_progress(request.chat_id, progress_message_id)
-        send_result = await self._notifier.send_text(request.chat_id, text)
-        await self._sessions.append_history(
-            {"active_session_id": convo.session_id, "workspace_id": convo.workspace_id},
-            role="assistant",
-            content=text,
-        )
-        return {
-            "execution_id": state.get("execution_id"),
-            "status": "clarification",
-            "reply": text,
-            "send_result": send_result,
-            "progress_message_id": progress_message_id,
-        }
-
     async def _deliver_outcome(
         self,
         request: UserMessageRequest,
@@ -671,16 +623,14 @@ class ConversationService:
             }
 
         if status in {"execution_failed", "failed"} or status.endswith("_failed"):
-            # A document step that could not draft anything reports missing_information.
-            # Turn that into a resumable clarification instead of a dead-end error.
-            missing = extract_creation_missing_information(state)
-            if missing:
-                return await self._ask_clarification_from_incomplete(
-                    request, convo, state, missing, progress_message_id
-                )
+            # Honesty first: never invent ASK_CLARIFICATION here. Only Executive may
+            # choose that Product Decision on a subsequent user turn.
             convo.flow_mode = FlowMode.FAILED
             await self._store.save(convo)
             reason = extract_failure_reason(state)
+            missing = extract_creation_missing_information(state)
+            if missing and not reason:
+                reason = "; ".join(missing)
             text = format_error_message(reason)
             send_result = await self._notifier.send_retry(
                 request.chat_id,
@@ -813,7 +763,8 @@ class ConversationService:
         }
         await self._sessions.append_history(snapshot, role="assistant", content=str(reply))
 
-        if self._memory_capture is not None:
+        # Post-action memory hook only — never a pre-Executive keyword router.
+        if self._memory_capture is not None and status == "completed":
             await self._memory_capture.persist_candidates(state.get("memory_candidates") or [])
 
         return {
@@ -824,69 +775,6 @@ class ConversationService:
             "workspace_id": convo.workspace_id,
             "send_result": send_result,
             "progress_message_id": progress_message_id,
-        }
-
-    async def _maybe_capture_memory(
-        self,
-        request: UserMessageRequest,
-        convo: ConversationState,
-        snapshot: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        if self._memory_capture is None:
-            return None
-        fact = self._memory_capture.detect(request.text)
-        if not fact:
-            return None
-        client_id = convo.business_client_id or snapshot.get("client_id")
-        result = await self._memory_capture.capture(
-            fact,
-            client_id=client_id,
-            project_id=snapshot.get("active_project_id"),
-            session_id=snapshot.get("active_session_id"),
-        )
-        await self._sessions.append_history(snapshot, role="assistant", content=result.reply)
-        send_result = await self._notifier.send_text(
-            request.chat_id,
-            result.reply,
-            reply_to_message_id=request.message_id,
-        )
-        return {
-            "status": "completed",
-            "intent": "memory_capture",
-            "reply": result.reply,
-            "stored": result.stored,
-            "workspace_id": convo.workspace_id,
-            "send_result": send_result,
-        }
-
-    async def _maybe_client_work_summary(
-        self,
-        request: UserMessageRequest,
-        convo: ConversationState,
-        snapshot: dict[str, Any],
-    ) -> dict[str, Any] | None:
-        if self._client_work_summary is None:
-            return None
-        name = detect_client_status_query(request.text)
-        if not name:
-            return None
-        summary = await self._client_work_summary.summarize(name)
-        if summary is None:
-            text = f"Не нашёл клиента «{name}» в базе. Создайте его задачей или уточните название."
-        else:
-            text = self._client_work_summary.format_reply(summary)
-        await self._sessions.append_history(snapshot, role="assistant", content=text)
-        send_result = await self._notifier.send_text(
-            request.chat_id,
-            text,
-            reply_to_message_id=request.message_id,
-        )
-        return {
-            "status": "completed",
-            "intent": "client_work_summary",
-            "reply": text,
-            "workspace_id": convo.workspace_id,
-            "send_result": send_result,
         }
 
     async def _attach_business_client(
@@ -1106,13 +994,8 @@ class ConversationService:
         if conversation.get("messages"):
             context["conversation_history"] = list(conversation["messages"])
         if pending is not None:
+            # Facts only — no coaching rules that steer Product Decision.
             context["pending_clarification"] = pending.model_dump(mode="json")
-            context["conversation_note"] = (
-                "There is a pending clarification for a previous task. "
-                "If the user is answering that clarification, continue the original task. "
-                "If the user changed the topic to casual chat, RESPOND. "
-                "If the user started a different deliverable, treat it as a new task."
-            )
         metadata = {
             **request.metadata,
             "client_id": effective_client_id,

@@ -53,6 +53,7 @@ class AnalyticsSkill(BaseSkill):
                     name="analytics",
                     description="Аналитика и отчёты по клиентам, проектам, качеству и исполнениям",
                     category="analytics",
+                    critical=False,
                 ),
             ],
         )

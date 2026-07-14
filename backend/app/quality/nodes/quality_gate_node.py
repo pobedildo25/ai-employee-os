@@ -82,13 +82,35 @@ class QualityGateNode:
             review_result.status == ReviewStatus.REVISE and not can_auto_revise(revision_count)
         )
 
+        # Never rewrite upstream execution failure into a success-shaped status.
+        upstream_status = str(state.get("status") or "")
+        task_execution = state.get("task_execution") or {}
+        task_exec_status = str(
+            task_execution.get("status") if isinstance(task_execution, dict) else ""
+        ).upper()
+        upstream_failed = (
+            upstream_status in {"execution_failed", "failed"}
+            or upstream_status.endswith("_failed")
+            or task_exec_status == "FAILED"
+        )
+        if upstream_failed:
+            outgoing_status = (
+                upstream_status
+                if upstream_status in {"execution_failed", "failed"} or upstream_status.endswith("_failed")
+                else "execution_failed"
+            )
+        elif waiting_user:
+            outgoing_status = "waiting_user_revision"
+        else:
+            outgoing_status = "completed"
+
         update = {
             "current_step": self.name,
             "review_result": review_result.model_dump(mode="json"),
             "revision_request": revision_request.model_dump(mode="json") if revision_request else None,
             "quality_check": quality_check,
             "revision_count": revision_count,
-            "status": "waiting_user_revision" if waiting_user else "completed",
+            "status": outgoing_status,
             "result": {
                 "execution_context": state.get("execution_context"),
                 "understanding": state.get("understanding"),

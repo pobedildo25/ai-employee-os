@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.clients.work_summary import ClientWorkSummaryService, detect_client_status_query
+from app.clients.work_summary import ClientWorkSummaryService
 
 
 @dataclass
@@ -61,23 +61,10 @@ class FakeArtifacts:
         return [a for a in self._artifacts if a.project_id == project_id][skip : skip + limit]
 
 
-@pytest.mark.parametrize(
-    "text,expected_name",
-    [
-        ("что сделано по клиенту Яндекс", "Яндекс"),
-        ("покажи проекты Acme", "Acme"),
-        ("какие проекты у клиента Сбер", "Сбер"),
-        ("сделай КП для Яндекса", None),  # not a status query
-        ("привет", None),
-    ],
-)
-def test_detect_client_status_query(text: str, expected_name: str | None) -> None:
-    result = detect_client_status_query(text)
-    if expected_name is None:
-        assert result is None
-    else:
-        assert result is not None
-        assert result.lower().startswith(expected_name.lower()[:4])
+def test_no_keyword_status_router() -> None:
+    import app.clients.work_summary as mod
+
+    assert not hasattr(mod, "detect_client_status_query")
 
 
 @pytest.mark.asyncio

@@ -222,7 +222,8 @@ async def test_executive_graph_full_workflow(settings: Settings) -> None:
         trace_id="trace-exec",
     )
 
-    assert result["status"] == "completed"
+    # QualityGate must not rewrite upstream failure into completed (F4).
+    assert result["status"] == "execution_failed"
     assert result["trace_id"] == "trace-exec"
     assert result["result"]["understanding"]["goal"] == "анализ документа"
     assert result["result"]["decision"]["action"] == "EXECUTE"

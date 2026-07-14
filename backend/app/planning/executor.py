@@ -129,7 +129,7 @@ class TaskExecutor(TaskExecutorInterface):
                         status,
                     )
                     if not is_retryable_failure(status) or not should_retry_step(step, attempt):
-                        if _giveup_is_tolerable(step, execution):
+                        if _giveup_is_tolerable(step, execution, registry):
                             return True
                         return False
                     step.status = StepStatus.PENDING
@@ -160,7 +160,7 @@ class TaskExecutor(TaskExecutorInterface):
                     exc,
                 )
                 if not should_retry_step(step, attempt):
-                    if _giveup_is_tolerable(step, execution):
+                    if _giveup_is_tolerable(step, execution, registry):
                         return True
                     return False
                 step.status = StepStatus.PENDING
@@ -189,9 +189,13 @@ class TaskExecutor(TaskExecutorInterface):
         return await skill.execute(payload)
 
 
-def _giveup_is_tolerable(step: PlanStep, execution: TaskExecution) -> bool:
+def _giveup_is_tolerable(
+    step: PlanStep,
+    execution: TaskExecution,
+    registry: CapabilityRegistry | None = None,
+) -> bool:
     """Non-critical enrichment steps degrade to skipped instead of failing the task."""
-    if is_critical_capability(step.capability):
+    if is_critical_capability(step.capability, registry):
         return False
     reason = "enrichment unavailable"
     if isinstance(step.result, dict):

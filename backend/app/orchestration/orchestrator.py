@@ -248,7 +248,7 @@ class Orchestrator(OrchestratorInterface):
                         status,
                     )
                     if not is_retryable_failure(status) or not should_retry_step(step, attempt):
-                        if self._giveup_is_tolerable(step, node, execution, trace_id):
+                        if self._giveup_is_tolerable(step, node, execution, trace_id, registry):
                             return True
                         return False
                     step.status = StepStatus.PENDING
@@ -279,7 +279,7 @@ class Orchestrator(OrchestratorInterface):
                     exc,
                 )
                 if not should_retry_step(step, attempt):
-                    if self._giveup_is_tolerable(step, node, execution, trace_id):
+                    if self._giveup_is_tolerable(step, node, execution, trace_id, registry):
                         return True
                     return False
                 step.status = StepStatus.PENDING
@@ -291,9 +291,10 @@ class Orchestrator(OrchestratorInterface):
         node: ExecutionGraphNode,
         execution: TaskExecution,
         trace_id: str,
+        registry: CapabilityRegistry | None = None,
     ) -> bool:
         """Non-critical enrichment steps degrade to skipped instead of failing the task."""
-        if is_critical_capability(step.capability):
+        if is_critical_capability(step.capability, registry):
             return False
         reason = node.error or "enrichment unavailable"
         step.status = StepStatus.COMPLETED

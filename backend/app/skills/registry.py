@@ -85,6 +85,18 @@ class CapabilityRegistry:
 
         return results
 
+    def is_capability_critical(self, capability_name: str | None) -> bool:
+        """Return capability criticality from registry metadata.
+
+        Unknown capabilities default to critical (fail-closed).
+        """
+        if not capability_name:
+            return True
+        capability = self._capabilities.get(capability_name)
+        if capability is None:
+            return True
+        return bool(capability.critical)
+
     def get_skill_for_capability(self, capability_name: str) -> Skill | None:
         skill_id = self._capability_to_skill.get(capability_name)
         if skill_id is None:

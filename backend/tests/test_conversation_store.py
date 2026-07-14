@@ -89,6 +89,19 @@ class _FakeRedis:
     async def delete(self, key: str) -> int:
         return 1 if self._data.pop(key, None) is not None else 0
 
+    async def eval(self, script: str, numkeys: int, *keys_and_args: str) -> int:
+        """Support lock release/renew Lua used by RedisConversationStore."""
+        keys = list(keys_and_args[:numkeys])
+        args = list(keys_and_args[numkeys:])
+        key = keys[0]
+        token = args[0]
+        if "expire" in script:
+            return 1 if self._data.get(key) == token else 0
+        if self._data.get(key) == token:
+            self._data.pop(key, None)
+            return 1
+        return 0
+
 
 @pytest.fixture
 def settings() -> Settings:

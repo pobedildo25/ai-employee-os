@@ -3,10 +3,18 @@ from uuid import UUID
 
 from app.revision.manager import RevisionManager
 from app.revision.memory_preparer import prepare_revision_memory_items
-from app.revision.models import RevisionRequest
+from app.revision.models import RevisionRequest, RevisionStatus
 from app.revision.parsers.feedback_parser import build_revision_request_from_review
 from app.skills.base.skill import BaseSkill
 from app.skills.models import Capability, SkillMetadata
+
+
+def _skill_status_from_revision(status: RevisionStatus) -> str:
+    if status == RevisionStatus.COMPLETED:
+        return "completed"
+    if status == RevisionStatus.WAITING_USER:
+        return "waiting_user"
+    return "failed"
 
 
 class RevisionSkill(BaseSkill):
@@ -103,7 +111,7 @@ class RevisionSkill(BaseSkill):
         )
 
         return {
-            "status": "completed",
+            "status": _skill_status_from_revision(result.status),
             "skill": self.name(),
             "revision_result": result.model_dump(mode="json"),
             "memory_candidates": [item.model_dump(mode="json") for item in memory_items],

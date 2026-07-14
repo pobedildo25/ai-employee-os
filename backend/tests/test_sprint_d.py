@@ -65,6 +65,15 @@ async def test_telegram_idempotency_claim() -> None:
 
 
 @pytest.mark.asyncio
+async def test_telegram_idempotency_fail_closed_on_redis_error() -> None:
+    class BrokenRedis:
+        async def set(self, key: str, value: str, ex: int | None = None, nx: bool = False):
+            raise RuntimeError("redis down")
+
+    assert await claim_telegram_update(BrokenRedis(), 7) is False
+
+
+@pytest.mark.asyncio
 async def test_redis_rate_limiter_fixed_window() -> None:
     redis = FakeRedis()
     limiter = RedisRateLimiter(redis, limit=2, window_seconds=60)

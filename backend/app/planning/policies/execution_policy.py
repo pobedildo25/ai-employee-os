@@ -21,23 +21,17 @@ def is_retryable_failure(status: str | None) -> bool:
     return status not in NON_RETRYABLE_SKILL_STATUSES
 
 
-# Enrichment capabilities improve a deliverable but are not required to produce it.
-# If one of these fails (e.g. client_intelligence with no stored client, a research
-# outage), the pipeline must still deliver the document — degrade gracefully instead
-# of failing the whole task. The actual deliverable steps (document_creation,
-# document_rendering, presentation_design, document_revision) remain critical.
-NON_CRITICAL_CAPABILITIES = frozenset(
-    {
-        "research",
-        "strategy_analysis",
-        "analytics",
-        "client_intelligence",
-    }
-)
+def is_critical_capability(
+    capability: str | None,
+    registry: Any | None = None,
+) -> bool:
+    """Criticality comes from Capability Registry metadata — never hard-coded names.
 
-
-def is_critical_capability(capability: str | None) -> bool:
-    return capability not in NON_CRITICAL_CAPABILITIES
+    Without a registry, unknown capabilities are treated as critical (fail-closed).
+    """
+    if registry is not None and hasattr(registry, "is_capability_critical"):
+        return bool(registry.is_capability_critical(capability))
+    return True
 
 # Re-export decision-engine policies for planning/orchestration callers.
 should_plan = should_invoke_planner

@@ -120,6 +120,7 @@ async def test_workspace_context_provider(service: WorkspaceService, client_id, 
     assert list(CONTEXT_PRIORITY) == [
         "user_input",
         "current_task",
+        "agency_context",
         "project_context",
         "client_context",
         "artifact_context",
@@ -136,6 +137,7 @@ def test_workspace_context_does_not_change_priority() -> None:
     context = ExecutionContext(
         user_input="hello",
         current_task={"title": "task"},
+        agency_context={"agency_name": "NOVA"},
         project_context={"name": "Project"},
         client_context={"name": "Client"},
         artifact_context=[{"name": "doc.pdf"}],
@@ -148,7 +150,8 @@ def test_workspace_context_does_not_change_priority() -> None:
         conversation_history=[{"role": "user", "content": "hi"}],
     )
     ordered = build_prioritized_context(context)
-    assert list(ordered.keys())[: len(CONTEXT_PRIORITY)] == list(CONTEXT_PRIORITY)
+    priority_present = [key for key in CONTEXT_PRIORITY if key in ordered]
+    assert list(ordered.keys())[: len(priority_present)] == priority_present
     assert ordered["workspace_context"]["workspace_id"] == "ws-1"
 
 

@@ -131,15 +131,33 @@ class RedisCheckpointManager(CheckpointManager):
 
 
 def create_checkpoint_manager(settings: Settings | None = None) -> CheckpointManager:
-    """Production → RedisCheckpointManager; otherwise InMemory (tests/dev)."""
+    """Use Redis whenever redis_url is configured — independent of APP_ENV.
+
+    Falls back to in-memory only when Redis is unset (unit tests) or unavailable
+    outside production. Production refuse silent fallback.
+    """
     cfg = settings or get_settings()
-    if cfg.is_production:
-        logger.info(
-            "using RedisCheckpointManager | ttl_seconds=%s",
-            cfg.checkpoint_ttl_seconds,
-        )
-        return RedisCheckpointManager(
-            cfg.redis_url,
-            ttl_seconds=cfg.checkpoint_ttl_seconds,
-        )
+    redis_url = (cfg.redis_url or "").strip()
+    if redis_url:
+        try:
+            manager = RedisCheckpointManager(
+                redis_url,
+                ttl_seconds=cfg.checkpoint_ttl_seconds,
+            )
+            # Touch Redis so misconfiguration fails at wiring time.
+            manager.get_checkpointer()
+            logger.info(
+                "using RedisCheckpointManager | ttl_seconds=%s",
+                cfg.checkpoint_ttl_seconds,
+            )
+            return manager
+        except Exception as exc:
+            if cfg.is_production:
+                raise RuntimeError(
+                    "RedisCheckpointManager required but Redis is unavailable"
+                ) from exc
+            logger.warning(
+                "RedisCheckpointManager unavailable, falling back to in-memory | error=%s",
+                exc,
+            )
     return InMemoryCheckpointManager()

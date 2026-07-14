@@ -53,6 +53,7 @@ class StrategySkill(BaseSkill):
                     name="strategy_analysis",
                     description="Маркетинговая/бизнес-стратегия, SWOT, позиционирование и рекомендации",
                     category="strategy",
+                    critical=False,
                 ),
             ],
         )

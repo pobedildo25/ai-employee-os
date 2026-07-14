@@ -101,13 +101,15 @@ def test_empty_hints_uses_default_document_pipeline(registry) -> None:
     assert ordered == ["document_creation", "document_rendering"]
 
 
-def test_all_unknown_falls_back_to_default_pipeline(registry) -> None:
-    ordered = resolve_capability_graph(
-        {"action": "EXECUTE"},
-        {"required_capabilities": ["not_a_real_cap"]},
-        registry,
-    )
-    assert ordered == ["document_creation", "document_rendering"]
+def test_all_unknown_hints_fail_closed(registry) -> None:
+    from app.skills.capability_resolver import CapabilityResolutionError
+
+    with pytest.raises(CapabilityResolutionError):
+        resolve_capability_graph(
+            {"action": "EXECUTE"},
+            {"required_capabilities": ["not_a_real_cap"]},
+            registry,
+        )
 
 
 def test_partial_hint_expands_render_dependency(registry) -> None:

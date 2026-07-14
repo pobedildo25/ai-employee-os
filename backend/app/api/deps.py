@@ -223,33 +223,27 @@ def get_analytics_manager(
 
 
 @lru_cache
-def get_research_manager_singleton() -> ResearchManager:
-    """Process-local research cache so GET /research/{id} can resolve prior runs."""
+def get_research_manager_singleton() -> ResearchManager | None:
+    """Process-local research cache so GET /research/{id} can resolve prior runs.
+
+    Disabled ≠ Mock: when research_enabled=False, return None (absent), never a
+    mock manager that could report completed success.
+    """
     from app.core.config import get_settings
     from app.research.factory import create_research_manager
 
     settings = get_settings()
     if not settings.research_enabled:
-        # DI wiring when flag off — manager exists but API/registry refuse use.
-        from app.research.manager import ResearchManager
-        from app.research.providers.mock_provider import MockProvider
-        from app.research.providers.search_provider import SearchProvider
-        from app.research.researcher import Researcher
-
-        gateway = create_llm_gateway()
-        return ResearchManager(
-            researcher=Researcher(SearchProvider(MockProvider()), llm_gateway=gateway),
-            llm_gateway=gateway,
-        )
+        return None
     return create_research_manager(settings, llm_gateway=create_llm_gateway(settings))
 
 
 def get_research_manager(
     llm_gateway: LLMGateway = Depends(get_llm_gateway),
-) -> ResearchManager:
-    # Reuse singleton cache; refresh researcher gateway when provided.
-    manager = get_research_manager_singleton()
-    return manager
+) -> ResearchManager | None:
+    # Reuse singleton cache. Callers that require research must 503 when None.
+    _ = llm_gateway
+    return get_research_manager_singleton()
 
 
 @lru_cache
@@ -273,7 +267,7 @@ def get_context_builder(
     learning_manager: LearningManager = Depends(get_learning_manager),
     workspace_service: WorkspaceService = Depends(get_workspace_service),
     client_intelligence_manager: ClientIntelligenceManager = Depends(get_client_intelligence_manager),
-    research_manager: ResearchManager = Depends(get_research_manager),
+    research_manager: ResearchManager | None = Depends(get_research_manager),
 ) -> ContextBuilder:
     return create_context_builder(
         client_repository=client_repository,

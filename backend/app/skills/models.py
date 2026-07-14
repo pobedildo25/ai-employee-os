@@ -7,6 +7,9 @@ class Capability(BaseModel):
     name: str
     description: str
     category: str
+    # When False, Orchestrator may degrade a failed step without failing the task.
+    # Declared by the Capability Registry / skill — never hard-coded by name elsewhere.
+    critical: bool = True
 
 
 class SkillMetadata(BaseModel):

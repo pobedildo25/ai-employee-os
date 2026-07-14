@@ -106,7 +106,9 @@ async def test_create_plan_linear_caps_uses_direct_plan_without_llm(settings: Se
     update = await node(state)
 
     assert update["status"] == "direct_plan_ready"
-    assert len(update["task_plan"]["steps"]) == 2
+    # Resolver auto-completes presentation_design → document_rendering.
+    caps = [step["capability"] for step in update["task_plan"]["steps"]]
+    assert caps == ["strategy_analysis", "presentation_design", "document_rendering"]
     assert provider.calls == []
 
 

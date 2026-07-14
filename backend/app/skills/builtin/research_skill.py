@@ -60,6 +60,7 @@ class ResearchSkill(BaseSkill):
                     name="research",
                     description="Исследование рынка, конкурентов и внешних источников",
                     category="research",
+                    critical=False,
                 ),
             ],
         )
@@ -96,8 +97,18 @@ class ResearchSkill(BaseSkill):
             max_sources=int(payload.get("max_sources") or 8),
         )
         result = await self._manager.run(request, trace_id=str(payload.get("trace_id") or "-"))
+        meta_status = str((result.metadata or {}).get("status") or "")
+        # Mock / disabled-style research must never present as product success.
+        # Use non-retryable ``incomplete`` so Orchestrator does not burn retries
+        # on a deterministic mock outcome (Mock ≠ completed, Mock ≠ success).
+        if meta_status in {"mock_not_production", "invalid_request"} or meta_status.startswith("mock"):
+            skill_status = "incomplete"
+        elif meta_status == "incomplete" or not result.document_ast:
+            skill_status = "incomplete"
+        else:
+            skill_status = "completed"
         return {
-            "status": "completed" if result.document_ast else "incomplete",
+            "status": skill_status,
             "skill": self.name(),
             "research_result": result.model_dump(mode="json"),
             "research_id": str(result.id),

@@ -39,7 +39,6 @@ from app.repositories.sqlalchemy_artifact_version_repository import SQLAlchemyAr
 from app.repositories.sqlalchemy_client_repository import SQLAlchemyClientRepository
 from app.repositories.sqlalchemy_project_repository import SQLAlchemyProjectRepository
 from app.document_renderer.renderer import RenderArtifactService
-from app.research.manager import ResearchManager
 from app.services.artifact_service import ArtifactService
 from app.skills.registry import create_capability_registry
 from app.storage.minio_storage import MinioStorage
@@ -101,7 +100,8 @@ def build_telegram_bot(
 
         research_manager = create_research_manager(settings, llm_gateway=llm_gateway)
     else:
-        research_manager = ResearchManager(llm_gateway=llm_gateway)
+        # Disabled ≠ Mock. Off means absent from the optional research path.
+        research_manager = None
     agency_profile = build_agency_profile(settings)
     context_builder = create_context_builder(
         client_repository=client_repository,

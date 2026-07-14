@@ -140,7 +140,8 @@ def resolve_capability_graph(
     Ownership:
     - Executive hints are optional soft suggestions.
     - Empty hints → default linear document pipeline (if registered).
-    - Unknown / disabled capabilities are dropped.
+    - Non-empty hints that resolve to zero valid capabilities → fail closed.
+    - Unknown / disabled capabilities are dropped from a mixed hint list.
     - Dependency edges complete partial pipelines.
     - Remaining names are reordered by ``CAPABILITY_ORDER``.
     - Empty result after defaults + filtering fails closed.
@@ -153,7 +154,11 @@ def resolve_capability_graph(
     hint = _extract_hint(understanding)
     if hint:
         valid = _available_names(registry, hint)
-        seed = valid if valid else _default_pipeline(registry)
+        if not valid:
+            raise CapabilityResolutionError(
+                f"no valid capabilities for hints={hint!r}; refusing document pipeline fallback"
+            )
+        seed = valid
     else:
         seed = _default_pipeline(registry)
 

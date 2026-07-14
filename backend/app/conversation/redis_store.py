@@ -19,13 +19,31 @@ logger = logging.getLogger(__name__)
 
 FSM_KEY = "conversation:fsm:{user_id}"
 LOCK_KEY = "conversation:lock:{user_id}"
-LOCK_TTL_SECONDS = 30
-LOCK_WAIT_SECONDS = 30
+# Must cover Executive classify LLM latency; renewed while held.
+LOCK_TTL_SECONDS = 120
+LOCK_RENEW_INTERVAL_SECONDS = 30
+LOCK_WAIT_SECONDS = 60
 LOCK_POLL_INTERVAL = 0.05
+
+_RELEASE_LOCK_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('del', KEYS[1])
+else
+  return 0
+end
+"""
+
+_RENEW_LOCK_SCRIPT = """
+if redis.call('get', KEYS[1]) == ARGV[1] then
+  return redis.call('expire', KEYS[1], ARGV[2])
+else
+  return 0
+end
+"""
 
 
 class RedisConversationStore:
-    """Durable FSM state in Redis with per-user distributed lock."""
+    """Durable FSM state in Redis with per-user distributed lock + heartbeat."""
 
     def __init__(self, client: aioredis.Redis, settings: Settings) -> None:
         self._client = client
@@ -79,6 +97,16 @@ class RedisConversationStore:
         state.last_execution_id = None
         await self.save(state)
 
+    async def _renew_lock(self, key: str, token: str) -> bool:
+        renewed = await self._client.eval(
+            _RENEW_LOCK_SCRIPT,
+            1,
+            key,
+            token,
+            str(LOCK_TTL_SECONDS),
+        )
+        return bool(renewed)
+
     @asynccontextmanager
     async def user_lock(self, user_id: int) -> AsyncIterator[None]:
         key = LOCK_KEY.format(user_id=user_id)
@@ -91,13 +119,37 @@ class RedisConversationStore:
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"conversation lock timeout for user_id={user_id}")
             await asyncio.sleep(LOCK_POLL_INTERVAL)
+
+        stop_heartbeat = asyncio.Event()
+
+        async def _heartbeat() -> None:
+            while not stop_heartbeat.is_set():
+                try:
+                    await asyncio.wait_for(
+                        stop_heartbeat.wait(),
+                        timeout=LOCK_RENEW_INTERVAL_SECONDS,
+                    )
+                    return
+                except TimeoutError:
+                    ok = await self._renew_lock(key, token)
+                    if not ok:
+                        logger.warning(
+                            "conversation lock renew failed (lost) | user_id=%s",
+                            user_id,
+                        )
+                        return
+
+        heartbeat_task = asyncio.create_task(_heartbeat())
         try:
             yield
         finally:
-            current = await self._client.get(key)
-            if current == token:
-                await self._client.delete(key)
-            else:
+            stop_heartbeat.set()
+            try:
+                await heartbeat_task
+            except Exception:  # noqa: BLE001
+                pass
+            released = await self._client.eval(_RELEASE_LOCK_SCRIPT, 1, key, token)
+            if not released:
                 logger.warning(
                     "conversation lock lost or expired before release | user_id=%s",
                     user_id,

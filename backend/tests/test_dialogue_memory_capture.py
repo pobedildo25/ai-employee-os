@@ -38,21 +38,11 @@ def _manager(enabled: bool = True) -> tuple[MemoryManager, InMemoryStore]:
     return manager, long_term
 
 
-@pytest.mark.parametrize(
-    "text,expected",
-    [
-        ("запомни, что мы работаем с Яндексом", "мы работаем с Яндексом"),
-        ("Запомни: дедлайн в пятницу", "дедлайн в пятницу"),
-        ("запиши что клиент любит короткие письма", "клиент любит короткие письма"),
-        ("remember that the client prefers PDF", "the client prefers PDF"),
-        ("сделай КП для Яндекса", None),
-        ("запомни", None),
-    ],
-)
-def test_detect(text: str, expected: str | None) -> None:
+def test_no_keyword_detect_router() -> None:
+    """Memory capture must not expose keyword/imperative Product Decision routing."""
     manager, _ = _manager()
     capture = DialogueMemoryCapture(manager)
-    assert capture.detect(text) == expected
+    assert not hasattr(capture, "detect")
 
 
 @pytest.mark.asyncio

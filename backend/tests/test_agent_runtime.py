@@ -281,19 +281,22 @@ def test_redis_checkpoint_manager_raises_when_redis_unavailable() -> None:
         RedisCheckpointManager("redis://unused", client=BoomRedis())  # type: ignore[arg-type]
 
 
-def test_create_checkpoint_manager_defaults_to_memory() -> None:
-    manager = create_checkpoint_manager(Settings(app_env="development"))
+def test_create_checkpoint_manager_defaults_to_memory_without_redis() -> None:
+    manager = create_checkpoint_manager(Settings(app_env="development", redis_url=""))
     assert isinstance(manager, InMemoryCheckpointManager)
 
 
-def test_create_checkpoint_manager_production_uses_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_checkpoint_manager_uses_redis_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fake = _FakeRedis()
     monkeypatch.setattr(
         "app.agent_runtime.checkpoint.manager.redis.from_url",
         lambda *_args, **_kwargs: fake,
     )
+    # Independent of APP_ENV — any env with redis_url uses Redis.
     manager = create_checkpoint_manager(
-        Settings(app_env="production", redis_url="redis://localhost:6379/15")
+        Settings(app_env="development", redis_url="redis://localhost:6379/15")
     )
     assert isinstance(manager, RedisCheckpointManager)
     assert isinstance(manager.get_checkpointer(), RedisCheckpointSaver)

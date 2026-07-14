@@ -56,6 +56,7 @@ class ClientIntelligenceSkill(BaseSkill):
                     name="client_intelligence",
                     description="Профиль клиента: предпочтения, стиль, риски и рекомендации",
                     category="intelligence",
+                    critical=False,
                 ),
             ],
         )

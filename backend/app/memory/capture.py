@@ -1,15 +1,13 @@
-"""Capture explicit "запомни, что…" notes from dialogue into durable memory.
+"""Post-action durable memory persistence (not a decision / keyword router).
 
-Users expect a ChatGPT-like assistant to remember things they tell it between
-sessions. This detects an explicit imperative to remember, extracts the fact,
-and persists it as a durable FACT/PREFERENCE (Postgres long-term memory), so it
-is recalled into context on future turns via the MemoryContextProvider.
+Product Decision stays with Executive. This module only persists
+``memory_candidates`` already emitted by skills / runtime after a successful
+action. No regex / imperative routing on raw user text.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -17,13 +15,6 @@ from app.memory.manager import MemoryManager, MemoryRetentionError
 from app.memory.models import MemoryItem, MemoryType
 
 logger = logging.getLogger(__name__)
-
-# Leading imperative markers that mean "store this".
-_IMPERATIVE_PATTERN = re.compile(
-    r"^\s*(?:запомни|запиши|заметь|не\s+забудь|имей\s+в\s+виду|remember|note)"
-    r"[\s,:—-]*(?:что|then|that)?[\s,:—-]*",
-    re.IGNORECASE,
-)
 
 _PREFERENCE_MARKERS = (
     "предпочит",
@@ -50,19 +41,6 @@ class DialogueMemoryCapture:
     def __init__(self, memory_manager: MemoryManager) -> None:
         self._memory = memory_manager
 
-    def detect(self, text: str) -> str | None:
-        """Return the fact to remember when the message is a remember-imperative."""
-        if not text:
-            return None
-        match = _IMPERATIVE_PATTERN.match(text)
-        if not match:
-            return None
-        fact = text[match.end() :].strip().strip("\"'«»").strip()
-        # Require some substance beyond the bare command word.
-        if len(fact) < 3:
-            return None
-        return fact
-
     async def capture(
         self,
         fact: str,
@@ -72,6 +50,7 @@ class DialogueMemoryCapture:
         session_id: str | None = None,
         source: str = "user",
     ) -> MemoryCaptureResult:
+        """Persist an already-decided fact (caller must not use keyword routing)."""
         if not self._memory.enabled:
             return MemoryCaptureResult(
                 stored=False,
@@ -92,7 +71,7 @@ class DialogueMemoryCapture:
             client_id=_as_uuid(client_id),
             project_id=_as_uuid(project_id),
             session_id=session_id,
-            metadata={"kind": "user_note", "captured_from": "dialogue"},
+            metadata={"kind": "user_note", "captured_from": "post_action"},
         )
         try:
             await self._memory.remember(item)
@@ -110,9 +89,7 @@ class DialogueMemoryCapture:
     async def persist_candidates(self, candidates: list[dict]) -> int:
         """Persist memory_candidates emitted by skills (retention-filtered, deduped).
 
-        Skills prepare candidate facts/preferences about their work but never
-        auto-save them. After a successful run we durably store the eligible ones
-        so the assistant remembers what it did and learns across sessions.
+        Post-action hook after a successful run — never a pre-Executive router.
         """
         if not self._memory.enabled or not candidates:
             return 0

@@ -1,79 +1,19 @@
-"""Answer "что сделано по клиенту X" from the database.
+"""Answer client work history from the database (tool/service — not a router).
 
-Reads the client's projects and artifacts and formats a concise chat answer, so
-the user can ask what work exists for a client without leaving the dialogue.
+Must not be used for keyword / regex Product Decision. Executive owns intent;
+callers may use ``summarize`` only after a Product Decision that needs history.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
 
-from app.clients.name_extractor import extract_subject_heuristic
 from app.repositories.artifact_repository import ArtifactRepository
 from app.repositories.client_repository import ClientRepository
 from app.repositories.project_repository import ProjectRepository
 
 logger = logging.getLogger(__name__)
-
-_STATUS_TRIGGERS = (
-    "что сделано",
-    "что сделал",
-    "что делали",
-    "что готово",
-    "что по клиент",
-    "что у нас по",
-    "статус по",
-    "статус клиент",
-    "истори",
-    "какие проект",
-    "покажи проект",
-    "что мы делали",
-    "что уже сделан",
-)
-
-
-_PROPER_NOUN = re.compile(r"[«\"']?([A-ZА-ЯЁ][\wА-Яа-яЁё&.\-]{1,40})")
-
-# Capitalized query words that are not client names.
-_NAME_STOPWORDS = frozenset(
-    {
-        "что",
-        "какие",
-        "какой",
-        "покажи",
-        "статус",
-        "история",
-        "клиент",
-        "клиента",
-        "клиенту",
-        "проект",
-        "проекты",
-        "бренд",
-        "компания",
-        "компании",
-    }
-)
-
-
-def detect_client_status_query(text: str) -> str | None:
-    """Return the client name when the message asks about work done for a client."""
-    if not text:
-        return None
-    lowered = text.lower()
-    if not any(trigger in lowered for trigger in _STATUS_TRIGGERS):
-        return None
-
-    name = extract_subject_heuristic(text)
-    if name:
-        return name
-
-    # Fallback: the trailing proper noun that is not a query keyword.
-    for token in reversed(_PROPER_NOUN.findall(text)):
-        if token.casefold() not in _NAME_STOPWORDS:
-            return token.strip("«»\"'")
-    return None
 
 
 @dataclass
