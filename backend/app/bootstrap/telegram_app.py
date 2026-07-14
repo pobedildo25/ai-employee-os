@@ -8,12 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.telegram.bot import TelegramBot
 from app.adapters.telegram.factory import create_telegram_bot
+from app.agency.profile import build_agency_profile
 from app.agent_runtime.checkpoint.manager import create_checkpoint_manager
 from app.agent_runtime.runtime import create_agent_runtime
 from app.agents.executive.agent import ExecutiveAgent
 from app.client_intelligence.analyzer import ClientIntelligenceAnalyzer
 from app.client_intelligence.builder import ClientIntelligenceBuilder
 from app.client_intelligence.manager import ClientIntelligenceManager
+from app.clients.resolver import BusinessClientResolver
+from app.clients.work_summary import ClientWorkSummaryService
 from app.context.builder import create_context_builder
 from app.context.providers.workspace_history_provider import WorkspaceHistoryProvider
 from app.conversation.store import create_conversation_store
@@ -24,6 +27,7 @@ from app.knowledge.stores.postgres_store import PostgresKnowledgeStore
 from app.learning.manager import LearningManager
 from app.learning.providers.postgres_learning_store import PostgresLearningStore
 from app.llm.gateway import create_llm_gateway
+from app.memory.capture import DialogueMemoryCapture
 from app.memory.long_term.postgres_memory import PostgresLongTermMemory
 from app.memory.manager import create_memory_manager
 from app.memory.semantic.qdrant_memory import create_semantic_memory
@@ -98,6 +102,7 @@ def build_telegram_bot(
         research_manager = create_research_manager(settings, llm_gateway=llm_gateway)
     else:
         research_manager = ResearchManager(llm_gateway=llm_gateway)
+    agency_profile = build_agency_profile(settings)
     context_builder = create_context_builder(
         client_repository=client_repository,
         project_repository=project_repository,
@@ -112,6 +117,7 @@ def build_telegram_bot(
         workspace_service=workspace_service,
         client_intelligence_manager=intelligence_manager,
         research_manager=research_manager,
+        agency_profile=agency_profile,
         history_max_messages=settings.context_history_max_messages,
     )
     runtime = create_agent_runtime(
@@ -124,6 +130,17 @@ def build_telegram_bot(
     )
     orchestrator = Orchestrator(store=get_execution_store_singleton())
     executive_agent = ExecutiveAgent(llm_gateway, capability_registry=capability_registry)
+    business_client_resolver = BusinessClientResolver(
+        client_repository,
+        project_repository=project_repository,
+        llm_gateway=llm_gateway,
+    )
+    memory_capture = DialogueMemoryCapture(memory_manager)
+    client_work_summary = ClientWorkSummaryService(
+        client_repository,
+        project_repository=project_repository,
+        artifact_repository=artifact_repository,
+    )
     return create_telegram_bot(
         runtime=runtime,
         workspace_service=workspace_service,
@@ -137,4 +154,7 @@ def build_telegram_bot(
         capability_registry=capability_registry,
         conversation_store=create_conversation_store(settings),
         db_release=db_release,
+        business_client_resolver=business_client_resolver,
+        memory_capture=memory_capture,
+        client_work_summary=client_work_summary,
     )

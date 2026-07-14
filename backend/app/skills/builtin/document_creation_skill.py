@@ -94,10 +94,17 @@ class DocumentCreationSkill(BaseSkill):
             if value is not None and key not in context:
                 context[key] = value
 
+        agency_profile = (
+            payload.get("agency_profile")
+            or payload.get("agency_context")
+            or context.get("agency_context")
+        )
+
         request = DocumentCreationRequest(
             user_goal=str(goal),
             context=context,
             brand_profile=brand_profile,
+            agency_profile=dict(agency_profile) if isinstance(agency_profile, dict) else None,
             document_type=payload.get("document_type"),
             requirements=list(payload.get("requirements") or []),
         )

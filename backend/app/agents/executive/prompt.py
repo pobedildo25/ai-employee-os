@@ -130,6 +130,9 @@ def build_user_message(
 ) -> str:
     parts = [f"User request:\n{user_input}"]
     if context:
+        agency = context.get("agency_context") if isinstance(context, dict) else None
+        if agency:
+            parts.append(f"\nAgency identity (you work FOR this agency):\n{agency}")
         parts.append(f"\nAvailable context:\n{context}")
     if available_capabilities:
         parts.append("\nAvailable capabilities:")

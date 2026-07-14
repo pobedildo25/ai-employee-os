@@ -44,6 +44,7 @@ class DocumentASTGenerator:
                     brand_profile=request.brand_profile.model_dump(mode="json")
                     if request.brand_profile
                     else None,
+                    agency_profile=request.agency_profile,
                     document_type=request.document_type,
                     requirements=request.requirements,
                     capabilities=available_capabilities or [],

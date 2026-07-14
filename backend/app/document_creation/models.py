@@ -10,6 +10,7 @@ class DocumentCreationRequest(BaseModel):
     user_goal: str
     context: dict[str, Any] = Field(default_factory=dict)
     brand_profile: BrandProfile | None = None
+    agency_profile: dict[str, Any] | None = None
     document_type: str | None = None
     requirements: list[str] = Field(default_factory=list)
 

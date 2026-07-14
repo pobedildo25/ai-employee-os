@@ -49,4 +49,7 @@ class ConversationState(BaseModel):
     artifact_ids: list[str] = Field(default_factory=list)
     revision_prompted_at: datetime | None = None
     pending_clarification: PendingClarification | None = None
+    business_client_id: str | None = None
+    business_client_name: str | None = None
+    business_project_id: str | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now())

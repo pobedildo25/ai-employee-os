@@ -38,6 +38,9 @@ def create_telegram_adapter(
     executive_agent: ExecutiveAgent | None = None,
     db_release: DbRelease | None = None,
     redis_client=None,
+    business_client_resolver=None,
+    memory_capture=None,
+    client_work_summary=None,
 ) -> TelegramAdapter:
     """Wire Telegram transport to existing runtime/workspace. No new singletons."""
     if sender is None:
@@ -92,6 +95,9 @@ def create_telegram_adapter(
         capability_registry=capability_registry,
         executive_agent=executive_agent,
         allowed_user_ids=allowed_user_ids,
+        business_client_resolver=business_client_resolver,
+        memory_capture=memory_capture,
+        client_work_summary=client_work_summary,
     )
 
 
@@ -111,6 +117,9 @@ def create_telegram_bot(
     conversation_store: TelegramConversationStore | None = None,
     db_release: DbRelease | None = None,
     redis_client=None,
+    business_client_resolver=None,
+    memory_capture=None,
+    client_work_summary=None,
 ) -> TelegramBot:
     adapter = create_telegram_adapter(
         runtime=runtime,
@@ -127,5 +136,8 @@ def create_telegram_bot(
         capability_registry=capability_registry,
         db_release=db_release,
         redis_client=redis_client,
+        business_client_resolver=business_client_resolver,
+        memory_capture=memory_capture,
+        client_work_summary=client_work_summary,
     )
     return TelegramBot(adapter, token=settings.telegram_bot_token or None)

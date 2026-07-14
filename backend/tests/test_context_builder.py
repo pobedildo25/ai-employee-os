@@ -142,6 +142,7 @@ def test_priority_ordering() -> None:
     context = ExecutionContext(
         user_input="hello",
         current_task={"title": "task"},
+        agency_context={"name": "NOVA"},
         project_context={"name": "Project"},
         client_context={"name": "Client"},
         artifact_context=[{"name": "doc.pdf"}],

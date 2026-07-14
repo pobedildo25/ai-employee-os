@@ -23,6 +23,7 @@ class ExecutionContext(BaseModel):
     user_input: str
     current_task: dict[str, Any] | None = None
     client_context: dict[str, Any] | None = None
+    agency_context: dict[str, Any] | None = None
     project_context: dict[str, Any] | None = None
     artifact_context: list[dict[str, Any]] = Field(default_factory=list)
     conversation_history: list[dict[str, Any]] = Field(default_factory=list)

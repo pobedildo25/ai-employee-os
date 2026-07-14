@@ -91,13 +91,20 @@ def build_creation_user_message(
     document_type: str | None,
     requirements: list[str],
     capabilities: list[dict[str, str]],
+    agency_profile: dict | None = None,
 ) -> str:
     upstream = _summarize_upstream(context or {})
     upstream_block = f"\nUpstream analysis to use in the copy:\n{upstream}\n" if upstream else ""
+    agency_block = (
+        f"Agency identity (author as this agency, first person «мы»):\n{agency_profile}\n"
+        if agency_profile
+        else ""
+    )
     return (
         f"User goal: {user_goal}\n"
         f"Document type hint: {document_type or 'infer from goal'}\n"
         f"Requirements: {requirements}\n"
+        f"{agency_block}"
         f"{upstream_block}"
         f"Execution context: {context}\n"
         f"Brand profile: {brand_profile or {}}\n"

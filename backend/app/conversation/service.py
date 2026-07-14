@@ -39,6 +39,9 @@ from app.conversation.ports import (
     SessionPort,
 )
 from app.conversation.requests import CallbackRequest, UserMessageRequest
+from app.clients.resolver import BusinessClientResolver
+from app.clients.work_summary import ClientWorkSummaryService, detect_client_status_query
+from app.memory.capture import DialogueMemoryCapture
 from app.orchestration.orchestrator import Orchestrator
 
 
@@ -68,6 +71,9 @@ class ConversationService:
         orchestrator: Orchestrator | None = None,
         executive_agent: ExecutiveAgent | None = None,
         allowed_user_ids: set[int] | None = None,
+        business_client_resolver: BusinessClientResolver | None = None,
+        memory_capture: DialogueMemoryCapture | None = None,
+        client_work_summary: ClientWorkSummaryService | None = None,
     ) -> None:
         self._runtime = runtime
         self._store = store
@@ -79,6 +85,9 @@ class ConversationService:
         self._executive_agent = executive_agent
         # None = no filter (dev); empty set = deny all; non-empty = allowlist.
         self._allowed_user_ids = allowed_user_ids
+        self._business_client_resolver = business_client_resolver
+        self._memory_capture = memory_capture
+        self._client_work_summary = client_work_summary
 
     def _user_allowed(self, user_id: int) -> bool:
         if self._allowed_user_ids is None:
@@ -110,6 +119,20 @@ class ConversationService:
         await self._store.save(convo)
 
         await self._sessions.append_history(snapshot, role="user", content=request.text)
+
+        # DB-bound short paths (must run before P1-I release_db).
+        memory_result = await self._maybe_capture_memory(request, convo, snapshot)
+        if memory_result is not None:
+            await self._sessions.release_db()
+            return memory_result
+
+        summary_result = await self._maybe_client_work_summary(request, convo, snapshot)
+        if summary_result is not None:
+            await self._sessions.release_db()
+            return summary_result
+
+        await self._attach_business_client(request.text, convo, snapshot)
+
         # P1-I: release DB session after short persistence before LLM/classify.
         await self._sessions.release_db()
 
@@ -134,7 +157,7 @@ class ConversationService:
         if convo.pending_clarification is not None:
             return await self._resume_pending_clarification(request, convo, snapshot)
 
-        classification = await self._classify_intent(request, snapshot)
+        classification = await self._classify_intent(request, snapshot, convo=convo)
 
         # After deliverable or revise prompt: Product Decision only (DecisionType).
         # Never branch on capability names (revision vs new task).
@@ -212,10 +235,13 @@ class ConversationService:
         snapshot: dict[str, Any],
         *,
         pending: PendingClarification | None = None,
+        convo: ConversationState | None = None,
     ):
         if self._executive_agent is None:
             return None
-        context, metadata = self._build_runtime_payload(request, snapshot, pending=pending)
+        context, metadata = self._build_runtime_payload(
+            request, snapshot, pending=pending, convo=convo
+        )
         state = create_initial_state(
             execution_id=uuid.uuid4().hex,
             trace_id=uuid.uuid4().hex[:16],
@@ -301,7 +327,9 @@ class ConversationService:
             return await self._run_execution(request, convo, snapshot)
 
         # Re-evaluate intent via Executive — never auto-execute on unclear classification.
-        classification = await self._classify_intent(request, snapshot, pending=pending)
+        classification = await self._classify_intent(
+            request, snapshot, pending=pending, convo=convo
+        )
         if classification is not None and is_respond(classification.decision.action.value):
             convo.pending_clarification = None
             convo.flow_mode = FlowMode.IDLE
@@ -391,7 +419,7 @@ class ConversationService:
         *,
         classification=None,
     ) -> _DeferredExecution:
-        context, metadata = self._build_runtime_payload(request, snapshot)
+        context, metadata = self._build_runtime_payload(request, snapshot, convo=convo)
         if classification is not None:
             metadata["preclassified_decision"] = classification.decision.model_dump(mode="json")
             metadata["preclassified_understanding"] = classification.understanding.model_dump(
@@ -785,6 +813,9 @@ class ConversationService:
         }
         await self._sessions.append_history(snapshot, role="assistant", content=str(reply))
 
+        if self._memory_capture is not None:
+            await self._memory_capture.persist_candidates(state.get("memory_candidates") or [])
+
         return {
             "execution_id": state.get("execution_id"),
             "trace_id": state.get("trace_id"),
@@ -794,6 +825,89 @@ class ConversationService:
             "send_result": send_result,
             "progress_message_id": progress_message_id,
         }
+
+    async def _maybe_capture_memory(
+        self,
+        request: UserMessageRequest,
+        convo: ConversationState,
+        snapshot: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if self._memory_capture is None:
+            return None
+        fact = self._memory_capture.detect(request.text)
+        if not fact:
+            return None
+        client_id = convo.business_client_id or snapshot.get("client_id")
+        result = await self._memory_capture.capture(
+            fact,
+            client_id=client_id,
+            project_id=snapshot.get("active_project_id"),
+            session_id=snapshot.get("active_session_id"),
+        )
+        await self._sessions.append_history(snapshot, role="assistant", content=result.reply)
+        send_result = await self._notifier.send_text(
+            request.chat_id,
+            result.reply,
+            reply_to_message_id=request.message_id,
+        )
+        return {
+            "status": "completed",
+            "intent": "memory_capture",
+            "reply": result.reply,
+            "stored": result.stored,
+            "workspace_id": convo.workspace_id,
+            "send_result": send_result,
+        }
+
+    async def _maybe_client_work_summary(
+        self,
+        request: UserMessageRequest,
+        convo: ConversationState,
+        snapshot: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        if self._client_work_summary is None:
+            return None
+        name = detect_client_status_query(request.text)
+        if not name:
+            return None
+        summary = await self._client_work_summary.summarize(name)
+        if summary is None:
+            text = f"Не нашёл клиента «{name}» в базе. Создайте его задачей или уточните название."
+        else:
+            text = self._client_work_summary.format_reply(summary)
+        await self._sessions.append_history(snapshot, role="assistant", content=text)
+        send_result = await self._notifier.send_text(
+            request.chat_id,
+            text,
+            reply_to_message_id=request.message_id,
+        )
+        return {
+            "status": "completed",
+            "intent": "client_work_summary",
+            "reply": text,
+            "workspace_id": convo.workspace_id,
+            "send_result": send_result,
+        }
+
+    async def _attach_business_client(
+        self,
+        text: str,
+        convo: ConversationState,
+        snapshot: dict[str, Any],
+    ) -> None:
+        if self._business_client_resolver is None:
+            return
+        resolved = await self._business_client_resolver.resolve(
+            text,
+            trace_id=str(snapshot.get("workspace_id") or "-"),
+        )
+        if resolved is None:
+            return
+        convo.business_client_id = str(resolved.client_id)
+        convo.business_client_name = resolved.name
+        if resolved.project_id is not None:
+            convo.business_project_id = str(resolved.project_id)
+        await self._store.save(convo)
 
     async def _handle_slash_command(
         self,
@@ -968,15 +1082,26 @@ class ConversationService:
         snapshot: dict[str, Any],
         *,
         pending: PendingClarification | None = None,
+        convo: ConversationState | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         channel = request.context.get("channel") or request.metadata.get("source") or "channel"
+        business_client_id = convo.business_client_id if convo is not None else None
+        business_client_name = convo.business_client_name if convo is not None else None
+        effective_client_id = business_client_id or snapshot["client_id"]
+        business_project_id = convo.business_project_id if convo is not None else None
+        effective_project_id = business_project_id or snapshot.get("active_project_id")
         context = {
             **request.context,
-            "client_id": snapshot["client_id"],
+            "client_id": effective_client_id,
             "workspace_id": snapshot["workspace_id"],
-            "project_id": snapshot.get("active_project_id"),
+            "project_id": effective_project_id,
             "channel": channel,
         }
+        if business_client_id:
+            context["business_client_id"] = business_client_id
+        if business_client_name:
+            context["client_name"] = business_client_name
+            context["business_client_name"] = business_client_name
         conversation = snapshot.get("conversation") or {}
         if conversation.get("messages"):
             context["conversation_history"] = list(conversation["messages"])
@@ -990,7 +1115,7 @@ class ConversationService:
             )
         metadata = {
             **request.metadata,
-            "client_id": snapshot["client_id"],
+            "client_id": effective_client_id,
             "workspace_id": snapshot["workspace_id"],
             "session_id": snapshot.get("active_session_id"),
             "source": request.metadata.get("source") or channel,

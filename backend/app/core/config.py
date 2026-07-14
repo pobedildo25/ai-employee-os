@@ -65,6 +65,17 @@ class Settings(BaseSettings):
     research_provider: str = "none"
     research_sonar_model: str = "perplexity/sonar"
 
+    # Agency identity injected into dialogue + documents (who WE are).
+    agency_name: str = "NOVA"
+    agency_tagline: str = ""
+    agency_positioning: str = ""
+    agency_services: str = ""  # comma/newline separated list
+    agency_tone: str = ""
+    agency_requisites: str = ""
+    agency_contacts: str = ""
+    agency_website: str = ""
+    agency_profile_json: str = ""  # optional full JSON override
+
     sentry_dsn: str | None = None
 
     db_pool_size: int = 5

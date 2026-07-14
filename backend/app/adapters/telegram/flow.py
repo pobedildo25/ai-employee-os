@@ -53,6 +53,9 @@ def build_telegram_conversation_service(
     orchestrator: Orchestrator | None = None,
     executive_agent: ExecutiveAgent | None = None,
     allowed_user_ids: set[int] | None = None,
+    business_client_resolver=None,
+    memory_capture=None,
+    client_work_summary=None,
 ) -> ConversationService:
     delivery = artifact_delivery or TelegramArtifactDelivery(None, None)
     progress = progress_messenger or TelegramProgressMessenger(sender)
@@ -70,6 +73,9 @@ def build_telegram_conversation_service(
         orchestrator=orchestrator,
         executive_agent=executive_agent,
         allowed_user_ids=allowed_user_ids,
+        business_client_resolver=business_client_resolver,
+        memory_capture=memory_capture,
+        client_work_summary=client_work_summary,
     )
 
 
