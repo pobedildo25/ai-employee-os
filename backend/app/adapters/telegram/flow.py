@@ -27,6 +27,7 @@ from app.agents.executive.agent import ExecutiveAgent
 from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
 from app.clients.resolver import BusinessClientResolver
 from app.orchestration.orchestrator import Orchestrator
+from app.ux.status_copy import STATUS_LOOKING, STATUS_WORKING
 
 
 class TelegramProductFlow:
@@ -74,14 +75,47 @@ class TelegramProductFlow:
         if convo.pending_clarification is not None:
             return await self._resume_pending_clarification(request, convo, snapshot)
 
+        status_message_id = await self._progress.start(
+            request.telegram_chat_id,
+            reply_to_message_id=request.telegram_message_id,
+            text=STATUS_LOOKING,
+        )
+        convo.progress_message_id = status_message_id
+        self._store.save(convo)
+
         classification = await self._classify_intent(request, snapshot)
         if classification is not None:
             if is_chat_decision(classification.decision.action.value):
-                return await self._handle_chat_response(request, convo, classification)
+                return await self._handle_chat_response(
+                    request,
+                    convo,
+                    classification,
+                    status_message_id=status_message_id,
+                )
             if is_task_decision(classification.decision.action.value):
-                return await self._run_execution(request, convo, snapshot)
+                await self._progress.set_text(
+                    request.telegram_chat_id,
+                    status_message_id,
+                    STATUS_WORKING,
+                )
+                return await self._run_execution(
+                    request,
+                    convo,
+                    snapshot,
+                    progress_message_id=status_message_id,
+                )
 
-        return await self._run_execution(request, convo, snapshot)
+        await self._progress.set_text(
+            request.telegram_chat_id,
+            status_message_id,
+            STATUS_WORKING,
+        )
+        return await self._run_execution(
+            request,
+            convo,
+            snapshot,
+            progress_message_id=status_message_id,
+        )
 
     async def _classify_intent(
         self,
@@ -105,6 +139,8 @@ class TelegramProductFlow:
         request: TelegramExecutionRequest,
         convo: TelegramConversationState,
         classification,
+        *,
+        status_message_id: int | None = None,
     ) -> dict[str, Any]:
         action = classification.decision.action.value
         if action == "ASK_CLARIFICATION":
@@ -121,10 +157,10 @@ class TelegramProductFlow:
             text = extract_chat_reply(classification.decision.model_dump()) or (
                 "Уточните, пожалуйста, детали задачи."
             )
-            send_result = await self._sender.send_message(
-                request.telegram_chat_id,
+            send_result = await self._deliver_status_or_send(
+                request,
+                status_message_id,
                 text,
-                reply_to_message_id=request.telegram_message_id,
             )
             return {
                 "status": "clarification",
@@ -143,10 +179,10 @@ class TelegramProductFlow:
         self._store.save(convo)
 
         text = extract_chat_reply(classification.decision.model_dump()) or "Привет! Я NOVA — AI-сотрудник агентства."
-        send_result = await self._sender.send_message(
-            request.telegram_chat_id,
+        send_result = await self._deliver_status_or_send(
+            request,
+            status_message_id,
             text,
-            reply_to_message_id=request.telegram_message_id,
         )
         return {
             "status": "completed",
@@ -156,6 +192,24 @@ class TelegramProductFlow:
             "workspace_id": convo.workspace_id,
             "send_result": send_result,
         }
+
+    async def _deliver_status_or_send(
+        self,
+        request: TelegramExecutionRequest,
+        status_message_id: int | None,
+        text: str,
+    ) -> dict[str, Any]:
+        if status_message_id is not None:
+            return await self._sender.edit_message_text(
+                request.telegram_chat_id,
+                status_message_id,
+                text,
+            )
+        return await self._sender.send_message(
+            request.telegram_chat_id,
+            text,
+            reply_to_message_id=request.telegram_message_id,
+        )
 
     async def _resume_pending_clarification(
         self,
@@ -198,6 +252,8 @@ class TelegramProductFlow:
         request: TelegramExecutionRequest,
         convo: TelegramConversationState,
         snapshot: dict[str, Any],
+        *,
+        progress_message_id: int | None = None,
     ) -> dict[str, Any]:
         context, metadata = self._build_runtime_payload(request, snapshot)
         await self._attach_business_client(request, convo, context)
@@ -205,10 +261,18 @@ class TelegramProductFlow:
         convo.last_user_input = request.user_input
         self._store.save(convo)
 
-        progress_message_id = await self._progress.start(
-            request.telegram_chat_id,
-            reply_to_message_id=request.telegram_message_id,
-        )
+        if progress_message_id is None:
+            progress_message_id = await self._progress.start(
+                request.telegram_chat_id,
+                reply_to_message_id=request.telegram_message_id,
+                text=STATUS_WORKING,
+            )
+        else:
+            await self._progress.set_text(
+                request.telegram_chat_id,
+                progress_message_id,
+                STATUS_WORKING,
+            )
         convo.progress_message_id = progress_message_id
         self._store.save(convo)
 

@@ -30,9 +30,12 @@ class Settings(BaseSettings):
 
     openrouter_api_key: str = "change-me"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    default_llm_model: str = "deepseek/deepseek-chat"
-    fallback_llm_model: str = "anthropic/claude-sonnet-4"
+    default_llm_model: str = "openai/gpt-4o-mini"
+    fallback_llm_model: str = "deepseek/deepseek-chat"
     secondary_fallback_llm_model: str = "openai/gpt-4o-mini"
+    heavy_llm_model: str = "anthropic/claude-sonnet-4"
+    llm_max_tokens: int = 4096
+    llm_heavy_max_tokens: int = 8192
 
     log_level: str = "INFO"
 
@@ -41,6 +44,14 @@ class Settings(BaseSettings):
     qdrant_collection: str = "knowledge"
 
     skills_enabled: bool = True
+    research_online_enabled: bool = True
+    research_online_model: str = "perplexity/sonar"
+
+    agency_archive_path: str = "/data/agency_archive"
+    agency_archive_watch_enabled: bool = True
+    agency_archive_watch_interval_seconds: int = 30
+    agency_archive_max_files_per_client: int = 80
+    agency_archive_agency_name: str = "NOVA Agency"
 
     telegram_bot_token: str = ""
     telegram_enabled: bool = False

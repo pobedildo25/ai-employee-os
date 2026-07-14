@@ -2,7 +2,9 @@ from typing import Any
 
 
 def format_progress_header() -> str:
-    return "🧠 NOVA анализирует задачу"
+    from app.ux.status_copy import STATUS_LOOKING
+
+    return STATUS_LOOKING
 
 
 def format_telegram_progress(progress: dict[str, Any] | None, *, header: str | None = None) -> str:

@@ -15,17 +15,32 @@ class ResearchSkill(BaseSkill):
         llm_gateway: Any | None = None,
     ) -> None:
         if manager is None:
+            from app.core.config import get_settings
             from app.llm.gateway import LLMGateway, create_llm_gateway
             from app.research.providers.mock_provider import MockProvider
+            from app.research.providers.openrouter_online_provider import OpenRouterOnlineProvider
             from app.research.providers.search_provider import SearchProvider
             from app.research.researcher import Researcher
 
-            gateway = llm_gateway or create_llm_gateway()
+            settings = get_settings()
+            gateway = llm_gateway or create_llm_gateway(settings)
             if not isinstance(gateway, LLMGateway):
                 raise TypeError("llm_gateway must be an LLMGateway instance")
+            if (
+                settings.research_online_enabled
+                and settings.openrouter_api_key
+                and settings.openrouter_api_key != "change-me"
+            ):
+                backend = OpenRouterOnlineProvider(
+                    gateway,
+                    model=settings.research_online_model,
+                )
+            else:
+                backend = MockProvider()
             manager = ResearchManager(
-                researcher=Researcher(SearchProvider(MockProvider()), llm_gateway=gateway),
+                researcher=Researcher(SearchProvider(backend), llm_gateway=gateway),
                 llm_gateway=gateway,
+                provider=SearchProvider(backend),
             )
         self._manager = manager
         super().__init__(
@@ -92,9 +107,27 @@ class ResearchSkill(BaseSkill):
             ),
             max_sources=int(payload.get("max_sources") or 8),
         )
+        from app.core.config import get_settings
+
+        settings = get_settings()
         result = await self._manager.run(request, trace_id=str(payload.get("trace_id") or "-"))
+        status = "completed" if result.document_ast else "incomplete"
+        if (
+            status == "completed"
+            and settings.research_online_enabled
+            and settings.app_env == "production"
+            and (
+                not settings.openrouter_api_key
+                or settings.openrouter_api_key == "change-me"
+            )
+        ):
+            # Fail closed: do not claim successful research without a live provider in prod.
+            status = "incomplete"
+            result.analysis_warnings = list(result.analysis_warnings or []) + [
+                "Live research provider is not configured"
+            ]
         return {
-            "status": "completed" if result.document_ast else "incomplete",
+            "status": status,
             "skill": self.name(),
             "research_result": result.model_dump(mode="json"),
             "research_id": str(result.id),

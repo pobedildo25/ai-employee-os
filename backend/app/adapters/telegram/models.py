@@ -22,10 +22,25 @@ class TelegramMessage(BaseModel):
     message_id: int
     date: int | None = None
     text: str | None = None
+    caption: str | None = None
+    photo: list[dict[str, Any]] | None = None
+    document: dict[str, Any] | None = None
+    voice: dict[str, Any] | None = None
+    audio: dict[str, Any] | None = None
+    video: dict[str, Any] | None = None
     chat: TelegramChat
     from_user: TelegramUser | None = Field(default=None, alias="from")
 
     model_config = {"populate_by_name": True}
+
+    def unsupported_media_kind(self) -> str | None:
+        if self.photo:
+            return "photo"
+        if self.voice or self.audio:
+            return "voice"
+        if self.document or self.video:
+            return "media"
+        return None
 
 
 class TelegramCallbackQuery(BaseModel):

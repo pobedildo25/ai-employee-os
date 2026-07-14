@@ -70,6 +70,7 @@ class TelegramAdapter(TelegramAdapterInterface):
             self._handler,
             mapper=self._mapper,
             product_flow=self._product_flow,
+            sender=sender,
         )
 
     @property

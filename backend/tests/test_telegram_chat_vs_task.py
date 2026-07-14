@@ -96,8 +96,8 @@ async def test_greeting_does_not_start_execution(
     assert result["intent"] == "chat"
     assert runtime.calls == []
     assert executive.calls and executive.calls[0]["user_input"] == "Привет"
-    assert sender.sent[-1]["text"] == "Привет! Я NOVA, AI-сотрудник агентства."
-    assert sender.sent[0]["text"] != "🧠 NOVA анализирует задачу"
+    assert sender.sent[0]["text"] == "Смотрю…"
+    assert sender.edited[-1]["text"] == "Привет! Я NOVA, AI-сотрудник агентства."
 
 
 @pytest.mark.asyncio
@@ -118,7 +118,7 @@ async def test_capabilities_question_does_not_start_execution(
 
     assert result["intent"] == "chat"
     assert runtime.calls == []
-    assert "КП" in sender.sent[-1]["text"]
+    assert "КП" in sender.edited[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -144,7 +144,7 @@ async def test_task_request_starts_execution_pipeline(
     assert len(runtime.calls) == 1
     assert runtime.calls[0]["mode"] == "stream"
     assert runtime.calls[0]["user_input"] == "Создай презентацию"
-    assert sender.sent[0]["text"] == "🧠 NOVA анализирует задачу"
+    assert sender.sent[0]["text"] == "Смотрю…"
 
 
 @pytest.mark.asyncio
@@ -184,5 +184,5 @@ async def test_task_execution_preserves_telegram_progress_ux(
     await flow.handle_message(_request("Подготовь стратегию"))
 
     assert runtime.calls
-    assert sender.sent[0]["text"] == "🧠 NOVA анализирует задачу"
+    assert sender.sent[0]["text"] == "Смотрю…"
     assert sender.edited

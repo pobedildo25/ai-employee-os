@@ -1,13 +1,13 @@
-import re
 import time
 from typing import Any
 
 from app.adapters.telegram.presenter import format_progress_header, format_telegram_progress
 from app.adapters.telegram.sender import TelegramSender
+from app.ux.status_copy import STATUS_INTERRUPTED, STATUS_LOOKING
 
 
 class TelegramProgressMessenger:
-    """Edits a single Telegram message for execution progress with throttling."""
+    """Edits a single Telegram message for presence/progress with throttling."""
 
     def __init__(
         self,
@@ -19,16 +19,42 @@ class TelegramProgressMessenger:
         self._min_interval = min_interval_seconds
         self._last_sent_at: dict[int, float] = {}
 
-    async def start(self, chat_id: int, *, reply_to_message_id: int | None = None) -> int | None:
+    async def start(
+        self,
+        chat_id: int,
+        *,
+        reply_to_message_id: int | None = None,
+        text: str | None = None,
+    ) -> int | None:
         result = await self._sender.send_message(
             chat_id,
-            format_progress_header(),
+            text or format_progress_header() or STATUS_LOOKING,
             reply_to_message_id=reply_to_message_id,
         )
         message_id = _extract_message_id(result)
         if message_id is not None:
             self._last_sent_at[message_id] = 0.0
         return message_id
+
+    async def set_text(
+        self,
+        chat_id: int,
+        message_id: int | None,
+        text: str,
+        *,
+        force: bool = True,
+    ) -> int | None:
+        if message_id is None:
+            return await self.start(chat_id, text=text)
+
+        now = time.monotonic()
+        last = self._last_sent_at.get(message_id, 0.0)
+        if not force and now - last < self._min_interval:
+            return message_id
+
+        result = await self._sender.edit_message_text(chat_id, message_id, text)
+        self._last_sent_at[message_id] = now
+        return _extract_message_id(result) or message_id
 
     async def maybe_update(
         self,
@@ -68,7 +94,7 @@ class TelegramProgressMessenger:
         chat_id: int,
         message_id: int | None,
         *,
-        text: str = "⚠️ Задача прервана",
+        text: str = STATUS_INTERRUPTED,
     ) -> None:
         if message_id is None:
             return

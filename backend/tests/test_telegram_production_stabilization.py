@@ -160,7 +160,7 @@ async def test_clarification_then_answer_resumes_task_pipeline(
     first = await flow.handle_message(_request("Сделай КП для Яндекса"))
     assert first["status"] == "clarification"
     assert runtime.calls == []
-    assert "детали" in sender.sent[-1]["text"].lower()
+    assert "детали" in sender.edited[-1]["text"].lower()
 
     convo = conversation_store.get(777)
     assert convo is not None
