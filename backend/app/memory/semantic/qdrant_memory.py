@@ -1,5 +1,6 @@
 import hashlib
 import logging
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from qdrant_client import QdrantClient
@@ -13,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 VECTOR_SIZE = 64
 
+Embedder = Callable[[str], Awaitable[list[float]]]
+
 
 def stub_embed(text: str, dimensions: int = VECTOR_SIZE) -> list[float]:
     """Deterministic stub embedding for development — not a real embedding model."""
@@ -21,15 +24,38 @@ def stub_embed(text: str, dimensions: int = VECTOR_SIZE) -> list[float]:
 
 
 class QdrantSemanticMemory(MemoryStore):
-    """Qdrant-backed semantic memory with stub embeddings."""
+    """Qdrant-backed semantic memory.
 
-    def __init__(self, client: QdrantClient, settings: Settings) -> None:
+    Uses a real async embedder when provided (see ``embedding_model`` settings),
+    otherwise falls back to deterministic stub vectors so development works with
+    no embedding endpoint configured.
+    """
+
+    def __init__(
+        self,
+        client: QdrantClient,
+        settings: Settings,
+        embedder: Embedder | None = None,
+        dimensions: int | None = None,
+    ) -> None:
         self._client = client
         self._collection = settings.qdrant_collection
+        self._embedder = embedder
+        self._dimensions = dimensions or VECTOR_SIZE
         self._ensure_collection()
 
+    async def _embed(self, text: str) -> list[float]:
+        if self._embedder is not None:
+            try:
+                vector = await self._embedder(text)
+                if vector:
+                    return vector
+            except Exception as exc:
+                logger.warning("embedder failed, using stub | error=%s", exc)
+        return stub_embed(text, self._dimensions)
+
     async def save(self, item: MemoryItem) -> MemoryItem:
-        vector = stub_embed(item.content)
+        vector = await self._embed(item.content)
         self._client.upsert(
             collection_name=self._collection,
             points=[
@@ -57,7 +83,7 @@ class QdrantSemanticMemory(MemoryStore):
         if not query.query:
             return []
 
-        vector = stub_embed(query.query)
+        vector = await self._embed(query.query)
         response = self._client.query_points(
             collection_name=self._collection,
             query=vector,
@@ -94,7 +120,7 @@ class QdrantSemanticMemory(MemoryStore):
             return
         self._client.create_collection(
             collection_name=self._collection,
-            vectors_config=qmodels.VectorParams(size=VECTOR_SIZE, distance=qmodels.Distance.COSINE),
+            vectors_config=qmodels.VectorParams(size=self._dimensions, distance=qmodels.Distance.COSINE),
         )
         logger.info("qdrant collection created | collection=%s", self._collection)
 

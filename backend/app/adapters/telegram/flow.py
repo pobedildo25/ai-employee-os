@@ -296,6 +296,7 @@ class TelegramProductFlow:
     ) -> dict[str, Any]:
         final_state: dict[str, Any] | None = None
         last_progress: dict[str, Any] | None = None
+        candidates: list[dict[str, Any]] = []
 
         async for event in self._runtime.stream(
             user_input,
@@ -314,10 +315,14 @@ class TelegramProductFlow:
                         progress_message_id,
                         last_progress,
                     )
+                step_candidates = update.get("memory_candidates")
+                if step_candidates:
+                    candidates.extend(step_candidates)
                 final_state = self._merge_state(final_state, update)
 
         if final_state is not None:
             await self._progress.finalize(chat_id, progress_message_id, last_progress)
+            await self._persist_memory_candidates(candidates)
             return final_state
 
         state = await self._runtime.execute(
@@ -327,7 +332,16 @@ class TelegramProductFlow:
         )
         state_dict = dict(state) if not isinstance(state, dict) else state
         await self._progress.finalize(chat_id, progress_message_id, state_dict.get("telegram_progress"))
+        await self._persist_memory_candidates(state_dict.get("memory_candidates") or [])
         return state_dict
+
+    async def _persist_memory_candidates(self, candidates: list[dict[str, Any]]) -> None:
+        if self._memory_capture is None or not candidates:
+            return
+        try:
+            await self._memory_capture.persist_candidates(candidates)
+        except Exception:  # persistence must never break delivery
+            pass
 
     async def _deliver_outcome(
         self,

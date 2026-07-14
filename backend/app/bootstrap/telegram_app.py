@@ -54,10 +54,23 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
     version_repository = SQLAlchemyArtifactVersionRepository(session)
     storage = MinioStorage(settings)
     artifact_service = ArtifactService(artifact_repository, version_repository, storage)
+    embedder = None
+    embedding_dimensions = None
+    if getattr(settings, "embeddings_enabled", False):
+        async def embedder(text: str) -> list[float]:
+            vectors = await llm_gateway.embed(text)
+            return vectors[0] if vectors else []
+
+        embedding_dimensions = settings.embedding_dimensions
     memory_manager = create_memory_manager(
         short_term=RedisShortTermMemory(get_redis_client(settings), settings),
         long_term=PostgresLongTermMemory(session),
-        semantic=QdrantSemanticMemory(get_qdrant_client(settings), settings),
+        semantic=QdrantSemanticMemory(
+            get_qdrant_client(settings),
+            settings,
+            embedder=embedder,
+            dimensions=embedding_dimensions,
+        ),
         settings=settings,
     )
     knowledge_manager = KnowledgeManager(PostgresKnowledgeStore(session))

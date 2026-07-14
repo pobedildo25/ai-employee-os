@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.memory.manager import MemoryManager
+from app.memory.manager import MemoryManager, MemoryRetentionError
 from app.memory.models import MemoryItem, MemoryType
 
 logger = logging.getLogger(__name__)
@@ -106,6 +106,39 @@ class DialogueMemoryCapture:
 
         logger.info("dialogue memory captured | type=%s client_id=%s", memory_type.value, client_id)
         return MemoryCaptureResult(stored=True, content=fact, reply=f"Запомнил: {fact}")
+
+    async def persist_candidates(self, candidates: list[dict]) -> int:
+        """Persist memory_candidates emitted by skills (retention-filtered, deduped).
+
+        Skills prepare candidate facts/preferences about their work but never
+        auto-save them. After a successful run we durably store the eligible ones
+        so the assistant remembers what it did and learns across sessions.
+        """
+        if not self._memory.enabled or not candidates:
+            return 0
+        stored = 0
+        seen: set[tuple[str, str]] = set()
+        for raw in candidates:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                item = MemoryItem.model_validate(raw)
+            except Exception:
+                continue
+            key = (item.type.value, item.content.strip().lower())
+            if not item.content.strip() or key in seen:
+                continue
+            seen.add(key)
+            try:
+                await self._memory.remember(item)
+                stored += 1
+            except MemoryRetentionError:
+                continue
+            except Exception as exc:
+                logger.warning("failed to persist memory candidate | error=%s", exc)
+        if stored:
+            logger.info("persisted memory candidates | count=%d", stored)
+        return stored
 
 
 def _as_uuid(value: str | UUID | None) -> UUID | None:

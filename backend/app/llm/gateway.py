@@ -68,6 +68,21 @@ class LLMGateway:
         )
         return await self.chat(request)
 
+    async def embed(
+        self,
+        texts: str | list[str],
+        model: str | None = None,
+    ) -> list[list[float]]:
+        """Return embedding vectors for one or more texts."""
+        from app.llm.models import EmbeddingRequest
+
+        request = EmbeddingRequest(
+            input=texts,
+            model=model or getattr(self._settings, "embedding_model", None),
+        )
+        response = await self._provider.embeddings(request)
+        return response.embeddings
+
     async def _invoke(
         self,
         request: LLMRequest,

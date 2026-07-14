@@ -97,6 +97,41 @@ async def test_capture_recall_roundtrip() -> None:
 
 
 @pytest.mark.asyncio
+async def test_persist_candidates_filters_and_dedupes() -> None:
+    manager, long_term = _manager()
+    capture = DialogueMemoryCapture(manager)
+    candidates = [
+        {"type": "FACT", "content": "КП для Яндекса подготовлено", "importance": 0.7},
+        {"type": "FACT", "content": "КП для Яндекса подготовлено", "importance": 0.7},  # dup
+        {"type": "FACT", "content": "нулевая важность", "importance": 0.0},  # retention reject
+        {"type": "PREFERENCE", "content": "клиент любит краткость", "importance": 0.6},
+        {"type": "FACT", "content": "эфемерное", "importance": 0.9, "metadata": {"ephemeral": True}},
+    ]
+
+    stored = await capture.persist_candidates(candidates)
+
+    assert stored == 2
+    contents = {i.content for i in long_term.items}
+    assert "КП для Яндекса подготовлено" in contents
+    assert "клиент любит краткость" in contents
+    assert "нулевая важность" not in contents
+    assert "эфемерное" not in contents
+
+
+@pytest.mark.asyncio
+async def test_persist_candidates_noop_when_disabled() -> None:
+    manager, long_term = _manager(enabled=False)
+    capture = DialogueMemoryCapture(manager)
+
+    stored = await capture.persist_candidates(
+        [{"type": "FACT", "content": "что-то", "importance": 0.8}]
+    )
+
+    assert stored == 0
+    assert long_term.items == []
+
+
+@pytest.mark.asyncio
 async def test_capture_noop_when_disabled() -> None:
     manager, long_term = _manager(enabled=False)
     capture = DialogueMemoryCapture(manager)

@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     redis_memory_ttl: int = 3600
     qdrant_collection: str = "knowledge"
 
+    # Semantic-memory embeddings. Off by default → deterministic stub vectors.
+    # When enabled, semantic memory uses a real embedding model via the LLM gateway.
+    embeddings_enabled: bool = False
+    embedding_model: str = "openai/text-embedding-3-small"
+    embedding_dimensions: int = 1536
+
     skills_enabled: bool = True
 
     # Agency identity ("who WE are") — injected into dialogue and every document
