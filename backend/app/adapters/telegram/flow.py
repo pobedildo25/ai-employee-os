@@ -8,6 +8,7 @@ from app.adapters.telegram.conversation_store import TelegramConversationState, 
 from app.adapters.telegram.continuation import TelegramArtifactDelivery, TelegramGraphContinuation
 from app.adapters.telegram.keyboard import approval_keyboard, retry_keyboard, revision_keyboard
 from app.adapters.telegram.mapper import TelegramMapper
+from app.adapters.telegram.media import MediaIngestor
 from app.adapters.telegram.models import TelegramCallbackRequest, TelegramExecutionRequest
 from app.adapters.telegram.presenter import (
     extract_failure_reason,
@@ -52,6 +53,7 @@ class TelegramProductFlow:
         agency_profile: AgencyProfile | None = None,
         memory_capture: DialogueMemoryCapture | None = None,
         client_work_summary: ClientWorkSummaryService | None = None,
+        media_ingestor: MediaIngestor | None = None,
     ) -> None:
         self._runtime = runtime
         self._sessions = session_manager
@@ -67,12 +69,15 @@ class TelegramProductFlow:
         self._agency_profile = agency_profile
         self._memory_capture = memory_capture
         self._client_work_summary = client_work_summary
+        self._media_ingestor = media_ingestor
 
     async def handle_message(self, request: TelegramExecutionRequest) -> dict[str, Any]:
         convo = self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
         snapshot = await self._sessions.resolve(request.telegram_user_id)
         convo.workspace_id = snapshot.get("workspace_id")
         convo.session_id = snapshot.get("active_session_id")
+
+        await self._ingest_media(request)
 
         if convo.flow_mode == TelegramFlowMode.REVISION_PROMPTED:
             return await self._handle_revision_feedback(request, convo, snapshot)
@@ -551,6 +556,25 @@ class TelegramProductFlow:
                 file_data=data,
                 mime_type=artifact.get("mime_type"),
             )
+
+    async def _ingest_media(self, request: TelegramExecutionRequest) -> None:
+        """Download + interpret attachments and fold the results into run context."""
+        if self._media_ingestor is None or not request.media:
+            return
+        try:
+            result = await self._media_ingestor.ingest(
+                request.media,
+                user_input=request.user_input,
+            )
+        except Exception:  # ingestion must never break message handling
+            return
+        if result.context:
+            request.context.update(result.context)
+            # Also stash on metadata so the rebuilt ExecutionContext (which drops
+            # unknown context keys) still carries attachments to task skills.
+            request.metadata["attachments"] = result.context
+        if result.notes:
+            request.context.setdefault("attachment_notes", []).extend(result.notes)
 
     async def _maybe_capture_memory(
         self,

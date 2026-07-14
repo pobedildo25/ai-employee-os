@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import time
 from typing import Any
@@ -64,9 +63,13 @@ class ContextBuilder:
             trace_id=trace_id,
         )
 
-        fragments = await asyncio.gather(
-            *(_fetch_provider_safe(provider, request, trace_id) for provider in self._providers)
-        )
+        # Sequential (not asyncio.gather): providers can share a single
+        # AsyncSession, and concurrent operations on one session raise
+        # "concurrent operations are not permitted".
+        fragments = [
+            await _fetch_provider_safe(provider, request, trace_id)
+            for provider in self._providers
+        ]
         merged = _merge_fragments(fragments)
 
         context = ExecutionContext(
