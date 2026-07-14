@@ -27,6 +27,7 @@ from app.agents.executive.agent import ExecutiveAgent
 from app.agency.profile import AgencyProfile
 from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
 from app.clients.resolver import BusinessClientResolver
+from app.clients.work_summary import ClientWorkSummaryService, detect_client_status_query
 from app.memory.capture import DialogueMemoryCapture
 from app.orchestration.orchestrator import Orchestrator
 
@@ -50,6 +51,7 @@ class TelegramProductFlow:
         business_client_resolver: BusinessClientResolver | None = None,
         agency_profile: AgencyProfile | None = None,
         memory_capture: DialogueMemoryCapture | None = None,
+        client_work_summary: ClientWorkSummaryService | None = None,
     ) -> None:
         self._runtime = runtime
         self._sessions = session_manager
@@ -64,6 +66,7 @@ class TelegramProductFlow:
         self._business_client_resolver = business_client_resolver
         self._agency_profile = agency_profile
         self._memory_capture = memory_capture
+        self._client_work_summary = client_work_summary
 
     async def handle_message(self, request: TelegramExecutionRequest) -> dict[str, Any]:
         convo = self._store.get_or_create(request.telegram_user_id, request.telegram_chat_id)
@@ -83,6 +86,10 @@ class TelegramProductFlow:
         memory_note = await self._maybe_capture_memory(request, convo, snapshot)
         if memory_note is not None:
             return memory_note
+
+        client_status = await self._maybe_client_status(request, convo)
+        if client_status is not None:
+            return client_status
 
         classification = await self._classify_intent(request, snapshot)
         if classification is not None:
@@ -560,6 +567,33 @@ class TelegramProductFlow:
             "reply": result.reply,
             "send_result": send_result,
         }
+
+    async def _maybe_client_status(
+        self,
+        request: TelegramExecutionRequest,
+        convo: TelegramConversationState,
+    ) -> dict[str, Any] | None:
+        """Answer 'что сделано по клиенту X' directly from the DB."""
+        if self._client_work_summary is None:
+            return None
+        name = detect_client_status_query(request.user_input)
+        if not name:
+            return None
+
+        try:
+            summary = await self._client_work_summary.summarize(name)
+        except Exception:  # a status lookup must never crash the chat
+            return None
+        if summary is None:
+            text = f"Не нашёл клиента «{name}» в базе. Могу завести его — просто поставьте задачу."
+        else:
+            text = self._client_work_summary.format_reply(summary)
+
+        convo.flow_mode = TelegramFlowMode.IDLE
+        convo.last_user_input = request.user_input
+        self._store.save(convo)
+        send_result = await self._sender.send_message(request.telegram_chat_id, text)
+        return {"status": "client_status", "reply": text, "send_result": send_result}
 
     async def _attach_business_client(
         self,

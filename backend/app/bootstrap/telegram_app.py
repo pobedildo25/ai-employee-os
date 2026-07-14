@@ -13,6 +13,7 @@ from app.client_intelligence.analyzer import ClientIntelligenceAnalyzer
 from app.client_intelligence.builder import ClientIntelligenceBuilder
 from app.client_intelligence.manager import ClientIntelligenceManager
 from app.clients.resolver import BusinessClientResolver
+from app.clients.work_summary import ClientWorkSummaryService
 from app.context.builder import create_context_builder
 from app.core.config import Settings, get_settings
 from app.database.qdrant import get_qdrant_client
@@ -101,6 +102,11 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         llm_gateway=llm_gateway,
     )
     memory_capture = DialogueMemoryCapture(memory_manager)
+    client_work_summary = ClientWorkSummaryService(
+        client_repository,
+        project_repository=project_repository,
+        artifact_repository=artifact_repository,
+    )
     return create_telegram_bot(
         runtime=runtime,
         workspace_service=workspace_service,
@@ -114,4 +120,5 @@ def build_telegram_bot(session: AsyncSession, settings: Settings | None = None) 
         business_client_resolver=business_client_resolver,
         agency_profile=agency_profile,
         memory_capture=memory_capture,
+        client_work_summary=client_work_summary,
     )

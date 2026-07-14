@@ -155,6 +155,11 @@ _STOPWORDS = {
 }
 
 
+def extract_subject_heuristic(text: str) -> str | None:
+    """Synchronous, LLM-free subject extraction (for read-only intents)."""
+    return _extract_heuristic(text or "").name
+
+
 def _extract_heuristic(text: str) -> ExtractedSubject:
     quoted = re.search(r"[«\"']([^«»\"']{2,60})[»\"']", text)
     if quoted:
