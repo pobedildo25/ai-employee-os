@@ -1,8 +1,9 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.clients.classification import is_business_client
 from app.models.client import Client
 from app.repositories.client_repository import ClientRepository
 from app.schemas.client import ClientCreate, ClientUpdate
@@ -25,6 +26,20 @@ class SQLAlchemyClientRepository(ClientRepository):
 
     async def get_by_id(self, client_id: UUID) -> Client | None:
         return await self._session.get(Client, client_id)
+
+    async def find_by_name(self, name: str) -> Client | None:
+        target = (name or "").strip()
+        if not target:
+            return None
+        result = await self._session.execute(
+            select(Client)
+            .where(func.lower(Client.name) == target.casefold())
+            .order_by(Client.created_at.desc())
+        )
+        for client in result.scalars().all():
+            if is_business_client(client):
+                return client
+        return None
 
     async def get_or_create_with_id(
         self,

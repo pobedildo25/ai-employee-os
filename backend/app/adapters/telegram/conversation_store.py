@@ -37,6 +37,8 @@ class TelegramConversationState(BaseModel):
     last_agent_state: dict[str, Any] | None = None
     progress_message_id: int | None = None
     artifact_ids: list[str] = Field(default_factory=list)
+    business_client_id: str | None = None
+    business_client_name: str | None = None
     revision_prompted_at: datetime | None = None
     pending_clarification: PendingClarification | None = None
     updated_at: datetime = Field(default_factory=lambda: datetime.now())
