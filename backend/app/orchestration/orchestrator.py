@@ -354,6 +354,10 @@ class Orchestrator(OrchestratorInterface):
             "agency_profile",
             "agency_context",
             "artifact_id",
+            "source_artifact_id",
+            "document_ast",
+            "user_feedback",
+            "revision_request",
             "client_id",
             "project_id",
         )

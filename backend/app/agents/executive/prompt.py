@@ -76,6 +76,18 @@ Never choose CREATE_PLAN for greetings, questions, explanations, or a single art
 Never choose CREATE_PLAN merely because several skills appear in one linear render
 chain for a single file — that remains EXECUTE.
 
+After a deliverable already exists (context may include has_prior_artifact /
+dialog_continuity / active_artifact_id — facts only):
+- Edit / shorten / rewrite / fix the same artifact → EXECUTE with hint
+  ["document_revision"] (and optionally document_rendering). Do not recreate from
+  scratch when the user is refining the current result.
+- New separate artifact after a deliverable (new КП, new deck, new SWOT for
+  another brief) → EXECUTE with creation hints, not document_revision.
+- Pure question / discussion about the result → RESPOND (continue the dialogue).
+- Vague "сделай лучше" / "переделай" with a prior artifact → EXECUTE revision on
+  that artifact with reasonable defaults; ASK_CLARIFICATION only if there is
+  truly nothing to revise.
+
 Routing discipline:
 - If unsure between RESPOND and EXECUTE, choose RESPOND when the user wants
   information or understanding; choose EXECUTE when they want a produced artifact.
@@ -123,6 +135,34 @@ def get_executive_system_prompt(*, research_enabled: bool = False) -> str:
     return EXECUTIVE_SYSTEM_PROMPT
 
 
+# Learning / style rules must never steer Product Decision (Product Goal §5).
+_EXECUTIVE_CONTEXT_BLOCKLIST = frozenset(
+    {
+        "learning_context",
+        "learning_rules",
+        "learning_result",
+        "memory_candidates",
+        "extensions",
+    }
+)
+
+
+def _context_for_executive(context: dict) -> dict:
+    """Facts for Product Decision — no Learning and no bulky execution blobs."""
+    cleaned: dict = {}
+    for key, value in context.items():
+        if key in _EXECUTIVE_CONTEXT_BLOCKLIST or value is None:
+            continue
+        # Keep prior AST availability as a boolean fact — not the full AST dump.
+        if key == "document_ast":
+            cleaned["has_document_ast"] = True
+            continue
+        if key in {"render_result", "revision_result", "task_plan", "task_execution"}:
+            continue
+        cleaned[key] = value
+    return cleaned
+
+
 def build_user_message(
     user_input: str,
     context: dict | None = None,
@@ -133,7 +173,12 @@ def build_user_message(
         agency = context.get("agency_context") if isinstance(context, dict) else None
         if agency:
             parts.append(f"\nAgency identity (you work FOR this agency):\n{agency}")
-        parts.append(f"\nAvailable context:\n{context}")
+        continuity = context.get("dialog_continuity") if isinstance(context, dict) else None
+        if continuity:
+            parts.append(f"\nDialog continuity (facts only):\n{continuity}")
+        executive_context = _context_for_executive(context) if isinstance(context, dict) else {}
+        if executive_context:
+            parts.append(f"\nAvailable context:\n{executive_context}")
     if available_capabilities:
         parts.append("\nAvailable capabilities:")
         for capability in available_capabilities:

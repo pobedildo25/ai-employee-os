@@ -416,6 +416,10 @@ class ConversationService:
                 mode="json"
             )
             metadata["skip_executive_llm"] = True
+            action = classification.decision.action.value
+            # CREATE_PLAN means coordinated multi-stage work — arm LLM Planner.
+            if action == "CREATE_PLAN":
+                metadata["requires_llm_plan"] = True
         convo.flow_mode = FlowMode.RUNNING
         convo.last_user_input = request.text
         await self._store.save(convo)
@@ -501,23 +505,18 @@ class ConversationService:
 
     @staticmethod
     def _should_show_progress(classification, convo: ConversationState) -> bool:
-        """Show progress only for real multi-step work — no fake theater on simple EXECUTE.
+        """Show progress only for CREATE_PLAN / approval resume — never linear EXECUTE theater.
 
-        CREATE_PLAN (and approval resumes without a fresh classification) get live stages.
-        Single-capability EXECUTE delivers quietly; chat never reaches this path.
+        Multi-hint EXECUTE (e.g. strategy + document) is still one employee job: quiet delivery.
+        Chat replies never reach this path.
         """
         _ = convo
         if classification is None:
-            # Approval / retry resume — prior path already chose multi-step work.
+            # Approval / retry resume after CREATE_PLAN — keep live stages.
             return True
         action = getattr(getattr(classification, "decision", None), "action", None)
         action_value = action.value if hasattr(action, "value") else str(action or "")
-        if action_value == "CREATE_PLAN":
-            return True
-        understanding = getattr(classification, "understanding", None)
-        caps = list(getattr(understanding, "required_capabilities", None) or [])
-        # Multiple Executive hints imply multi-stage work worth staging in chat.
-        return len([c for c in caps if c and str(c).strip()]) > 1
+        return action_value == "CREATE_PLAN"
 
     @staticmethod
     def _progress_header(classification) -> str | None:
@@ -995,6 +994,8 @@ class ConversationService:
             "workspace_id": snapshot["workspace_id"],
             "project_id": effective_project_id,
             "channel": channel,
+            "user_input": request.text,
+            "user_goal": request.text,
         }
         if business_client_id:
             context["business_client_id"] = business_client_id
@@ -1014,9 +1015,53 @@ class ConversationService:
             "session_id": snapshot.get("active_session_id"),
             "source": request.metadata.get("source") or channel,
         }
-        if snapshot.get("active_artifact_id"):
-            metadata["active_artifact_id"] = snapshot["active_artifact_id"]
-            context["active_artifact_id"] = snapshot["active_artifact_id"]
+        active_artifact_id = snapshot.get("active_artifact_id")
+        if active_artifact_id:
+            metadata["active_artifact_id"] = active_artifact_id
+            context["active_artifact_id"] = active_artifact_id
+
+        # Seed prior deliverable facts so revision continues the same artifact
+        # (Executive + Resolver), without a Telegram capability shortcut.
+        prior = (convo.last_agent_state if convo is not None else None) or {}
+        has_prior = False
+        if isinstance(prior, dict) and prior:
+            for key in (
+                "document_ast",
+                "render_result",
+                "revision_result",
+                "presentation_plan",
+                "document_creation_result",
+            ):
+                if prior.get(key) is not None:
+                    context[key] = prior[key]
+                    has_prior = True
+            render = prior.get("render_result") if isinstance(prior.get("render_result"), dict) else {}
+            source_id = (
+                render.get("artifact_id")
+                or active_artifact_id
+                or (convo.artifact_ids[-1] if convo and convo.artifact_ids else None)
+            )
+            if source_id:
+                context["source_artifact_id"] = source_id
+                metadata["source_artifact_id"] = source_id
+                has_prior = True
+            if has_prior:
+                # Feedback text for RevisionSkill — ignored by creation skills.
+                context["user_feedback"] = request.text
+                metadata["user_feedback"] = request.text
+
+        if convo is not None:
+            continuity = {
+                "flow_mode": convo.flow_mode.value,
+                "has_prior_artifact": bool(has_prior or active_artifact_id or convo.artifact_ids),
+            }
+            if active_artifact_id:
+                continuity["active_artifact_id"] = str(active_artifact_id)
+            elif convo.artifact_ids:
+                continuity["active_artifact_id"] = str(convo.artifact_ids[-1])
+            context["dialog_continuity"] = continuity
+            context["has_prior_artifact"] = continuity["has_prior_artifact"]
+
         return context, metadata
 
     async def _set_active_artifact(self, convo: ConversationState, artifact_id: str | None) -> None:
@@ -1033,7 +1078,23 @@ class ConversationService:
         return merged
 
 
+_INTERNAL_ERROR_MARKERS = (
+    "capability",
+    "pipeline",
+    "skill",
+    "orchestrat",
+    "executor",
+    "traceback",
+    "graph",
+    "node",
+    "workflow",
+    "enrichment step",
+    "no skill registered",
+)
+
+
 def _safe_error_reason(message: str) -> str | None:
+    """User-facing failure copy — never leak internals / snake_case capability ids."""
     if not message:
         return None
     lowered = message.lower()
@@ -1041,5 +1102,11 @@ def _safe_error_reason(message: str) -> str | None:
         return None
     if message.startswith("Workflow "):
         _, _, tail = message.partition(": ")
-        return tail or message
+        message = tail or message
+        lowered = message.lower()
+    if any(marker in lowered for marker in _INTERNAL_ERROR_MARKERS):
+        return None
+    if "_" in message and any(ch.islower() for ch in message):
+        # Likely internal identifier (document_revision, step ids, …).
+        return None
     return message
