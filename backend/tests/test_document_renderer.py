@@ -101,12 +101,18 @@ def test_docx_generation(renderer_service: DocumentRendererService, brand_profil
     assert result.status == RenderStatus.COMPLETED
     assert result.file_bytes is not None
     assert result.mime_type.endswith("wordprocessingml.document")
+    assert result.metadata.get("template") == "herald"
 
     document = Document(BytesIO(result.file_bytes))
     texts = [paragraph.text for paragraph in document.paragraphs if paragraph.text.strip()]
+    assert "DOCX Test" in texts  # centered HERALD title
     assert "Document Title" in texts
     assert "First paragraph content" in texts
     assert len(document.tables) == 1
+    # Header chrome table (mark + wordmark) + body data table.
+    header = document.sections[0].header
+    assert header.tables
+    assert any(rel.reltype.endswith("/image") for rel in header.part.rels.values())
 
 
 def test_pptx_generation(renderer_service: DocumentRendererService, brand_profile: BrandProfile) -> None:
