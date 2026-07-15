@@ -27,7 +27,8 @@ from app.agents.executive.agent import ExecutiveAgent
 from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
 from app.clients.resolver import BusinessClientResolver
 from app.orchestration.orchestrator import Orchestrator
-from app.ux.status_copy import STATUS_LOOKING, STATUS_WORKING
+from app.llm.exceptions import LLMProviderError
+from app.ux.status_copy import GENERIC_FAILURE, LLM_UNAVAILABLE, STATUS_LOOKING, STATUS_WORKING
 
 
 class TelegramProductFlow:
@@ -83,39 +84,55 @@ class TelegramProductFlow:
         convo.progress_message_id = status_message_id
         self._store.save(convo)
 
-        classification = await self._classify_intent(request, snapshot)
-        if classification is not None:
-            if is_chat_decision(classification.decision.action.value):
-                return await self._handle_chat_response(
-                    request,
-                    convo,
-                    classification,
-                    status_message_id=status_message_id,
-                )
-            if is_task_decision(classification.decision.action.value):
-                await self._progress.set_text(
-                    request.telegram_chat_id,
-                    status_message_id,
-                    STATUS_WORKING,
-                )
-                return await self._run_execution(
-                    request,
-                    convo,
-                    snapshot,
-                    progress_message_id=status_message_id,
-                )
+        try:
+            classification = await self._classify_intent(request, snapshot)
+            if classification is not None:
+                if is_chat_decision(classification.decision.action.value):
+                    return await self._handle_chat_response(
+                        request,
+                        convo,
+                        classification,
+                        status_message_id=status_message_id,
+                    )
+                if is_task_decision(classification.decision.action.value):
+                    await self._progress.set_text(
+                        request.telegram_chat_id,
+                        status_message_id,
+                        STATUS_WORKING,
+                    )
+                    return await self._run_execution(
+                        request,
+                        convo,
+                        snapshot,
+                        progress_message_id=status_message_id,
+                    )
 
-        await self._progress.set_text(
-            request.telegram_chat_id,
-            status_message_id,
-            STATUS_WORKING,
-        )
-        return await self._run_execution(
-            request,
-            convo,
-            snapshot,
-            progress_message_id=status_message_id,
-        )
+            await self._progress.set_text(
+                request.telegram_chat_id,
+                status_message_id,
+                STATUS_WORKING,
+            )
+            return await self._run_execution(
+                request,
+                convo,
+                snapshot,
+                progress_message_id=status_message_id,
+            )
+        except Exception as exc:
+            text = _friendly_failure_text(exc)
+            convo.flow_mode = TelegramFlowMode.FAILED
+            self._store.save(convo)
+            send_result = await self._deliver_status_or_send(
+                request,
+                status_message_id,
+                text,
+            )
+            return {
+                "status": "failed",
+                "error": "message_handling_failed",
+                "reply": text,
+                "send_result": send_result,
+            }
 
     async def _classify_intent(
         self,
@@ -200,11 +217,15 @@ class TelegramProductFlow:
         text: str,
     ) -> dict[str, Any]:
         if status_message_id is not None:
-            return await self._sender.edit_message_text(
-                request.telegram_chat_id,
-                status_message_id,
-                text,
-            )
+            try:
+                return await self._sender.edit_message_text(
+                    request.telegram_chat_id,
+                    status_message_id,
+                    text,
+                )
+            except Exception:
+                # Never leave the user stuck on "Смотрю…" if edit fails.
+                pass
         return await self._sender.send_message(
             request.telegram_chat_id,
             text,
@@ -648,6 +669,20 @@ class TelegramProductFlow:
         merged = dict(current)
         merged.update(update)
         return merged
+
+
+def _friendly_failure_text(exc: Exception) -> str:
+    message = str(exc).lower()
+    if (
+        isinstance(exc, LLMProviderError)
+        or "402" in message
+        or "insufficient credits" in message
+        or "payment required" in message
+        or "authentication failed" in message
+        or "openrouter" in message
+    ):
+        return LLM_UNAVAILABLE
+    return GENERIC_FAILURE
 
 
 def _safe_error_reason(message: str) -> str | None:

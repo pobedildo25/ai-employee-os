@@ -18,6 +18,7 @@ class AgencyArchiveWatcher:
         self._task: asyncio.Task | None = None
         self._stop = asyncio.Event()
         self._last_fingerprint: str | None = None
+        self._failure_backoff_seconds = 0
 
     async def start(self) -> None:
         if not self._settings.agency_archive_watch_enabled:
@@ -46,8 +47,9 @@ class AgencyArchiveWatcher:
         # Initial sync
         await self._sync_if_changed(force=True)
         while not self._stop.is_set():
+            wait_for = max(interval, self._failure_backoff_seconds)
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=interval)
+                await asyncio.wait_for(self._stop.wait(), timeout=wait_for)
                 break
             except asyncio.TimeoutError:
                 await self._sync_if_changed(force=False)
@@ -70,9 +72,21 @@ class AgencyArchiveWatcher:
                 per_client=True,
             )
             self._last_fingerprint = fingerprint
+            self._failure_backoff_seconds = 0
             logger.info("Agency archive sync complete | summary=%s", summary)
-        except Exception:
-            logger.exception("Agency archive sync failed")
+        except Exception as exc:
+            # Back off hard on provider/credit failures so watcher does not burn the LLM budget.
+            message = str(exc).lower()
+            if "402" in message or "insufficient credits" in message or "llm" in message:
+                self._failure_backoff_seconds = min(3600, max(300, self._failure_backoff_seconds * 2 or 300))
+                logger.error(
+                    "Agency archive sync paused due to LLM/provider failure; retry in %ss | error=%s",
+                    self._failure_backoff_seconds,
+                    exc,
+                )
+            else:
+                self._failure_backoff_seconds = min(900, max(60, self._failure_backoff_seconds * 2 or 60))
+                logger.exception("Agency archive sync failed")
 
 
 def _fingerprint_tree(root: Path) -> str:

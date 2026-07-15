@@ -155,3 +155,42 @@ def test_openrouter_online_parser_reads_json_array() -> None:
     )
     assert len(payload) == 1
     assert payload[0]["title"] == "A"
+
+
+@pytest.mark.asyncio
+async def test_llm_failure_replaces_looking_status() -> None:
+    from app.llm.exceptions import LLMProviderError
+    from app.ux.status_copy import LLM_UNAVAILABLE
+
+    class ExplodingExecutive:
+        async def analyze(self, state):
+            raise LLMProviderError("OpenRouter error 402: Insufficient credits")
+
+    sender = InMemoryTelegramSender()
+    store = TelegramConversationStore()
+    workspace = WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository()))
+    sessions = TelegramSessionManager(workspace_service=workspace)
+    flow = TelegramProductFlow(
+        runtime=FakeRuntime(),
+        session_manager=sessions,
+        sender=sender,
+        conversation_store=store,
+        progress_messenger=TelegramProgressMessenger(sender, min_interval_seconds=0.0),
+        executive_agent=ExplodingExecutive(),
+    )
+    request = TelegramMapper().map_update(
+        {
+            "update_id": 3,
+            "message": {
+                "message_id": 12,
+                "text": "привет",
+                "chat": {"id": 99, "type": "private"},
+                "from": {"id": 99, "is_bot": False, "first_name": "T"},
+            },
+        }
+    )
+    assert request is not None
+    result = await flow.handle_message(request)
+    assert result["status"] == "failed"
+    assert sender.sent[0]["text"] == STATUS_LOOKING
+    assert sender.edited[-1]["text"] == LLM_UNAVAILABLE
