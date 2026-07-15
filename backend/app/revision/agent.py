@@ -46,7 +46,11 @@ class RevisionAgent(RevisionInterface):
         last_error: Exception | None = None
         for attempt in range(1, self._max_retries + 1):
             try:
-                response = await self._gateway.complete(messages, temperature=0.3)
+                response = await self._gateway.complete(
+                    messages,
+                    temperature=0.3,
+                    metadata={"use_heavy_model": True, "task": "revision"},
+                )
                 updated_ast, changes, summary, update_ast, needs_render = parse_revision_response(
                     response.content
                 )

@@ -17,6 +17,7 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_SECURE: "false"
+      AGENCY_ARCHIVE_PATH: /data/agency_archive
     depends_on:
       postgres:
         condition: service_healthy
@@ -34,6 +35,8 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+    volumes:
+      - ${AGENCY_ARCHIVE_HOST_PATH:-./user_data/clients}:/data/agency_archive:ro
 
   postgres:
     image: postgres:16-alpine

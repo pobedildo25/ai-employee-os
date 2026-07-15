@@ -54,7 +54,11 @@ class DocumentASTGenerator:
         last_error: Exception | None = None
         for attempt in range(1, self._max_retries + 1):
             try:
-                response = await self._gateway.complete(messages, temperature=0.3)
+                response = await self._gateway.complete(
+                    messages,
+                    temperature=0.3,
+                    metadata={"use_heavy_model": True, "task": "document_creation"},
+                )
                 document_ast, missing_information, metadata, document_type = parse_creation_response(
                     response.content
                 )

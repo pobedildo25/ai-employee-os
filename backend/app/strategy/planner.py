@@ -47,7 +47,11 @@ class StrategyPlanner(StrategyPlannerInterface):
         last_error: Exception | None = None
         for attempt in range(1, self._max_retries + 1):
             try:
-                response = await self._gateway.complete(messages, temperature=0.3)
+                response = await self._gateway.complete(
+                    messages,
+                    temperature=0.3,
+                    metadata={"use_heavy_model": True, "task": "strategy"},
+                )
                 result = parse_strategy_result(response.content, fallback_type=request.strategy_type)
                 logger.info(
                     "strategy planned | trace_id=%s type=%s insights=%d attempt=%d",

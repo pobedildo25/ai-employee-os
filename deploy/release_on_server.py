@@ -119,7 +119,7 @@ def main() -> int:
         curl -fsS http://127.0.0.1:8000/ready || true
         echo
         docker compose -f docker-compose.prod.yml --env-file .env.production exec -T backend alembic current || true
-        docker compose -f docker-compose.prod.yml --env-file .env.production exec -T backend python scripts/ingest_agency_archive.py --archive-root /data/agency_archive --agency-name "NOVA Agency" --max-files 120 || true
+        docker compose -f docker-compose.prod.yml --env-file .env.production exec -T backend python scripts/ingest_agency_archive.py --archive-root /data/agency_archive --agency-name "NOVA Agency" --max-files 80 || true
         docker compose -f docker-compose.prod.yml --env-file .env.production exec -T backend python scripts/backup_postgres.py --output backups/prod_smoke_backup.dump
         docker compose -f docker-compose.prod.yml --env-file .env.production logs --tail 40 backend
         """

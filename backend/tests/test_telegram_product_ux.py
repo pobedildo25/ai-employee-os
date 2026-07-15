@@ -197,7 +197,7 @@ async def test_progress_update_edits_single_message(
     await flow.handle_message(request)
 
     assert len(sender.sent) >= 1
-    assert sender.sent[0]["text"] == "🧠 NOVA анализирует задачу"
+    assert sender.sent[0]["text"] == "Работаю над задачей…"
     assert len(sender.edited) >= 1
     assert "Исследование" in sender.edited[-1]["text"]
 
@@ -285,8 +285,15 @@ async def test_approval_cancel(
     assert request is not None
     await flow.handle_message(request)
 
-    cancel_update = dict(SAMPLE_CALLBACK_APPROVE)
-    cancel_update["callback_query"]["data"] = "tg:cancel"
+    cancel_update = {
+        "update_id": SAMPLE_CALLBACK_APPROVE["update_id"],
+        "callback_query": {
+            **SAMPLE_CALLBACK_APPROVE["callback_query"],
+            "data": "tg:cancel",
+            "from": dict(SAMPLE_CALLBACK_APPROVE["callback_query"]["from"]),
+            "message": dict(SAMPLE_CALLBACK_APPROVE["callback_query"]["message"]),
+        },
+    }
     callback = TelegramMapper().map_callback(cancel_update)
     assert callback is not None
     result = await flow.handle_callback(callback)

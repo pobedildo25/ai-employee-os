@@ -20,12 +20,26 @@ class LLMGateway:
         self._settings = settings or get_settings()
 
     async def chat(self, request: LLMRequest) -> LLMResponse:
-        primary_model = request.model or self._settings.default_llm_model
+        metadata = request.metadata or {}
+        use_heavy = bool(metadata.get("use_heavy_model"))
+        primary_model = (
+            request.model
+            or (self._settings.heavy_llm_model if use_heavy else self._settings.default_llm_model)
+        )
         models = _build_model_chain(
             primary_model,
             self._settings.fallback_llm_model,
             self._settings.secondary_fallback_llm_model,
         )
+        default_cap = (
+            self._settings.llm_heavy_max_tokens if use_heavy else self._settings.llm_max_tokens
+        )
+        capped_tokens = request.max_tokens
+        if capped_tokens is None:
+            capped_tokens = default_cap
+        else:
+            capped_tokens = min(int(capped_tokens), int(default_cap))
+        request = request.model_copy(update={"max_tokens": capped_tokens})
 
         last_error: LLMProviderError | None = None
         for index, model in enumerate(models):
@@ -38,6 +52,9 @@ class LLMGateway:
                 )
             except LLMProviderError as exc:
                 last_error = exc
+                # Credits/auth failures hit every model — do not burn more latency.
+                if _is_non_retriable_provider_error(exc):
+                    raise
                 if index < len(models) - 1:
                     trace_id = trace_id_var.get()
                     logger.warning(
@@ -147,6 +164,21 @@ def _build_model_chain(primary: str, *fallbacks: str | None) -> list[str]:
         if model and model not in chain:
             chain.append(model)
     return chain
+
+
+def _is_non_retriable_provider_error(exc: LLMProviderError) -> bool:
+    from app.llm.exceptions import LLMAuthenticationError
+
+    if isinstance(exc, LLMAuthenticationError):
+        return True
+    message = str(exc).lower()
+    return (
+        "402" in message
+        or "insufficient credits" in message
+        or "payment required" in message
+        or "authentication failed" in message
+        or " error 401" in message
+    )
 
 
 def create_llm_gateway(settings: Settings | None = None) -> LLMGateway:

@@ -7,6 +7,7 @@ from app.adapters.telegram.clarification import build_pending_clarification, mer
 from app.adapters.telegram.conversation_store import TelegramConversationState, TelegramFlowMode
 from app.adapters.telegram.continuation import TelegramArtifactDelivery, TelegramGraphContinuation
 from app.adapters.telegram.keyboard import approval_keyboard, retry_keyboard, revision_keyboard
+from app.adapters.telegram.local_replies import maybe_local_reply
 from app.adapters.telegram.mapper import TelegramMapper
 from app.adapters.telegram.models import TelegramCallbackRequest, TelegramExecutionRequest
 from app.adapters.telegram.presenter import (
@@ -27,6 +28,8 @@ from app.agents.executive.agent import ExecutiveAgent
 from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_task_decision
 from app.clients.resolver import BusinessClientResolver
 from app.orchestration.orchestrator import Orchestrator
+from app.llm.exceptions import LLMProviderError
+from app.ux.status_copy import GENERIC_FAILURE, LLM_UNAVAILABLE, STATUS_WORKING
 
 
 class TelegramProductFlow:
@@ -74,14 +77,47 @@ class TelegramProductFlow:
         if convo.pending_clarification is not None:
             return await self._resume_pending_clarification(request, convo, snapshot)
 
-        classification = await self._classify_intent(request, snapshot)
-        if classification is not None:
-            if is_chat_decision(classification.decision.action.value):
-                return await self._handle_chat_response(request, convo, classification)
-            if is_task_decision(classification.decision.action.value):
-                return await self._run_execution(request, convo, snapshot)
+        try:
+            # Keep basic chat useful even when OpenRouter is down / out of credits.
+            # No "Смотрю…" on simple chat — status is only for real task execution.
+            local_reply = await maybe_local_reply(request.user_input)
+            if local_reply is not None:
+                return await self._complete_local_chat(request, convo, local_reply)
 
-        return await self._run_execution(request, convo, snapshot)
+            classification = await self._classify_intent(request, snapshot)
+            if classification is not None:
+                if is_chat_decision(classification.decision.action.value):
+                    return await self._handle_chat_response(request, convo, classification)
+                if is_task_decision(classification.decision.action.value):
+                    return await self._run_execution(request, convo, snapshot)
+
+            return await self._run_execution(request, convo, snapshot)
+        except Exception as exc:
+            local_reply = await maybe_local_reply(request.user_input)
+            text = local_reply or _friendly_failure_text(exc)
+            convo.flow_mode = (
+                TelegramFlowMode.COMPLETED if local_reply is not None else TelegramFlowMode.FAILED
+            )
+            self._store.save(convo)
+            try:
+                send_result = await self._sender.send_message(
+                    request.telegram_chat_id,
+                    text,
+                    reply_to_message_id=request.telegram_message_id,
+                )
+            except Exception as deliver_exc:
+                return {
+                    "status": "failed",
+                    "error": "message_handling_failed",
+                    "reply": text,
+                    "deliver_error": str(deliver_exc),
+                }
+            return {
+                "status": "completed" if local_reply is not None else "failed",
+                "error": None if local_reply is not None else "message_handling_failed",
+                "reply": text,
+                "send_result": send_result,
+            }
 
     async def _classify_intent(
         self,
@@ -135,6 +171,24 @@ class TelegramProductFlow:
                 "send_result": send_result,
             }
 
+        text = extract_chat_reply(classification.decision.model_dump()) or (
+            "Привет! Я NOVA — AI-сотрудник агентства."
+        )
+        return await self._complete_local_chat(
+            request,
+            convo,
+            text,
+            decision=classification.decision.model_dump(),
+        )
+
+    async def _complete_local_chat(
+        self,
+        request: TelegramExecutionRequest,
+        convo: TelegramConversationState,
+        text: str,
+        *,
+        decision: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         convo.flow_mode = TelegramFlowMode.COMPLETED
         convo.pending_clarification = None
         convo.last_user_input = request.user_input
@@ -142,20 +196,43 @@ class TelegramProductFlow:
         convo.last_agent_state = None
         self._store.save(convo)
 
-        text = extract_chat_reply(classification.decision.model_dump()) or "Привет! Я NOVA — AI-сотрудник агентства."
         send_result = await self._sender.send_message(
             request.telegram_chat_id,
             text,
             reply_to_message_id=request.telegram_message_id,
         )
-        return {
+        result: dict[str, Any] = {
             "status": "completed",
             "intent": "chat",
             "reply": text,
-            "decision": classification.decision.model_dump(),
             "workspace_id": convo.workspace_id,
             "send_result": send_result,
         }
+        if decision is not None:
+            result["decision"] = decision
+        return result
+
+    async def _deliver_status_or_send(
+        self,
+        request: TelegramExecutionRequest,
+        status_message_id: int | None,
+        text: str,
+    ) -> dict[str, Any]:
+        if status_message_id is not None:
+            try:
+                return await self._sender.edit_message_text(
+                    request.telegram_chat_id,
+                    status_message_id,
+                    text,
+                )
+            except Exception:
+                # Never leave the user stuck on a progress status if edit fails.
+                pass
+        return await self._sender.send_message(
+            request.telegram_chat_id,
+            text,
+            reply_to_message_id=request.telegram_message_id,
+        )
 
     async def _resume_pending_clarification(
         self,
@@ -198,6 +275,8 @@ class TelegramProductFlow:
         request: TelegramExecutionRequest,
         convo: TelegramConversationState,
         snapshot: dict[str, Any],
+        *,
+        progress_message_id: int | None = None,
     ) -> dict[str, Any]:
         context, metadata = self._build_runtime_payload(request, snapshot)
         await self._attach_business_client(request, convo, context)
@@ -205,10 +284,18 @@ class TelegramProductFlow:
         convo.last_user_input = request.user_input
         self._store.save(convo)
 
-        progress_message_id = await self._progress.start(
-            request.telegram_chat_id,
-            reply_to_message_id=request.telegram_message_id,
-        )
+        if progress_message_id is None:
+            progress_message_id = await self._progress.start(
+                request.telegram_chat_id,
+                reply_to_message_id=request.telegram_message_id,
+                text=STATUS_WORKING,
+            )
+        else:
+            await self._progress.set_text(
+                request.telegram_chat_id,
+                progress_message_id,
+                STATUS_WORKING,
+            )
         convo.progress_message_id = progress_message_id
         self._store.save(convo)
 
@@ -584,6 +671,20 @@ class TelegramProductFlow:
         merged = dict(current)
         merged.update(update)
         return merged
+
+
+def _friendly_failure_text(exc: Exception) -> str:
+    message = str(exc).lower()
+    if (
+        isinstance(exc, LLMProviderError)
+        or "402" in message
+        or "insufficient credits" in message
+        or "payment required" in message
+        or "authentication failed" in message
+        or "openrouter" in message
+    ):
+        return LLM_UNAVAILABLE
+    return GENERIC_FAILURE
 
 
 def _safe_error_reason(message: str) -> str | None:

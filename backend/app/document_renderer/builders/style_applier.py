@@ -11,10 +11,11 @@ class StyleApplier:
     """Applies brand profile styles to document elements."""
 
     DEFAULT_BODY_FONT = "Calibri"
-    DEFAULT_HEADING_FONT = "Arial"
+    DEFAULT_HEADING_FONT = "Calibri"
     DEFAULT_BODY_SIZE = 11.0
-    DEFAULT_HEADING_SIZE = 16.0
-    DEFAULT_PRIMARY_COLOR = "#000000"
+    DEFAULT_HEADING_SIZE = 14.0
+    # Body/heading text stays dark; purple accent is for chrome, not paragraphs.
+    DEFAULT_PRIMARY_COLOR = "#111111"
 
     def get_body_font(self, brand_profile: BrandProfile | None) -> str:
         if brand_profile is None:
@@ -47,11 +48,17 @@ class StyleApplier:
     def get_primary_color(self, brand_profile: BrandProfile | None) -> str:
         if brand_profile is None:
             return self.DEFAULT_PRIMARY_COLOR
-        return str(brand_profile.colors.get("primary") or self.DEFAULT_PRIMARY_COLOR)
+        return str(
+            brand_profile.colors.get("text")
+            or brand_profile.colors.get("primary")
+            or self.DEFAULT_PRIMARY_COLOR
+        )
 
     def apply_docx_run_style(self, run: Any, *, brand_profile: BrandProfile | None, heading: bool = False) -> None:
         run.font.name = self.get_heading_font(brand_profile) if heading else self.get_body_font(brand_profile)
         run.font.size = Pt(self.get_heading_size(brand_profile) if heading else self.get_body_size(brand_profile))
+        if heading:
+            run.bold = True
         color = self._hex_to_rgb(self.get_primary_color(brand_profile))
         if color is not None:
             run.font.color.rgb = RGBColor(*color)
