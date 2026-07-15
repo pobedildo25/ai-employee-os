@@ -95,9 +95,10 @@ async def test_greeting_does_not_start_execution(
 
     assert result["intent"] == "chat"
     assert runtime.calls == []
-    assert executive.calls and executive.calls[0]["user_input"] == "Привет"
+    # Greetings are local (no LLM) so chat stays alive if OpenRouter is down.
+    assert executive.calls == []
     assert sender.sent[0]["text"] == "Смотрю…"
-    assert sender.edited[-1]["text"] == "Привет! Я NOVA, AI-сотрудник агентства."
+    assert "NOVA" in sender.edited[-1]["text"]
 
 
 @pytest.mark.asyncio

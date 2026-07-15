@@ -88,7 +88,8 @@ async def test_chat_edits_single_status_message() -> None:
     assert result["status"] == "completed"
     assert sender.sent[0]["text"] == STATUS_LOOKING
     assert sender.edited
-    assert sender.edited[-1]["text"] == "Привет! Краткий ответ."
+    # Greetings are answered locally so basic chat survives LLM outages.
+    assert "NOVA" in sender.edited[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -158,13 +159,10 @@ def test_openrouter_online_parser_reads_json_array() -> None:
 
 
 @pytest.mark.asyncio
-async def test_llm_failure_replaces_looking_status() -> None:
-    from app.llm.exceptions import LLMProviderError
-    from app.ux.status_copy import LLM_UNAVAILABLE
-
+async def test_greeting_uses_local_reply_without_llm() -> None:
     class ExplodingExecutive:
         async def analyze(self, state):
-            raise LLMProviderError("OpenRouter error 402: Insufficient credits")
+            raise AssertionError("LLM must not be called for local greeting")
 
     sender = InMemoryTelegramSender()
     store = TelegramConversationStore()
@@ -191,6 +189,83 @@ async def test_llm_failure_replaces_looking_status() -> None:
     )
     assert request is not None
     result = await flow.handle_message(request)
+    assert result["status"] == "completed"
+    assert sender.sent[0]["text"] == STATUS_LOOKING
+    assert "NOVA" in sender.edited[-1]["text"]
+
+
+@pytest.mark.asyncio
+async def test_llm_failure_replaces_looking_status() -> None:
+    from app.llm.exceptions import LLMProviderError
+    from app.ux.status_copy import LLM_UNAVAILABLE
+
+    class ExplodingExecutive:
+        async def analyze(self, state):
+            raise LLMProviderError("OpenRouter error 402: Insufficient credits")
+
+    sender = InMemoryTelegramSender()
+    store = TelegramConversationStore()
+    workspace = WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository()))
+    sessions = TelegramSessionManager(workspace_service=workspace)
+    flow = TelegramProductFlow(
+        runtime=FakeRuntime(),
+        session_manager=sessions,
+        sender=sender,
+        conversation_store=store,
+        progress_messenger=TelegramProgressMessenger(sender, min_interval_seconds=0.0),
+        executive_agent=ExplodingExecutive(),
+    )
+    request = TelegramMapper().map_update(
+        {
+            "update_id": 4,
+            "message": {
+                "message_id": 13,
+                "text": "что такое brand book",
+                "chat": {"id": 99, "type": "private"},
+                "from": {"id": 99, "is_bot": False, "first_name": "T"},
+            },
+        }
+    )
+    assert request is not None
+    result = await flow.handle_message(request)
     assert result["status"] == "failed"
     assert sender.sent[0]["text"] == STATUS_LOOKING
     assert sender.edited[-1]["text"] == LLM_UNAVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_fx_local_reply_edits_status(monkeypatch) -> None:
+    async def fake_fx(_text: str):
+        return "Курс доллара ЦБ РФ на 2026-07-15: 90.0000 ₽."
+
+    monkeypatch.setattr(
+        "app.adapters.telegram.flow.maybe_local_reply",
+        fake_fx,
+    )
+    sender = InMemoryTelegramSender()
+    store = TelegramConversationStore()
+    workspace = WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository()))
+    sessions = TelegramSessionManager(workspace_service=workspace)
+    flow = TelegramProductFlow(
+        runtime=FakeRuntime(),
+        session_manager=sessions,
+        sender=sender,
+        conversation_store=store,
+        progress_messenger=TelegramProgressMessenger(sender, min_interval_seconds=0.0),
+        executive_agent=ChatExecutive(),
+    )
+    request = TelegramMapper().map_update(
+        {
+            "update_id": 5,
+            "message": {
+                "message_id": 14,
+                "text": "курс доллара",
+                "chat": {"id": 88, "type": "private"},
+                "from": {"id": 88, "is_bot": False, "first_name": "T"},
+            },
+        }
+    )
+    assert request is not None
+    result = await flow.handle_message(request)
+    assert result["status"] == "completed"
+    assert "90.0000" in sender.edited[-1]["text"]

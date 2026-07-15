@@ -52,6 +52,9 @@ class LLMGateway:
                 )
             except LLMProviderError as exc:
                 last_error = exc
+                # Credits/auth failures hit every model — do not burn more latency.
+                if _is_non_retriable_provider_error(exc):
+                    raise
                 if index < len(models) - 1:
                     trace_id = trace_id_var.get()
                     logger.warning(
@@ -161,6 +164,21 @@ def _build_model_chain(primary: str, *fallbacks: str | None) -> list[str]:
         if model and model not in chain:
             chain.append(model)
     return chain
+
+
+def _is_non_retriable_provider_error(exc: LLMProviderError) -> bool:
+    from app.llm.exceptions import LLMAuthenticationError
+
+    if isinstance(exc, LLMAuthenticationError):
+        return True
+    message = str(exc).lower()
+    return (
+        "402" in message
+        or "insufficient credits" in message
+        or "payment required" in message
+        or "authentication failed" in message
+        or " error 401" in message
+    )
 
 
 def create_llm_gateway(settings: Settings | None = None) -> LLMGateway:
