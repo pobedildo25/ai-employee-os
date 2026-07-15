@@ -83,7 +83,7 @@ async def test_telegram_full_flow_with_progress_approval_and_delivery(settings, 
     assert first is not None
     assert first["status"] == "waiting_approval"
     assert "Начать выполнение" in sender.sent[-1]["text"]
-    assert sender.sent[0]["text"] == "Смотрю…"
+    assert sender.sent[0]["text"] == "Работаю над задачей…"
     assert sender.edited
 
     approved = await adapter.handle_update(SAMPLE_CALLBACK_APPROVE)

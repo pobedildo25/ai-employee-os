@@ -29,7 +29,7 @@ from app.agents.intent.policy import extract_chat_reply, is_chat_decision, is_ta
 from app.clients.resolver import BusinessClientResolver
 from app.orchestration.orchestrator import Orchestrator
 from app.llm.exceptions import LLMProviderError
-from app.ux.status_copy import GENERIC_FAILURE, LLM_UNAVAILABLE, STATUS_LOOKING, STATUS_WORKING
+from app.ux.status_copy import GENERIC_FAILURE, LLM_UNAVAILABLE, STATUS_WORKING
 
 
 class TelegramProductFlow:
@@ -77,58 +77,21 @@ class TelegramProductFlow:
         if convo.pending_clarification is not None:
             return await self._resume_pending_clarification(request, convo, snapshot)
 
-        status_message_id = await self._progress.start(
-            request.telegram_chat_id,
-            reply_to_message_id=request.telegram_message_id,
-            text=STATUS_LOOKING,
-        )
-        convo.progress_message_id = status_message_id
-        self._store.save(convo)
-
         try:
             # Keep basic chat useful even when OpenRouter is down / out of credits.
+            # No "Смотрю…" on simple chat — status is only for real task execution.
             local_reply = await maybe_local_reply(request.user_input)
             if local_reply is not None:
-                return await self._complete_local_chat(
-                    request,
-                    convo,
-                    local_reply,
-                    status_message_id=status_message_id,
-                )
+                return await self._complete_local_chat(request, convo, local_reply)
 
             classification = await self._classify_intent(request, snapshot)
             if classification is not None:
                 if is_chat_decision(classification.decision.action.value):
-                    return await self._handle_chat_response(
-                        request,
-                        convo,
-                        classification,
-                        status_message_id=status_message_id,
-                    )
+                    return await self._handle_chat_response(request, convo, classification)
                 if is_task_decision(classification.decision.action.value):
-                    await self._progress.set_text(
-                        request.telegram_chat_id,
-                        status_message_id,
-                        STATUS_WORKING,
-                    )
-                    return await self._run_execution(
-                        request,
-                        convo,
-                        snapshot,
-                        progress_message_id=status_message_id,
-                    )
+                    return await self._run_execution(request, convo, snapshot)
 
-            await self._progress.set_text(
-                request.telegram_chat_id,
-                status_message_id,
-                STATUS_WORKING,
-            )
-            return await self._run_execution(
-                request,
-                convo,
-                snapshot,
-                progress_message_id=status_message_id,
-            )
+            return await self._run_execution(request, convo, snapshot)
         except Exception as exc:
             local_reply = await maybe_local_reply(request.user_input)
             text = local_reply or _friendly_failure_text(exc)
@@ -137,10 +100,10 @@ class TelegramProductFlow:
             )
             self._store.save(convo)
             try:
-                send_result = await self._deliver_status_or_send(
-                    request,
-                    status_message_id,
+                send_result = await self._sender.send_message(
+                    request.telegram_chat_id,
                     text,
+                    reply_to_message_id=request.telegram_message_id,
                 )
             except Exception as deliver_exc:
                 return {
@@ -178,8 +141,6 @@ class TelegramProductFlow:
         request: TelegramExecutionRequest,
         convo: TelegramConversationState,
         classification,
-        *,
-        status_message_id: int | None = None,
     ) -> dict[str, Any]:
         action = classification.decision.action.value
         if action == "ASK_CLARIFICATION":
@@ -196,10 +157,10 @@ class TelegramProductFlow:
             text = extract_chat_reply(classification.decision.model_dump()) or (
                 "Уточните, пожалуйста, детали задачи."
             )
-            send_result = await self._deliver_status_or_send(
-                request,
-                status_message_id,
+            send_result = await self._sender.send_message(
+                request.telegram_chat_id,
                 text,
+                reply_to_message_id=request.telegram_message_id,
             )
             return {
                 "status": "clarification",
@@ -217,7 +178,6 @@ class TelegramProductFlow:
             request,
             convo,
             text,
-            status_message_id=status_message_id,
             decision=classification.decision.model_dump(),
         )
 
@@ -227,7 +187,6 @@ class TelegramProductFlow:
         convo: TelegramConversationState,
         text: str,
         *,
-        status_message_id: int | None = None,
         decision: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         convo.flow_mode = TelegramFlowMode.COMPLETED
@@ -237,10 +196,10 @@ class TelegramProductFlow:
         convo.last_agent_state = None
         self._store.save(convo)
 
-        send_result = await self._deliver_status_or_send(
-            request,
-            status_message_id,
+        send_result = await self._sender.send_message(
+            request.telegram_chat_id,
             text,
+            reply_to_message_id=request.telegram_message_id,
         )
         result: dict[str, Any] = {
             "status": "completed",
@@ -267,7 +226,7 @@ class TelegramProductFlow:
                     text,
                 )
             except Exception:
-                # Never leave the user stuck on "Смотрю…" if edit fails.
+                # Never leave the user stuck on a progress status if edit fails.
                 pass
         return await self._sender.send_message(
             request.telegram_chat_id,

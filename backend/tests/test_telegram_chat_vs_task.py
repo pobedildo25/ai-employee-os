@@ -97,8 +97,9 @@ async def test_greeting_does_not_start_execution(
     assert runtime.calls == []
     # Greetings are local (no LLM) so chat stays alive if OpenRouter is down.
     assert executive.calls == []
-    assert sender.sent[0]["text"] == "Смотрю…"
-    assert "NOVA" in sender.edited[-1]["text"]
+    assert len(sender.sent) == 1
+    assert sender.edited == []
+    assert "NOVA" in sender.sent[0]["text"]
 
 
 @pytest.mark.asyncio
@@ -119,7 +120,8 @@ async def test_capabilities_question_does_not_start_execution(
 
     assert result["intent"] == "chat"
     assert runtime.calls == []
-    assert "КП" in sender.edited[-1]["text"]
+    assert sender.edited == []
+    assert "КП" in sender.sent[-1]["text"]
 
 
 @pytest.mark.asyncio
@@ -145,7 +147,7 @@ async def test_task_request_starts_execution_pipeline(
     assert len(runtime.calls) == 1
     assert runtime.calls[0]["mode"] == "stream"
     assert runtime.calls[0]["user_input"] == "Создай презентацию"
-    assert sender.sent[0]["text"] == "Смотрю…"
+    assert sender.sent[0]["text"] == "Работаю над задачей…"
 
 
 @pytest.mark.asyncio
@@ -185,5 +187,5 @@ async def test_task_execution_preserves_telegram_progress_ux(
     await flow.handle_message(_request("Подготовь стратегию"))
 
     assert runtime.calls
-    assert sender.sent[0]["text"] == "Смотрю…"
+    assert sender.sent[0]["text"] == "Работаю над задачей…"
     assert sender.edited

@@ -2,9 +2,9 @@ from typing import Any
 
 
 def format_progress_header() -> str:
-    from app.ux.status_copy import STATUS_LOOKING
+    from app.ux.status_copy import STATUS_WORKING
 
-    return STATUS_LOOKING
+    return STATUS_WORKING
 
 
 def format_telegram_progress(progress: dict[str, Any] | None, *, header: str | None = None) -> str:

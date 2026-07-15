@@ -13,7 +13,7 @@ from app.core.config import Settings
 from app.llm.gateway import LLMGateway
 from app.llm.models import LLMMessage, LLMRequest, LLMResponse, TokenUsage
 from app.research.providers.openrouter_online_provider import _parse_search_payload
-from app.ux.status_copy import STATUS_LOOKING, UNSUPPORTED_PHOTO
+from app.ux.status_copy import STATUS_WORKING, UNSUPPORTED_PHOTO
 from app.workspace.manager import WorkspaceManager
 from app.workspace.repositories.workspace_repository import InMemoryWorkspaceRepository
 from app.workspace.service import WorkspaceService
@@ -60,7 +60,7 @@ class RecordingProvider:
 
 
 @pytest.mark.asyncio
-async def test_chat_edits_single_status_message() -> None:
+async def test_chat_sends_reply_without_looking_status() -> None:
     sender = InMemoryTelegramSender()
     store = TelegramConversationStore()
     workspace = WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository()))
@@ -86,10 +86,9 @@ async def test_chat_edits_single_status_message() -> None:
     assert request is not None
     result = await flow.handle_message(request)
     assert result["status"] == "completed"
-    assert sender.sent[0]["text"] == STATUS_LOOKING
-    assert sender.edited
-    # Greetings are answered locally so basic chat survives LLM outages.
-    assert "NOVA" in sender.edited[-1]["text"]
+    assert len(sender.sent) == 1
+    assert sender.edited == []
+    assert "NOVA" in sender.sent[0]["text"]
 
 
 @pytest.mark.asyncio
@@ -190,12 +189,13 @@ async def test_greeting_uses_local_reply_without_llm() -> None:
     assert request is not None
     result = await flow.handle_message(request)
     assert result["status"] == "completed"
-    assert sender.sent[0]["text"] == STATUS_LOOKING
-    assert "NOVA" in sender.edited[-1]["text"]
+    assert len(sender.sent) == 1
+    assert sender.edited == []
+    assert "NOVA" in sender.sent[0]["text"]
 
 
 @pytest.mark.asyncio
-async def test_llm_failure_replaces_looking_status() -> None:
+async def test_llm_failure_sends_honest_error_without_looking_status() -> None:
     from app.llm.exceptions import LLMProviderError
     from app.ux.status_copy import LLM_UNAVAILABLE
 
@@ -229,12 +229,12 @@ async def test_llm_failure_replaces_looking_status() -> None:
     assert request is not None
     result = await flow.handle_message(request)
     assert result["status"] == "failed"
-    assert sender.sent[0]["text"] == STATUS_LOOKING
-    assert sender.edited[-1]["text"] == LLM_UNAVAILABLE
+    assert sender.sent[0]["text"] == LLM_UNAVAILABLE
+    assert sender.edited == []
 
 
 @pytest.mark.asyncio
-async def test_fx_local_reply_edits_status(monkeypatch) -> None:
+async def test_fx_local_reply_sends_without_looking_status(monkeypatch) -> None:
     async def fake_fx(_text: str):
         return "Курс доллара ЦБ РФ на 2026-07-15: 90.0000 ₽."
 
@@ -268,4 +268,69 @@ async def test_fx_local_reply_edits_status(monkeypatch) -> None:
     assert request is not None
     result = await flow.handle_message(request)
     assert result["status"] == "completed"
-    assert "90.0000" in sender.edited[-1]["text"]
+    assert "90.0000" in sender.sent[0]["text"]
+    assert sender.edited == []
+
+
+@pytest.mark.asyncio
+async def test_task_shows_working_status() -> None:
+    class TaskExecutive:
+        async def analyze(self, state):
+            from app.agents.decision.models import AgentDecision, DecisionType
+            from app.agents.executive.models import AgentUnderstanding, ExecutiveAgentResult
+
+            return ExecutiveAgentResult(
+                understanding=AgentUnderstanding(
+                    goal=state.get("user_input", ""),
+                    summary="task",
+                    next_action="execute",
+                ),
+                decision=AgentDecision(action=DecisionType.EXECUTE, reasoning="task"),
+            )
+
+    class StreamingRuntime:
+        async def stream(self, *args, **kwargs):
+            yield {
+                "orchestration": {
+                    "telegram_progress": {
+                        "progress_percent": 20,
+                        "lines": [{"title": "План", "status_icon": "⏳", "status_label": "выполняется"}],
+                    }
+                }
+            }
+            yield {
+                "status": "completed",
+                "execution_id": "exec-1",
+                "quality_check": {"passed": True, "score": 0.9},
+            }
+
+        async def run(self, *args, **kwargs):
+            return {"status": "completed"}
+
+    sender = InMemoryTelegramSender()
+    store = TelegramConversationStore()
+    workspace = WorkspaceService(WorkspaceManager(InMemoryWorkspaceRepository()))
+    sessions = TelegramSessionManager(workspace_service=workspace)
+    flow = TelegramProductFlow(
+        runtime=StreamingRuntime(),
+        session_manager=sessions,
+        sender=sender,
+        conversation_store=store,
+        progress_messenger=TelegramProgressMessenger(sender, min_interval_seconds=0.0),
+        executive_agent=TaskExecutive(),
+    )
+    request = TelegramMapper().map_update(
+        {
+            "update_id": 6,
+            "message": {
+                "message_id": 15,
+                "text": "Подготовь стратегию для клиента",
+                "chat": {"id": 55, "type": "private"},
+                "from": {"id": 55, "is_bot": False, "first_name": "T"},
+            },
+        }
+    )
+    assert request is not None
+    await flow.handle_message(request)
+    assert sender.sent[0]["text"] == STATUS_WORKING
+    assert any("План" in item["text"] for item in sender.edited)
